@@ -5,7 +5,9 @@ import { PortfolioProvider } from './hooks/usePortfolio';
 import Dashboard from './components/Dashboard';
 import StockView from './components/StockView';
 import ApiKeyWarning from './components/common/ApiKeyWarning';
-import { TrendingUpIcon } from './components/common/Icons';
+import { TrendingUpIcon, BrainCircuitIcon } from './components/common/Icons';
+import StockPicker from './components/StockPicker';
+
 
 const App: React.FC = () => {
     return (
@@ -19,12 +21,17 @@ const App: React.FC = () => {
                                 <TrendingUpIcon className="h-6 w-6 text-brand-blue"/>
                                 AI Paper Trader
                             </Link>
+                            <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
+                                <BrainCircuitIcon className="h-5 w-5"/>
+                                AI Stock Picker
+                            </Link>
                         </nav>
                     </header>
                     <main className="container mx-auto p-4 md:p-6 lg:p-8">
                         <Routes>
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/stock/:ticker" element={<StockView />} />
+                            <Route path="/picker" element={<StockPicker />} />
                         </Routes>
                     </main>
                      <footer className="text-center p-4 text-night-500 text-xs border-t border-night-800 mt-8">

@@ -62,3 +62,65 @@ export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[])
         throw new Error("Failed to get AI analysis.");
     }
 };
+
+const stockPickingSchema = {
+    type: Type.OBJECT,
+    properties: {
+        stocks: {
+            type: Type.ARRAY,
+            description: "A list of recommended stock tickers.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    symbol: {
+                        type: Type.STRING,
+                        description: "The stock ticker symbol."
+                    },
+                    reason: {
+                        type: Type.STRING,
+                        description: "A 1-2 sentence explanation of why this stock is a good pick."
+                    }
+                },
+                required: ["symbol", "reason"]
+            }
+        }
+    },
+    required: ["stocks"]
+};
+
+export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{stocks: StockPick[]}> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const { risk, strategy, sectors } = answers;
+    const prompt = `
+        Based on the following investment preferences, recommend 3 to 5 stocks.
+        The output must be a JSON object matching the provided schema.
+
+        - Risk Tolerance: ${risk}
+        - Investment Strategy: ${strategy}
+        - Preferred Sectors: ${sectors.join(', ')}
+
+        Please provide a diverse list of stocks that align with these preferences.
+        For each stock, include the ticker symbol and a brief reason for the recommendation.
+    `;
+
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: "gemini-1.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: stockPickingSchema,
+            },
+        });
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as {stocks: StockPick[]};
+
+    } catch (error) {
+        console.error("Error getting stock picks from Gemini:", error);
+        throw new Error("Failed to get AI stock picks.");
+    }
+};

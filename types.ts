@@ -75,3 +75,13 @@ export interface AiAnalysis {
   confidenceScore: number;
   summary: string;
 }
+
+export interface StockPick extends FmpSearchResult {
+  reason: string;
+}
+
+export interface QuestionnaireAnswers {
+  risk: 'low' | 'medium' | 'high';
+  strategy: 'growth' | 'value' | 'dividends' | 'undervalued';
+  sectors: string[];
+}
