@@ -15,7 +15,7 @@ const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
 }
 
 export const searchStocks = (query: string): Promise<FmpSearchResult[]> => {
-    return fetchFmp<FmpSearchResult[]>(`/search-ticker/${query}`);
+    return fetchFmp<FmpSearchResult[]>(`/search?query=${query}`);
 }
 
 export const getQuote = (ticker: string): Promise<FmpQuote[]> => {

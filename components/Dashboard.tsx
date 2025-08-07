@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../hooks/usePortfolio';
@@ -6,7 +5,7 @@ import * as fmpService from '../services/fmpService';
 import type { FmpSearchResult } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
-import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
+import { formatCurrency, formatPercentage } from '../utils/formatters';
 import { SearchIcon, TrendingUpIcon, DollarSignIcon, BriefcaseIcon } from './common/Icons';
 
 const Dashboard: React.FC = () => {
@@ -14,17 +13,24 @@ const Dashboard: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [searchAttempted, setSearchAttempted] = useState(false); // New state to track searches
 
     const handleSearch = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!searchQuery.trim()) return;
+        if (!searchQuery.trim()) {
+            setSearchResults([]);
+            setSearchAttempted(false);
+            return;
+        }
         setIsSearching(true);
+        setSearchAttempted(true); // Mark that a search was performed
         try {
             const results = await fmpService.searchStocks(searchQuery);
             setSearchResults(results.slice(0, 5)); // Limit to 5 results
         } catch (error) {
             console.error("Search failed:", error);
             alert("Failed to search for stocks.");
+            setSearchResults([]);
         } finally {
             setIsSearching(false);
         }
@@ -58,6 +64,14 @@ const Dashboard: React.FC = () => {
                         {isSearching ? <Spinner /> : 'Search'}
                     </button>
                 </form>
+
+                {/* UI feedback for no results */}
+                {searchAttempted && !isSearching && searchResults.length === 0 && (
+                    <div className="text-center p-4 text-night-500 border-t border-night-700 mt-4">
+                        No stocks found for "{searchQuery}".
+                    </div>
+                )}
+
                 {searchResults.length > 0 && (
                     <ul className="mt-4 border-t border-night-700 pt-4">
                         {searchResults.map((stock) => (
