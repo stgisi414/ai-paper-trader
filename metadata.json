@@ -1,0 +1,5 @@
+{
+  "name": "AI Paper Trader",
+  "description": "A robust AI-powered paper trading application that uses real market data from financialmodelingprep.com. It provides an array of traditional and AI-powered tools to help users make informed trading decisions.",
+  "requestFramePermissions": []
+}
