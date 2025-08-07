@@ -1,5 +1,5 @@
 import { FMP_BASE_URL, FMP_API_KEY } from '../constants';
-import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews } from '../types';
+import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews, FmpOptionChain, FmpOptionsPositionSummary } from '../types';
 
 const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
     if (!FMP_API_KEY) {
@@ -8,7 +8,6 @@ const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
     const separator = endpoint.includes('?') ? '&' : '?';
     const url = `${FMP_BASE_URL}${endpoint}${separator}apikey=${FMP_API_KEY}`;
     
-    // --- Retry Logic for Network Errors ---
     const maxRetries = 3;
     let lastError: Error | null = null;
 
@@ -16,22 +15,19 @@ const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
         try {
             const response = await fetch(url);
             if (!response.ok) {
-                // Don't retry on client errors (like 401/404), as they won't succeed.
                 if (response.status >= 400 && response.status < 500) {
                      throw new Error(`API request failed with status ${response.status}`);
                 }
-                // For other errors (like 500 server errors or network issues), throw to trigger a retry.
                 throw new Error(`API request failed: ${response.statusText}`);
             }
-            return await response.json(); // Success
+            return await response.json();
         } catch (error) {
             lastError = error as Error;
             if (attempt === maxRetries) {
                 console.error(`Fetch failed after ${maxRetries} attempts for ${url}`);
-                break; // Exit loop and throw the last known error
+                break; 
             }
             console.warn(`Attempt ${attempt} for ${url} failed. Retrying...`);
-            // Wait for a short, increasing delay before the next attempt
             await new Promise(res => setTimeout(res, 500 * attempt));
         }
     }
@@ -40,7 +36,6 @@ const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
 
 
 export const searchStocks = (query: string): Promise<FmpSearchResult[]> => {
-    // The endpoint was updated to the correct version.
     return fetchFmp<FmpSearchResult[]>(`/search?query=${query}`);
 }
 
@@ -58,4 +53,16 @@ export const getHistoricalData = (ticker: string): Promise<{ historical: FmpHist
 
 export const getNews = (ticker: string, limit: number = 20): Promise<FmpNews[]> => {
     return fetchFmp<FmpNews[]>(`/stock_news?tickers=${ticker}&limit=${limit}`);
+}
+
+// NEW: Fetches the entire option chain for a given stock
+export const getOptionChain = (ticker: string): Promise<FmpOptionChain[]> => {
+    // Note: The API returns an array, but it usually contains a single element for a single ticker.
+    return fetchFmp<FmpOptionChain[]>(`/stock_option_chain?symbol=${ticker}`);
+}
+
+// NEW: Fetches the put/call ratio and total positions
+export const getOptionsPositionSummary = (ticker: string): Promise<FmpOptionsPositionSummary[]> => {
+    // This uses the v4 endpoint.
+    return fetchFmp<FmpOptionsPositionSummary[]>(`/v4/option/positions/summary?symbol=${ticker}`);
 }
