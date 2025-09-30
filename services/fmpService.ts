@@ -48,7 +48,9 @@ export const getProfile = (ticker: string): Promise<FmpProfile[]> => {
 }
 
 export const getHistoricalData = (ticker: string): Promise<{ historical: FmpHistoricalData[] }> => {
-    return fetchFmp<{ historical: FmpHistoricalData[] }>(`/historical-price-full/${ticker}?serietype=line`);
+    const to = new Date().toISOString().split('T')[0];
+    const from = new Date(new Date().setFullYear(new Date().getFullYear() - 5)).toISOString().split('T')[0];
+    return fetchFmp<{ historical: FmpHistoricalData[] }>(`/historical-price-full/${ticker}?from=${from}&to=${to}&serietype=line`);
 }
 
 export const getNews = (ticker: string, limit: number = 20): Promise<FmpNews[]> => {

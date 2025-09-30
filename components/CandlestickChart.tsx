@@ -41,7 +41,7 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data }) => {
     });
 
     const candlestickData = data.map(item => ({
-      time: item.date,
+      time: new Date(item.date).getTime() / 1000,
       open: item.open,
       high: item.high,
       low: item.low,
