@@ -43,14 +43,27 @@ export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[])
     `;
 
     try {
-        const response: GenerateContentResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: sentimentAnalysisSchema,
-            },
-        });
+        let response: GenerateContentResponse | null = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: sentimentAnalysisSchema,
+                    },
+                });
+                break;
+            } catch (error) {
+                if (i < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } else {
+                    throw error;
+                }
+            }
+        }
+        if (!response) throw new Error("AI response was null");
         
         const jsonText = response.text.trim();
         const result = JSON.parse(jsonText) as AiAnalysis;
@@ -113,14 +126,28 @@ export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{sto
     `;
 
     try {
-        const response: GenerateContentResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: stockPickingSchema,
-            },
-        });
+        let response: GenerateContentResponse | null = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: stockPickingSchema,
+                    },
+                });
+                break;
+            } catch (error) {
+                if (i < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        if (!response) throw new Error("AI response was null");
 
         const jsonText = response.text.trim();
         return JSON.parse(jsonText) as {stocks: StockPick[]};
@@ -172,14 +199,28 @@ export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeState
     `;
 
     try {
-        const response: GenerateContentResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: financialStatementAnalysisSchema,
-            },
-        });
+        let response: GenerateContentResponse | null = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: financialStatementAnalysisSchema,
+                    },
+                });
+                break;
+            } catch (error) {
+                if (i < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        if (!response) throw new Error("AI response was null");
 
         const jsonText = response.text.trim();
         return JSON.parse(jsonText) as FinancialStatementAnalysis;
@@ -228,14 +269,28 @@ export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[]):
     `;
 
     try {
-        const response: GenerateContentResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: technicalAnalysisSchema,
-            },
-        });
+        let response: GenerateContentResponse | null = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: technicalAnalysisSchema,
+                    },
+                });
+                break;
+            } catch (error) {
+                if (i < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        if (!response) throw new Error("AI response was null");
 
         const jsonText = response.text.trim();
         return JSON.parse(jsonText) as TechnicalAnalysis;
@@ -291,14 +346,28 @@ export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<Portfo
     `;
 
     try {
-        const response: GenerateContentResponse = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: portfolioRiskAnalysisSchema,
-            },
-        });
+        let response: GenerateContentResponse | null = null;
+        for (let i = 0; i < 3; i++) {
+            try {
+                response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: portfolioRiskAnalysisSchema,
+                    },
+                });
+                break;
+            } catch (error) {
+                if (i < 2) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        if (!response) throw new Error("AI response was null");
 
         const jsonText = response.text.trim();
         return JSON.parse(jsonText) as PortfolioRiskAnalysis;

@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Brush, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
 import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis } from '../types';
@@ -9,6 +8,7 @@ import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
 import { BrainCircuitIcon } from './common/Icons';
+import CandlestickChart from './CandlestickChart';
 
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
@@ -175,27 +175,8 @@ const StockView: React.FC = () => {
             {activeTab === 'summary' && (
                 <>
                     <Card>
-                        <h2 className="text-xl font-bold mb-4">Price Chart (1Y)</h2>
-                        <ResponsiveContainer width="100%" height={400}>
-                            <AreaChart data={historicalData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                                <defs>
-                                    <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#1a73e8" stopOpacity={0.8}/>
-                                        <stop offset="95%" stopColor="#1a73e8" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.1)" />
-                                <XAxis dataKey="date" tick={{ fill: '#d0d0d0' }} />
-                                <YAxis tickFormatter={(value) => formatCurrency(Number(value))} domain={['dataMin', 'dataMax']} tick={{ fill: '#d0d0d0' }} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#2a2a2a', border: '1px solid #3c3c3c' }}
-                                    labelStyle={{ color: '#d0d0d0' }}
-                                    formatter={(value) => [formatCurrency(Number(value)), 'Price']}
-                                />
-                                <Area type="monotone" dataKey="close" stroke="#1a73e8" fillOpacity={1} fill="url(#colorUv)" activeDot={{ r: 8 }} />
-                                <Brush dataKey="date" height={30} stroke="#1a73e8" />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                        <h2 className="text-xl font-bold mb-4">Price Chart</h2>
+                        <CandlestickChart data={historicalData} />
                     </Card>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -279,13 +260,17 @@ const StockView: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {analystRatings.map((rating, index) => (
+                                {analystRatings.length > 0 ? analystRatings.map((rating, index) => (
                                     <tr key={index} className="border-b border-night-700 hover:bg-night-700">
                                         <td className="p-3">{rating.date}</td>
-                                        <td className="p-3 font-bold">{rating.rating}</td>
-                                        <td className="p-3">{rating.ratingRecommendation}</td>
+                                        <td className="p-3 font-bold">{rating.rating || 'N/A'}</td>
+                                        <td className="p-3">{rating.ratingRecommendation || 'N/A'}</td>
                                     </tr>
-                                ))}
+                                )) : (
+                                    <tr>
+                                        <td colSpan={3} className="text-center p-6 text-night-500">No analyst ratings available for this stock.</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -307,7 +292,7 @@ const StockView: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {insiderTrades.map((trade, index) => (
+                                {insiderTrades.length > 0 ? insiderTrades.map((trade, index) => (
                                     <tr key={index} className="border-b border-night-700 hover:bg-night-700">
                                         <td className="p-3">{trade.transactionDate}</td>
                                         <td className="p-3">{trade.reportingName}</td>
@@ -315,7 +300,11 @@ const StockView: React.FC = () => {
                                         <td className="p-3">{formatNumber(trade.securitiesTransacted)}</td>
                                         <td className="p-3">{formatCurrency(trade.price)}</td>
                                     </tr>
-                                ))}
+                                )) : (
+                                    <tr>
+                                        <td colSpan={5} className="text-center p-6 text-night-500">No insider trades reported for this stock.</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
