@@ -14,6 +14,7 @@ const StockPicker: React.FC = () => {
         risk: 'medium',
         strategy: 'growth',
         sectors: [],
+        stockCount: 'few',
     });
     const [stockPicks, setStockPicks] = useState<StockPick[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -106,9 +107,22 @@ const StockPicker: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Number of Stocks */}
+                    <div>
+                        <label className="block text-lg font-bold mb-2">3. How many stock picks would you like?</label>
+                        <div className="flex gap-4">
+                            {(['few', 'several', 'many'] as const).map(count => (
+                                <button type="button" key={count} onClick={() => handleAnswerChange('stockCount', count)}
+                                    className={`px-4 py-2 rounded-md transition-colors ${answers.stockCount === count ? 'bg-brand-blue text-white' : 'bg-night-700 hover:bg-night-600'}`}>
+                                    {count.charAt(0).toUpperCase() + count.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Preferred Sectors */}
                     <div>
-                        <label className="block text-lg font-bold mb-2">3. Any preferred sectors? (Optional)</label>
+                        <label className="block text-lg font-bold mb-2">4. Any preferred sectors? (Optional)</label>
                         <div className="flex flex-wrap gap-3">
                             {sectors.map(sector => (
                                 <button type="button" key={sector} onClick={() => handleSectorChange(sector)}

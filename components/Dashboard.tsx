@@ -2,18 +2,21 @@ import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../hooks/usePortfolio';
 import * as fmpService from '../services/fmpService';
-import type { FmpSearchResult } from '../types';
+import * as geminiService from '../services/geminiService';
+import type { FmpSearchResult, PortfolioRiskAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
-import { SearchIcon, TrendingUpIcon, DollarSignIcon, BriefcaseIcon } from './common/Icons';
+import { SearchIcon, TrendingUpIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
 
 const Dashboard: React.FC = () => {
     const { portfolio, totalValue, isLoading: isPortfolioLoading } = usePortfolio();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
-    const [searchAttempted, setSearchAttempted] = useState(false); // New state to track searches
+    const [searchAttempted, setSearchAttempted] = useState(false);
+    const [portfolioAnalysis, setPortfolioAnalysis] = useState<PortfolioRiskAnalysis | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     const handleSearch = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -23,10 +26,10 @@ const Dashboard: React.FC = () => {
             return;
         }
         setIsSearching(true);
-        setSearchAttempted(true); // Mark that a search was performed
+        setSearchAttempted(true);
         try {
             const results = await fmpService.searchStocks(searchQuery);
-            setSearchResults(results.slice(0, 5)); // Limit to 5 results
+            setSearchResults(results.slice(0, 5));
         } catch (error) {
             console.error("Search failed:", error);
             alert("Failed to search for stocks.");
@@ -35,6 +38,20 @@ const Dashboard: React.FC = () => {
             setIsSearching(false);
         }
     }, [searchQuery]);
+
+    const handlePortfolioAnalysis = useCallback(async () => {
+        setIsAnalyzing(true);
+        setPortfolioAnalysis(null);
+        try {
+            const analysis = await geminiService.analyzePortfolioRisk(portfolio);
+            setPortfolioAnalysis(analysis);
+        } catch (error) {
+            console.error("Portfolio analysis failed:", error);
+            alert("The AI portfolio analysis could not be completed.");
+        } finally {
+            setIsAnalyzing(false);
+        }
+    }, [portfolio]);
     
     const holdingsValue = totalValue - portfolio.cash;
     const totalGain = totalValue - portfolio.initialValue;
@@ -82,6 +99,27 @@ const Dashboard: React.FC = () => {
                             </li>
                         ))}
                     </ul>
+                )}
+            </Card>
+
+            {/* AI Portfolio Risk Analysis */}
+            <Card>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
+                    <button onClick={handlePortfolioAnalysis} disabled={isAnalyzing} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                        {isAnalyzing ? 'Analyzing...' : 'Run Risk Analysis'}
+                    </button>
+                </div>
+                {isAnalyzing && <Spinner />}
+                {portfolioAnalysis && (
+                    <div className="bg-night-700 p-4 rounded-lg">
+                        <h3 className="text-lg font-bold">Risk Level: <span className="text-brand-blue">{portfolioAnalysis.riskLevel}</span></h3>
+                        <p className="text-night-100 mt-2">Highest Sector Concentration: <span className="font-bold">{portfolioAnalysis.concentration.highestSector} ({formatPercentage(portfolioAnalysis.concentration.percentage)})</span></p>
+                        <h3 className="text-lg font-bold mt-4">Suggestions</h3>
+                        <ul className="list-disc list-inside text-night-100">
+                            {portfolioAnalysis.suggestions.map((item, index) => <li key={index}>{item}</li>)}
+                        </ul>
+                    </div>
                 )}
             </Card>
 

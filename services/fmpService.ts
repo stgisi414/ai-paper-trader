@@ -1,5 +1,5 @@
 import { FMP_BASE_URL, FMP_API_KEY } from '../constants';
-import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews, FmpOptionChain, FmpOptionsPositionSummary } from '../types';
+import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews, FmpOptionChain, FmpOptionsPositionSummary, FmpAnalystRating, FmpPriceTarget, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading } from '../types';
 
 const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
     if (!FMP_API_KEY) {
@@ -65,4 +65,34 @@ export const getOptionChain = (ticker: string): Promise<FmpOptionChain[]> => {
 export const getOptionsPositionSummary = (ticker: string): Promise<FmpOptionsPositionSummary[]> => {
     // This uses the v4 endpoint.
     return fetchFmp<FmpOptionsPositionSummary[]>(`/v4/option/positions/summary?symbol=${ticker}`);
+}
+
+// NEW: Fetches analyst ratings for a given stock
+export const getAnalystRatings = (ticker: string): Promise<FmpAnalystRating[]> => {
+    return fetchFmp<FmpAnalystRating[]>(`/analyst-stock-recommendations/${ticker}`);
+}
+
+// NEW: Fetches price targets for a given stock
+export const getPriceTargets = (ticker: string): Promise<FmpPriceTarget[]> => {
+    return fetchFmp<FmpPriceTarget[]>(`/price-target/${ticker}`);
+}
+
+// NEW: Fetches the income statement for a given stock
+export const getIncomeStatement = (ticker: string): Promise<FmpIncomeStatement[]> => {
+    return fetchFmp<FmpIncomeStatement[]>(`/income-statement/${ticker}?period=annual`);
+}
+
+// NEW: Fetches the balance sheet for a given stock
+export const getBalanceSheet = (ticker: string): Promise<FmpBalanceSheet[]> => {
+    return fetchFmp<FmpBalanceSheet[]>(`/balance-sheet-statement/${ticker}?period=annual`);
+}
+
+// NEW: Fetches the cash flow statement for a given stock
+export const getCashFlowStatement = (ticker: string): Promise<FmpCashFlowStatement[]> => {
+    return fetchFmp<FmpCashFlowStatement[]>(`/cash-flow-statement/${ticker}?period=annual`);
+}
+
+// NEW: Fetches insider trading information for a given stock
+export const getInsiderTrading = (ticker: string): Promise<FmpInsiderTrading[]> => {
+    return fetchFmp<FmpInsiderTrading[]>(`/insider-trading?symbol=${ticker}&limit=20`);
 }

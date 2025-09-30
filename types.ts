@@ -130,4 +130,184 @@ export interface QuestionnaireAnswers {
   risk: 'low' | 'medium' | 'high';
   strategy: 'growth' | 'value' | 'dividends' | 'undervalued';
   sectors: string[];
+  stockCount: 'few' | 'several' | 'many';
+}
+
+export interface FmpAnalystRating {
+    symbol: string;
+    date: string;
+    rating: string;
+    ratingScore: number;
+    ratingRecommendation: string;
+}
+
+export interface FmpPriceTarget {
+    symbol: string;
+    pubDate: string;
+    analystName: string;
+    priceTarget: number;
+}
+
+export interface FmpIncomeStatement {
+    date: string;
+    symbol: string;
+    reportedCurrency: string;
+    revenue: number;
+    costOfRevenue: number;
+    grossProfit: number;
+    grossProfitRatio: number;
+    researchAndDevelopmentExpenses: number;
+    generalAndAdministrativeExpenses: number;
+    sellingAndMarketingExpenses: number;
+    sellingGeneralAndAdministrativeExpenses: number;
+    otherExpenses: number;
+    operatingExpenses: number;
+    costAndExpenses: number;
+    interestIncome: number;
+    interestExpense: number;
+    depreciationAndAmortization: number;
+    ebitda: number;
+    ebitdaratio: number;
+    operatingIncome: number;
+    operatingIncomeRatio: number;
+    totalOtherIncomeExpensesNet: number;
+    incomeBeforeTax: number;
+    incomeBeforeTaxRatio: number;
+    incomeTaxExpense: number;
+    netIncome: number;
+    netIncomeRatio: number;
+    eps: number;
+    epsdiluted: number;
+    weightedAverageShsOut: number;
+    weightedAverageShsOutDil: number;
+    link: string;
+    finalLink: string;
+}
+
+export interface FmpBalanceSheet {
+    date: string;
+    symbol: string;
+    reportedCurrency: string;
+    cashAndCashEquivalents: number;
+    shortTermInvestments: number;
+    cashAndShortTermInvestments: number;
+    netReceivables: number;
+    inventory: number;
+    otherCurrentAssets: number;
+    totalCurrentAssets: number;
+    propertyPlantEquipmentNet: number;
+    goodwill: number;
+    intangibleAssets: number;
+    goodwillAndIntangibleAssets: number;
+    longTermInvestments: number;
+    taxAssets: number;
+    otherNonCurrentAssets: number;
+    totalNonCurrentAssets: number;
+    otherAssets: number;
+    totalAssets: number;
+    accountPayables: number;
+    shortTermDebt: number;
+    taxPayables: number;
+    deferredRevenue: number;
+    otherCurrentLiabilities: number;
+    totalCurrentLiabilities: number;
+    longTermDebt: number;
+    deferredRevenueNonCurrent: number;
+    deferredTaxLiabilitiesNonCurrent: number;
+    otherNonCurrentLiabilities: number;
+    totalNonCurrentLiabilities: number;
+    otherLiabilities: number;
+    capitalLeaseObligations: number;
+    totalLiabilities: number;
+    preferredStock: number;
+    commonStock: number;
+    retainedEarnings: number;
+    accumulatedOtherComprehensiveIncomeLoss: number;
+    othertotalStockholdersEquity: number;
+    totalStockholdersEquity: number;
+    totalLiabilitiesAndStockholdersEquity: number;
+    minorityInterest: number;
+    totalEquity: number;
+    totalLiabilitiesAndTotalEquity: number;
+    totalInvestments: number;
+    totalDebt: number;
+    netDebt: number;
+    link: string;
+    finalLink: string;
+}
+
+export interface FmpCashFlowStatement {
+    date: string;
+    symbol: string;
+    reportedCurrency: string;
+    netIncome: number;
+    depreciationAndAmortization: number;
+    deferredIncomeTax: number;
+    stockBasedCompensation: number;
+    changeInWorkingCapital: number;
+    accountsReceivables: number;
+    inventory: number;
+    accountsPayables: number;
+    otherWorkingCapital: number;
+    otherNonCashItems: number;
+    netCashProvidedByOperatingActivities: number;
+    investmentsInPropertyPlantAndEquipment: number;
+    acquisitionsNet: number;
+    purchasesOfInvestments: number;
+    salesMaturitiesOfInvestments: number;
+    otherInvestingActivites: number;
+    netCashUsedForInvestingActivites: number;
+    debtRepayment: number;
+    commonStockIssued: number;
+    commonStockRepurchased: number;
+    dividendsPaid: number;
+    otherFinancingActivites: number;
+    netCashUsedProvidedByFinancingActivities: number;
+    effectOfForexChangesOnCash: number;
+    netChangeInCash: number;
+    cashAtEndOfPeriod: number;
+    cashAtBeginningOfPeriod: number;
+    operatingCashFlow: number;
+    capitalExpenditure: number;
+    freeCashFlow: number;
+    link: string;
+    finalLink: string;
+}
+
+export interface FmpInsiderTrading {
+    symbol: string;
+    filingDate: string;
+    transactionDate: string;
+    reportingCik: string;
+    reportingName: string;
+    formType: string;
+    transactionType: string;
+    securitiesOwned: number;
+    companyCik: string;
+    securitiesTransacted: number;
+    price: number;
+    securityName: string;
+    link: string;
+}
+
+export interface FinancialStatementAnalysis {
+    strengths: string[];
+    weaknesses: string[];
+    summary: string;
+}
+
+export interface TechnicalAnalysis {
+    trend: 'Uptrend' | 'Downtrend' | 'Sideways';
+    support: number;
+    resistance: number;
+    summary: string;
+}
+
+export interface PortfolioRiskAnalysis {
+    riskLevel: 'Low' | 'Medium' | 'High';
+    concentration: {
+        highestSector: string;
+        percentage: number;
+    };
+    suggestions: string[];
 }

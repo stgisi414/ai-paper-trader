@@ -1,7 +1,6 @@
-
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GEMINI_API_KEY } from '../constants';
-import type { AiAnalysis, FmpNews } from '../types';
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis } from '../types';
 
 if (!GEMINI_API_KEY) {
     console.error("Gemini API key is not configured.");
@@ -93,9 +92,16 @@ export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{sto
         throw new Error("Gemini API key not set.");
     }
 
-    const { risk, strategy, sectors } = answers;
+    const { risk, strategy, sectors, stockCount } = answers;
+    const stockCountMap = {
+        few: '3 to 5',
+        several: '5 to 8',
+        many: '8 to 12'
+    };
+    const numberOfStocks = stockCountMap[stockCount];
+
     const prompt = `
-        Based on the following investment preferences, recommend 3 to 5 stocks.
+        Based on the following investment preferences, recommend ${numberOfStocks} stocks.
         The output must be a JSON object matching the provided schema.
 
         - Risk Tolerance: ${risk}
@@ -124,3 +130,181 @@ export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{sto
         throw new Error("Failed to get AI stock picks.");
     }
 };
+
+const financialStatementAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        strengths: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "A list of financial strengths."
+        },
+        weaknesses: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "A list of financial weaknesses."
+        },
+        summary: {
+            type: Type.STRING,
+            description: "A 2-3 sentence summary of the financial health of the company."
+        }
+    },
+    required: ["strengths", "weaknesses", "summary"]
+};
+
+export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeStatement, balanceSheet: FmpBalanceSheet, cashFlow: FmpCashFlowStatement): Promise<FinancialStatementAnalysis> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const prompt = `
+        Analyze the following financial statements and provide a summary of the company's financial health.
+        The output must be a JSON object matching the provided schema.
+
+        Income Statement:
+        ${JSON.stringify(incomeStatement)}
+
+        Balance Sheet:
+        ${JSON.stringify(balanceSheet)}
+
+        Cash Flow Statement:
+        ${JSON.stringify(cashFlow)}
+    `;
+
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: financialStatementAnalysisSchema,
+            },
+        });
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as FinancialStatementAnalysis;
+
+    } catch (error) {
+        console.error("Error analyzing financial statements with Gemini:", error);
+        throw new Error("Failed to get AI financial analysis.");
+    }
+}
+
+const technicalAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        trend: {
+            type: Type.STRING,
+            enum: ['Uptrend', 'Downtrend', 'Sideways'],
+            description: "The current trend of the stock."
+        },
+        support: {
+            type: Type.NUMBER,
+            description: "The support level for the stock."
+        },
+        resistance: {
+            type: Type.NUMBER,
+            description: "The resistance level for the stock."
+        },
+        summary: {
+            type: Type.STRING,
+            description: "A 2-3 sentence summary of the technical analysis."
+        }
+    },
+    required: ["trend", "support", "resistance", "summary"]
+};
+
+export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[]): Promise<TechnicalAnalysis> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const prompt = `
+        Analyze the following historical price data and provide a technical analysis.
+        The output must be a JSON object matching the provided schema.
+
+        Historical Data:
+        ${JSON.stringify(historicalData)}
+    `;
+
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: technicalAnalysisSchema,
+            },
+        });
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as TechnicalAnalysis;
+
+    } catch (error) {
+        console.error("Error getting technical analysis from Gemini:", error);
+        throw new Error("Failed to get AI technical analysis.");
+    }
+}
+
+const portfolioRiskAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        riskLevel: {
+            type: Type.STRING,
+            enum: ['Low', 'Medium', 'High'],
+            description: "The overall risk level of the portfolio."
+        },
+        concentration: {
+            type: Type.OBJECT,
+            properties: {
+                highestSector: {
+                    type: Type.STRING,
+                    description: "The sector with the highest concentration."
+                },
+                percentage: {
+                    type: Type.NUMBER,
+                    description: "The percentage of the portfolio in the highest sector."
+                }
+            },
+            required: ["highestSector", "percentage"]
+        },
+        suggestions: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "A list of suggestions to improve the portfolio's risk profile."
+        }
+    },
+    required: ["riskLevel", "concentration", "suggestions"]
+};
+
+export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<PortfolioRiskAnalysis> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const prompt = `
+        Analyze the following portfolio and provide a risk analysis.
+        The output must be a JSON object matching the provided schema.
+
+        Portfolio:
+        ${JSON.stringify(portfolio)}
+    `;
+
+    try {
+        const response: GenerateContentResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: portfolioRiskAnalysisSchema,
+            },
+        });
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as PortfolioRiskAnalysis;
+
+    } catch (error) {
+        console.error("Error analyzing portfolio risk with Gemini:", error);
+        throw new Error("Failed to get AI portfolio risk analysis.");
+    }
+}
