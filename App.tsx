@@ -36,7 +36,7 @@ const App: React.FC = () => {
                     </main>
                      <footer className="text-center p-4 text-night-500 text-xs border-t border-night-800 mt-8">
                         <p>Disclaimer: This is a paper trading application for educational purposes only. Not financial advice.</p>
-                        <p>&copy; 2024 AI Paper Trader. Market data provided by Financial Modeling Prep.</p>
+                        <p>&copy; 2025 AI Paper Trader. Market data provided by Financial Modeling Prep.</p>
                     </footer>
                 </div>
             </HashRouter>
