@@ -2,8 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
-import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis } from '../types';
-import { usePortfolio } from '../hooks/usePortfolio';
+import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec } from '../types';import { usePortfolio } from '../hooks/usePortfolio';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
@@ -17,6 +16,7 @@ const StockView: React.FC = () => {
     const [quote, setQuote] = useState<FmpQuote | null>(null);
     const [profile, setProfile] = useState<FmpProfile | null>(null);
     const [historicalData, setHistoricalData] = useState<FmpHistoricalData[]>([]);
+    const [chartInterval, setChartInterval] = useState('1day');
     const [news, setNews] = useState<FmpNews[]>([]);
     const [aiAnalysis, setAiAnalysis] = useState<AiAnalysis | null>(null);
     const [analystRatings, setAnalystRatings] = useState<FmpAnalystRating[]>([]);
@@ -26,6 +26,7 @@ const StockView: React.FC = () => {
     const [insiderTrades, setInsiderTrades] = useState<FmpInsiderTrading[]>([]);
     const [financialStatementAnalysis, setFinancialStatementAnalysis] = useState<FinancialStatementAnalysis | null>(null);
     const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
+    const [combinedRec, setCombinedRec] = useState<CombinedRec | null>(null);
     
     const [isLoading, setIsLoading] = useState(true);
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -40,7 +41,7 @@ const StockView: React.FC = () => {
                 const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
-                    fmpService.getHistoricalData(ticker),
+                    fmpService.getHistoricalData(ticker, chartInterval),
                     fmpService.getNews(ticker, 10),
                     fmpService.getAnalystRatings(ticker),
                     fmpService.getIncomeStatement(ticker),
@@ -48,9 +49,15 @@ const StockView: React.FC = () => {
                     fmpService.getCashFlowStatement(ticker),
                     fmpService.getInsiderTrading(ticker),
                 ]);
+
+                console.log("Analyst Ratings Data from API:", ratingsData);
+                console.log("Insider Trading Data from API:", insiderTradingData);
+
                 setQuote(quoteData[0] || null);
                 setProfile(profileData[0] || null);
-                setHistoricalData(historyData.historical.reverse());
+                // Correctly handle both data structures
+                const historical = historyData.historical ? historyData.historical.reverse() : (historyData as any);
+                setHistoricalData(historical);
                 setNews(newsData);
                 setAnalystRatings(ratingsData);
                 setIncomeStatement(incomeData[0] || null);
@@ -65,7 +72,7 @@ const StockView: React.FC = () => {
             }
         };
         fetchData();
-    }, [ticker]);
+    }, [ticker, chartInterval]);
 
     const handleAiAnalysis = useCallback(async () => {
         if (!profile || news.length === 0) return;
@@ -112,6 +119,30 @@ const StockView: React.FC = () => {
         }
     }, [historicalData]);
 
+    const handleAdvancedRecommendations = useCallback(async () => {
+        if (!profile || historicalData.length === 0 || analystRatings.length === 0) {
+            alert("Not enough data to generate a recommendation. Please ensure all data has loaded.");
+            return;
+        }
+        setIsAiLoading(true);
+        setCombinedRec(null);
+        try {
+            // Step 1: Get the Technical Analysis first
+            const technicals = await geminiService.getTechnicalAnalysis(historicalData);
+            setTechnicalAnalysis(technicals); // Also update the technical analysis tab state
+
+            // Step 2: Feed everything into the new combined recommendation function
+            const recommendation = await geminiService.getCombinedRecommendations(profile, analystRatings, technicals);
+            setCombinedRec(recommendation);
+
+        } catch (error) {
+            console.error("AI Advanced Recommendations failed:", error);
+            alert("The AI advanced recommendations could not be completed.");
+        } finally {
+            setIsAiLoading(false);
+        }
+    }, [profile, historicalData, analystRatings]);
+
     const handleBuy = () => {
         if (quote && profile && tradeShares > 0) {
             buyStock(quote.symbol, profile.companyName, tradeShares, quote.price);
@@ -142,10 +173,12 @@ const StockView: React.FC = () => {
         <div className="border-b border-night-700 mb-6">
             <nav className="-mb-px flex space-x-8" aria-label="Tabs">
                 <button onClick={() => setActiveTab('summary')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'summary' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Summary</button>
+                <button onClick={() => setActiveTab('news')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'news' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>News</button>
                 <button onClick={() => setActiveTab('financials')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'financials' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Financials</button>
                 <button onClick={() => setActiveTab('ratings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'ratings' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Analyst Ratings</button>
                 <button onClick={() => setActiveTab('insider')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'insider' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Insider Trades</button>
                 <button onClick={() => setActiveTab('technical')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'technical' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>AI Technical Analysis</button>
+                <button onClick={() => setActiveTab('advanced')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'advanced' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Advanced Recs</button>
             </nav>
         </div>
     );
@@ -175,7 +208,21 @@ const StockView: React.FC = () => {
             {activeTab === 'summary' && (
                 <>
                     <Card>
-                        <h2 className="text-xl font-bold mb-4">Price Chart</h2>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">Price Chart</h2>
+                            <select
+                                value={chartInterval}
+                                onChange={(e) => setChartInterval(e.target.value)}
+                                className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none"
+                            >
+                                <option value="15min">15 Minute</option>
+                                <option value="1hour">1 Hour</option>
+                                <option value="4hour">4 Hour</option>
+                                <option value="1day">1 Day</option>
+                                <option value="1week">1 Week</option>
+                                <option value="1month">1 Month</option>
+                            </select>
+                        </div>
                         <CandlestickChart data={historicalData} />
                     </Card>
 
@@ -221,6 +268,40 @@ const StockView: React.FC = () => {
                     </div>
                 </>
             )}
+
+            {activeTab === 'news' && (
+                <Card>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold">Latest News</h2>
+                        <button onClick={handleAiAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                            {isAiLoading ? 'Analyzing...' : 'Run AI Sentiment Analysis'}
+                        </button>
+                    </div>
+                    {isAiLoading && <Spinner />}
+                    {aiAnalysis && (
+                        <div className="bg-night-700 p-4 rounded-lg mb-6">
+                            <h3 className="text-lg font-bold">AI Sentiment: <span className="text-brand-blue">{aiAnalysis.sentiment}</span> (Confidence: {formatPercentage(aiAnalysis.confidenceScore * 100)})</h3>
+                            <p className="mt-2 text-night-100">{aiAnalysis.summary}</p>
+                        </div>
+                    )}
+                    <div className="space-y-4">
+                        {news.length > 0 ? news.map((article, index) => (
+                            <a href={article.url} key={index} target="_blank" rel="noopener noreferrer" className="block bg-night-700 p-4 rounded-lg hover:bg-night-600 transition-colors">
+                                <div className="flex items-start gap-4">
+                                    {article.image && <img src={article.image} alt={article.title} className="w-24 h-24 object-cover rounded-md"/>}
+                                    <div>
+                                        <h3 className="font-bold text-lg">{article.title}</h3>
+                                        <p className="text-sm text-night-500 mt-1">{new Date(article.publishedDate).toLocaleString()}</p>
+                                        <p className="text-sm text-night-100 mt-2 line-clamp-2">{article.text}</p>
+                                    </div>
+                                </div>
+                            </a>
+                        )) : (
+                            <p className="text-center text-night-500">No news available for this stock.</p>
+                        )}
+                    </div>
+                </Card>
+            )}
             
             {activeTab === 'financials' && (
                 <Card>
@@ -255,20 +336,26 @@ const StockView: React.FC = () => {
                             <thead className="border-b border-night-600">
                                 <tr>
                                     <th className="p-3">Date</th>
-                                    <th className="p-3">Rating</th>
-                                    <th className="p-3">Recommendation</th>
+                                    <th className="p-3 text-brand-green">Buy</th>
+                                    <th className="p-3">Hold</th>
+                                    <th className="p-3 text-brand-red">Sell</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {analystRatings.length > 0 ? analystRatings.map((rating, index) => (
-                                    <tr key={index} className="border-b border-night-700 hover:bg-night-700">
-                                        <td className="p-3">{rating.date}</td>
-                                        <td className="p-3 font-bold">{rating.rating || 'N/A'}</td>
-                                        <td className="p-3">{rating.ratingRecommendation || 'N/A'}</td>
-                                    </tr>
-                                )) : (
+                                {analystRatings.length > 0 ? analystRatings.map((rating, index) => {
+                                    const totalBuy = (rating.analystRatingsBuy || 0) + (rating.analystRatingsStrongBuy || 0);
+                                    const totalSell = (rating.analystRatingsSell || 0) + (rating.analystRatingsStrongSell || 0);
+                                    return (
+                                        <tr key={index} className="border-b border-night-700 hover:bg-night-700">
+                                            <td className="p-3">{rating.date}</td>
+                                            <td className="p-3 font-bold text-brand-green">{totalBuy}</td>
+                                            <td className="p-3 font-bold">{rating.analystRatingsHold || 0}</td>
+                                            <td className="p-3 font-bold text-brand-red">{totalSell}</td>
+                                        </tr>
+                                    )
+                                }) : (
                                     <tr>
-                                        <td colSpan={3} className="text-center p-6 text-night-500">No analyst ratings available for this stock.</td>
+                                        <td colSpan={4} className="text-center p-6 text-night-500">No analyst ratings available for this stock.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -326,6 +413,45 @@ const StockView: React.FC = () => {
                             <p className="text-night-100 mt-2">Support: <span className="font-bold">{formatCurrency(technicalAnalysis.support)}</span></p>
                             <p className="text-night-100">Resistance: <span className="font-bold">{formatCurrency(technicalAnalysis.resistance)}</span></p>
                             <p className="mt-4 text-night-100">{technicalAnalysis.summary}</p>
+                        </div>
+                    )}
+                </Card>
+            )}
+
+            {activeTab === 'advanced' && (
+                <Card>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Synthesized Strategy</h2>
+                        <button onClick={handleAdvancedRecommendations} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                            {isAiLoading ? 'Analyzing...' : 'Generate Strategy'}
+                        </button>
+                    </div>
+                    {isAiLoading && <Spinner />}
+                    {combinedRec && (
+                        <div className="bg-night-700 p-4 rounded-lg">
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <h3 className="text-sm text-night-500 font-bold">Overall Sentiment</h3>
+                                    <p className={`text-xl font-bold ${
+                                        combinedRec.sentiment === 'BULLISH' ? 'text-brand-green' :
+                                        combinedRec.sentiment === 'BEARISH' ? 'text-brand-red' : 'text-night-100'
+                                    }`}>{combinedRec.sentiment}</p>
+                                </div>
+                                <div>
+                                    <h3 className="text-sm text-night-500 font-bold">Confidence</h3>
+                                    <p className="text-xl font-bold">{combinedRec.confidence}</p>
+                                </div>
+                            </div>
+
+                            <div className="border-t border-night-600 pt-4">
+                                <h3 className="text-lg font-bold">Suggested Strategy</h3>
+                                <p className="mt-1 text-night-100">{combinedRec.strategy}</p>
+                            </div>
+
+                             <div className="mt-4 border-t border-night-600 pt-4">
+                                <h3 className="text-lg font-bold">Justification</h3>
+                                <p className="mt-1 text-night-100 text-sm">{combinedRec.justification}</p>
+                            </div>
                         </div>
                     )}
                 </Card>

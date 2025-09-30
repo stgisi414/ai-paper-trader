@@ -136,9 +136,11 @@ export interface QuestionnaireAnswers {
 export interface FmpAnalystRating {
     symbol: string;
     date: string;
-    rating: string;
-    ratingScore: number;
-    ratingRecommendation: string;
+    analystRatingsBuy: number;
+    analystRatingsHold: number;
+    analystRatingsSell: number;
+    analystRatingsStrongBuy: number;
+    analystRatingsStrongSell: number;
 }
 
 export interface FmpPriceTarget {
@@ -279,11 +281,13 @@ export interface FmpInsiderTrading {
     filingDate: string;
     transactionDate: string;
     reportingCik: string;
-    reportingName: string;
-    formType: string;
     transactionType: string;
     securitiesOwned: number;
     companyCik: string;
+    reportingName: string;
+    typeOfOwner: string;
+    acquistionOrDisposition: 'A' | 'D' | ''; // Can be an empty string
+    formType: string;
     securitiesTransacted: number;
     price: number;
     securityName: string;
@@ -310,4 +314,11 @@ export interface PortfolioRiskAnalysis {
         percentage: number;
     };
     suggestions: string[];
+}
+
+export interface CombinedRec {
+    sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    confidence: 'High' | 'Medium' | 'Low';
+    strategy: string;
+    justification: string;
 }

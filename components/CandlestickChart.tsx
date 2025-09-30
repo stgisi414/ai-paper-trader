@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import type { FmpHistoricalData } from '../types';
-import { createChart, ColorType } from 'lightweight-charts';
+import { createChart, ColorType, UTCTimestamp } from 'lightweight-charts';
 
 interface CandlestickChartProps {
   data: FmpHistoricalData[];
@@ -25,9 +25,11 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data }) => {
         height: 400,
         timeScale: {
             borderColor: '#3c3c3c',
+            timeVisible: true, // Make sure time is visible on the timescale
         },
         rightPriceScale: {
             borderColor: '#3c3c3c',
+            autoScale: true,
         },
     });
 
@@ -40,12 +42,13 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data }) => {
       wickUpColor: '#1e8e3e',
     });
 
+    // This now correctly handles both date and date-time strings
     const candlestickData = data.map(item => ({
-      time: new Date(item.date).getTime() / 1000,
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
+      time: (new Date(item.date).getTime() / 1000) as UTCTimestamp,
+      open: parseFloat(item.open as any),
+      high: parseFloat(item.high as any),
+      low: parseFloat(item.low as any),
+      close: parseFloat(item.close as any),
     }));
 
     candlestickSeries.setData(candlestickData);

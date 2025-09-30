@@ -377,3 +377,68 @@ export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<Portfo
         throw new Error("Failed to get AI portfolio risk analysis.");
     }
 }
+
+const combinedRecSchema = {
+    type: Type.OBJECT,
+    properties: {
+        sentiment: {
+            type: Type.STRING,
+            enum: ["BULLISH", "BEARISH", "NEUTRAL"],
+            description: "The overall synthesized sentiment for the stock based on all provided data."
+        },
+        confidence: {
+            type: Type.STRING,
+            enum: ["High", "Medium", "Low"],
+            description: "The AI's confidence level in its sentiment assessment."
+        },
+        strategy: {
+            type: Type.STRING,
+            description: "A 2-3 sentence summary of a potential trading strategy (e.g., buying calls, writing covered calls, buying puts) based on the analysis. This should be a general strategy, not a specific contract."
+        },
+        justification: {
+            type: Type.STRING,
+            description: "A detailed 3-4 sentence explanation of why this strategy is recommended, referencing the technical, fundamental, and analyst data provided."
+        }
+    },
+    required: ["sentiment", "confidence", "strategy", "justification"]
+};
+
+export const getCombinedRecommendations = async (
+    profile: FmpProfile,
+    ratings: FmpAnalystRating[],
+    technicals: TechnicalAnalysis
+): Promise<any> => { // Using 'any' for now as we'll define the new type next
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const prompt = `
+        Analyze the following data for ${profile.companyName} (${profile.symbol}) to generate an advanced trading recommendation.
+        1.  **Fundamental Data**: ${profile.description}
+        2.  **Analyst Ratings Summary**: ${JSON.stringify(ratings)}
+        3.  **AI Technical Analysis**: Trend is ${technicals.trend}, Support is at ${technicals.support}, Resistance is at ${technicals.resistance}. Summary: ${technicals.summary}
+
+        Based on a synthesis of all three data points, provide an overall sentiment, a confidence level, a potential options strategy, and a detailed justification.
+        The output must be a JSON object matching the provided schema.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: combinedRecSchema,
+            },
+        });
+
+        if (!response) throw new Error("AI response was null");
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText);
+
+    } catch (error) {
+        console.error("Error getting combined recommendations from Gemini:", error);
+        throw new Error("Failed to get AI combined recommendations.");
+    }
+};

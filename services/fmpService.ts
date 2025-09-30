@@ -47,10 +47,26 @@ export const getProfile = (ticker: string): Promise<FmpProfile[]> => {
     return fetchFmp<FmpProfile[]>(`/profile/${ticker}`);
 }
 
-export const getHistoricalData = (ticker: string): Promise<{ historical: FmpHistoricalData[] }> => {
+export const getHistoricalData = (ticker: string, interval: string = '1day'): Promise<{ historical: FmpHistoricalData[] }> => {
+    if (['15min', '1hour', '4hour'].includes(interval)) {
+        // Use the intraday endpoint for these intervals
+        return fetchFmp<FmpHistoricalData[]>(`/historical-chart/${interval}/${ticker}`).then(data => ({ historical: data }));
+    }
+
+    // For daily, weekly, and monthly views, we'll fetch daily data over different time ranges.
     const to = new Date().toISOString().split('T')[0];
-    const from = new Date(new Date().setFullYear(new Date().getFullYear() - 5)).toISOString().split('T')[0];
-    return fetchFmp<{ historical: FmpHistoricalData[] }>(`/historical-price-full/${ticker}?from=${from}&to=${to}&serietype=line`);
+    let from;
+    if (interval === '1week') {
+        // Fetch 2 years of daily data for the "weekly" view
+        from = new Date(new Date().setFullYear(new Date().getFullYear() - 2)).toISOString().split('T')[0];
+    } else if (interval === '1month') {
+        // Fetch 5 years of daily data for the "monthly" view
+        from = new Date(new Date().setFullYear(new Date().getFullYear() - 5)).toISOString().split('T')[0];
+    } else { // '1day'
+        // Fetch 1 year of daily data for the "daily" view
+        from = new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString().split('T')[0];
+    }
+    return fetchFmp<{ historical: FmpHistoricalData[] }>(`/historical-price-full/${ticker}?from=${from}&to=${to}`);
 }
 
 export const getNews = (ticker: string, limit: number = 20): Promise<FmpNews[]> => {
@@ -96,5 +112,9 @@ export const getCashFlowStatement = (ticker: string): Promise<FmpCashFlowStateme
 
 // NEW: Fetches insider trading information for a given stock
 export const getInsiderTrading = (ticker: string): Promise<FmpInsiderTrading[]> => {
-    return fetchFmp<FmpInsiderTrading[]>(`/insider-trading?symbol=${ticker}&limit=20`);
+    // We construct the full URL here to override the default v3 base path
+    const endpoint = `https://financialmodelingprep.com/api/v4/insider-trading?symbol=${ticker}&page=0&apikey=${FMP_API_KEY}`;
+    
+    // We need to call fetch directly here instead of our helper function
+    return fetch(endpoint).then(res => res.json());
 }
