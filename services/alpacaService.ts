@@ -6,7 +6,7 @@ const fetchAlpaca = async <T,>(endpoint: string): Promise<T> => {
         throw new Error("Alpaca API keys are not configured.");
     }
 
-    const url = `https://data.alpaca.markets/v1beta1/options${endpoint}`;
+    const url = `https://paper-api.alpaca.markets/v2/options${endpoint}`;
 
     const headers = new Headers();
     headers.append('APCA-API-KEY-ID', ALPACA_API_KEY);

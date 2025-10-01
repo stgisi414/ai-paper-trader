@@ -2,12 +2,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
-import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec } from '../types';import { usePortfolio } from '../hooks/usePortfolio';
+import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec, AlpacaOptionContract, OptionHolding } from '../types';import { usePortfolio } from '../hooks/usePortfolio';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
 import { BrainCircuitIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
+import * as alpacaService from '../services/alpacaService';
 
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
@@ -27,18 +28,21 @@ const StockView: React.FC = () => {
     const [financialStatementAnalysis, setFinancialStatementAnalysis] = useState<FinancialStatementAnalysis | null>(null);
     const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
     const [combinedRec, setCombinedRec] = useState<CombinedRec | null>(null);
+    const [options, setOptions] = useState<AlpacaOptionContract[]>([]); // FIX: Initialize with an empty array
+    const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
     
     const [isLoading, setIsLoading] = useState(true);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [tradeShares, setTradeShares] = useState(1);
     const [activeTab, setActiveTab] = useState('summary');
+    const [tradeTab, setTradeTab] = useState<'stock' | 'calls' | 'puts'>('stock');
 
     useEffect(() => {
         if (!ticker) return;
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData] = await Promise.all([
+                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsData] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
                     fmpService.getHistoricalData(ticker, chartInterval),
@@ -48,10 +52,12 @@ const StockView: React.FC = () => {
                     fmpService.getBalanceSheet(ticker),
                     fmpService.getCashFlowStatement(ticker),
                     fmpService.getInsiderTrading(ticker),
+                    alpacaService.getOptionsContracts(ticker),
                 ]);
 
                 console.log("Analyst Ratings Data from API:", ratingsData);
                 console.log("Insider Trading Data from API:", insiderTradingData);
+                console.log("Raw response from Alpaca API:", optionsData);
 
                 setQuote(quoteData[0] || null);
                 setProfile(profileData[0] || null);
@@ -64,6 +70,9 @@ const StockView: React.FC = () => {
                 setBalanceSheet(balanceSheetData[0] || null);
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
+                if (optionsData && Array.isArray(optionsData.option_contracts)) {
+                    setOptions(optionsData.option_contracts);
+                }
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
                 alert('Failed to load stock data. Please try again.');
@@ -144,20 +153,37 @@ const StockView: React.FC = () => {
     }, [profile, historicalData, analystRatings]);
 
     const handleBuy = () => {
-        if (quote && profile && tradeShares > 0) {
+        if (tradeTab === 'stock' && quote && profile && tradeShares > 0) {
             buyStock(quote.symbol, profile.companyName, tradeShares, quote.price);
             alert(`Successfully bought ${tradeShares} share(s) of ${quote.symbol}`);
+        } else if (selectedOption && tradeShares > 0) {
+            const optionToBuy: OptionHolding = {
+                symbol: selectedOption.symbol,
+                underlyingTicker: selectedOption.underlying_symbol,
+                shares: tradeShares,
+                purchasePrice: selectedOption.last_trade?.price || 0,
+                currentPrice: selectedOption.last_trade?.price || 0,
+                optionType: selectedOption.type,
+                strikePrice: parseFloat(selectedOption.strike_price),
+                expirationDate: selectedOption.expiration_date,
+            };
+            buyOption(optionToBuy);
+            alert(`Successfully bought ${tradeShares} contract(s) of ${selectedOption.symbol}`);
         }
     };
     
     const handleSell = () => {
-        if (quote && tradeShares > 0) {
+        if (tradeTab === 'stock' && quote && tradeShares > 0) {
             sellStock(quote.symbol, tradeShares, quote.price);
             alert(`Successfully sold ${tradeShares} share(s) of ${quote.symbol}`);
+        } else if (selectedOption && tradeShares > 0) {
+            sellOption(selectedOption.symbol, tradeShares, selectedOption.last_trade?.price || 0);
+             alert(`Successfully sold ${tradeShares} contract(s) of ${selectedOption.symbol}`);
         }
     };
 
     const sharesOwned = portfolio.holdings.find(h => h.ticker === ticker)?.shares || 0;
+    const contractsOwned = portfolio.optionHoldings.find(o => o.symbol === selectedOption?.symbol)?.shares || 0;
 
     if (isLoading) {
         return <div className="flex justify-center items-center h-screen"><Spinner /></div>;
@@ -229,11 +255,52 @@ const StockView: React.FC = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <Card className="lg:col-span-1">
                             <h2 className="text-xl font-bold mb-4">Trade</h2>
+                            <div className="border-b border-night-700 mb-4">
+                                <nav className="-mb-px flex space-x-4" aria-label="Tabs">
+                                    <button onClick={() => setTradeTab('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
+                                    <button onClick={() => setTradeTab('calls')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Calls</button>
+                                    <button onClick={() => setTradeTab('puts')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Puts</button>
+                                </nav>
+                            </div>
+
                              <div className="space-y-4">
-                                <div className="text-sm">Shares Owned: <span className="font-bold">{sharesOwned}</span></div>
-                                <div className="text-sm">Cash Available: <span className="font-bold">{formatCurrency(portfolio.cash)}</span></div>
+                                {tradeTab === 'stock' && (
+                                    <>
+                                        <div className="text-sm">Shares Owned: <span className="font-bold">{sharesOwned}</span></div>
+                                        <div className="text-sm">Cash Available: <span className="font-bold">{formatCurrency(portfolio.cash)}</span></div>
+                                    </>
+                                )}
+                                {(tradeTab === 'calls' || tradeTab === 'puts') && (
+                                    <div className="h-48 overflow-y-auto bg-night-700 p-2 rounded-md">
+                                        <table className="w-full text-left text-xs">
+                                            <thead>
+                                                <tr>
+                                                    <th className="p-1">Strike</th>
+                                                    <th className="p-1">Expiry</th>
+                                                    <th className="p-1">Price</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
+                                                    <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
+                                                        <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
+                                                        <td className="p-1">{option.expiration_date}</td>
+                                                        {/* FIX: Use close_price from the API data */}
+                                                        <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {selectedOption && (tradeTab === 'calls' || tradeTab === 'puts') && (
+                                     <div className="text-sm bg-night-700 p-2 rounded-md">
+                                        Selected: {selectedOption.symbol} <br/>
+                                        Contracts Owned: <span className="font-bold">{contractsOwned}</span>
+                                    </div>
+                                )}
                                 <div>
-                                    <label htmlFor="shares" className="block text-sm font-medium text-night-100 mb-1">Shares</label>
+                                    <label htmlFor="shares" className="block text-sm font-medium text-night-100 mb-1">{tradeTab === 'stock' ? 'Shares' : 'Contracts'}</label>
                                     <input
                                         type="number"
                                         id="shares"
@@ -243,10 +310,10 @@ const StockView: React.FC = () => {
                                         min="1"
                                     />
                                 </div>
-                                <div className="text-center font-bold">Total: {formatCurrency(tradeShares * quote.price)}</div>
+                                <div className="text-center font-bold">Total: {formatCurrency(tradeShares * (tradeTab === 'stock' ? quote.price : (selectedOption?.last_trade?.price || 0) * 100))}</div>
                                 <div className="flex gap-4">
-                                    <button onClick={handleBuy} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors">Buy</button>
-                                    <button onClick={handleSell} disabled={sharesOwned === 0} className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600">Sell</button>
+                                    <button onClick={handleBuy} disabled={tradeTab !== 'stock' && !selectedOption} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">Buy</button>
+                                    <button onClick={handleSell} disabled={(tradeTab === 'stock' && sharesOwned === 0) || (tradeTab !== 'stock' && contractsOwned === 0) || !selectedOption} className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600">Sell</button>
                                 </div>
                             </div>
                         </Card>

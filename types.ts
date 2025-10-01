@@ -21,7 +21,7 @@ export interface OptionHolding {
 export interface Portfolio {
   cash: number;
   holdings: Holding[];
-  optionHoldings: OptionHolding[]; // Added to track options
+  optionHoldings: OptionHolding[];
   initialValue: number;
 }
 
@@ -336,15 +336,11 @@ export interface AlpacaOptionContract {
     expiration_date: string;
     strike_price: string; // Is a string in the API response
     underlying_symbol: string;
-    last_trade: {
-        price: number;
-        size: number;
-        timestamp: string;
-    } | null;
+    close_price: number | null; // Use close_price instead of last_trade
 }
 
 export interface AlpacaOptionsResponse {
-    options: AlpacaOptionContract[];
+    option_contracts: AlpacaOptionContract[]; // FIX: Changed from "options"
     next_page_token: string | null;
 }
 
@@ -358,11 +354,4 @@ export interface OptionHolding {
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
-}
-
-export interface Portfolio {
-  cash: number;
-  holdings: Holding[];
-  optionHoldings: OptionHolding[];
-  initialValue: number;
 }
