@@ -228,10 +228,8 @@ export class RectangleDrawingTool {
 		this._options = options;
 		this._addToolbar();
         
-        // --- FIX 1: Attach native DOM event listeners to the chart container ---
         const chartContainer = this._chart.options().layout?.container;
         if (chartContainer) {
-            // Use native mousedown for drag start selection
             (chartContainer as HTMLDivElement).addEventListener('mousedown', this._mouseDownHandler);
             (chartContainer as HTMLDivElement).addEventListener('contextmenu', this._contextMenuHandler);
         }
@@ -239,7 +237,6 @@ export class RectangleDrawingTool {
         this._chart.subscribeClick(this._chartClickHandler);
 		this._chart.subscribeCrosshairMove(this._moveHandler);
         
-        // --- FIX 2: Use document mouseup/mousemove for reliable drag operations ---
 		document.addEventListener('mouseup', this._mouseUpHandler);
         document.addEventListener('mousemove', this._dragMoveHandler);
 		document.addEventListener('keydown', this._keyDownHandler);
@@ -247,33 +244,43 @@ export class RectangleDrawingTool {
         this._loadDrawings();
 	}
 
-    // FIX 3: New Native Mouse Move Handler (for active dragging)
+    private _chartClickHandler = (param: MouseEventParams) => {
+        if (this.isDrawing()) {
+            this._handleDrawClick(param);
+        } else if (this.isDeleting()) {
+            this._handleDeleteClick(param);
+        } else if (this.isRotating()) {
+            this._handleRotateClick(param);
+        } else if (this.isMoving()) {
+            this._handleMoveClick(param);
+        }
+    };
+    private _contextMenuHandler = (e: MouseEvent) => {
+        if (this.isMoving() && this._selectedRectangle) {
+            e.preventDefault();
+            this.stopMoving();
+        }
+    }
     private _dragMoveHandler = (e: MouseEvent) => {
         if (!this._isDragging || !this._selectedRectangle || !this._dragStartPoint) return;
         
         e.preventDefault();
 
-        // Use client coordinates for delta tracking
         const xDelta = (e.clientX as Coordinate) - this._dragStartPoint.x;
         const yDelta = (e.clientY as Coordinate) - this._dragStartPoint.y;
 
-        // Apply delta to the selected rectangle's current position
         this._applyDeltaToSelectedRectangle(xDelta, yDelta);
 
-        // Update dragStartPoint for the next frame using screen coordinates
         this._dragStartPoint.x = e.clientX as Coordinate;
         this._dragStartPoint.y = e.clientY as Coordinate;
     }
 
-    // FIX 4: Update mouseUpHandler to handle the isDragging state and save
 	private _mouseUpHandler = () => {
-        // If dragging was active, save and stop drag state
         if (this._isDragging && this._selectedRectangle) {
             this._isDragging = false;
             this._dragStartPoint = null;
             this._saveDrawings();
             
-            // Deselect the rectangle
             this._selectedRectangle.deselect();
             this._selectedRectangle = null;
         } else if (this._isDragging) {
@@ -281,9 +288,7 @@ export class RectangleDrawingTool {
         }
     }
 
-    // FIX 5: Update mouseDownHandler to handle selection and start dragging state (used for Arrow Keys/Drag)
 	private _mouseDownHandler = (e: MouseEvent) => {
-        // Only run logic if the left mouse button is pressed and we're not drawing
         if (e.button !== 0 || this.isDrawing()) return; 
 
         e.preventDefault();
@@ -301,12 +306,9 @@ export class RectangleDrawingTool {
         if (this.isMoving()) {
             if (this._selectedRectangle) {
                 if (clickedRect === this._selectedRectangle) {
-                    // Clicking on the already selected rect: Start Drag
                     this._isDragging = true;
-                    // Use client coordinates for global mouse tracking
                     this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
                 } else {
-                    // Clicking another rect: Deselect old, select new, start drag on new
                     this._selectedRectangle.deselect();
                     this._selectedRectangle = null;
                     if (clickedRect) {
@@ -315,24 +317,20 @@ export class RectangleDrawingTool {
                         this._isDragging = true;
                         this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
                     } else {
-                        // Clicking empty space: Deselect and exit move mode
                         this.stopMoving();
                     }
                 }
             } else if (clickedRect) {
-                // No rect selected, click on one: Select it and start drag
                 this._selectedRectangle = clickedRect;
                 this._selectedRectangle.select();
                 this._isDragging = true;
                 this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
             } else {
-                // No rect selected, click on empty space: Stop move mode
                 this.stopMoving();
             }
         }
     }
 
-    // FIX 6: Simplify _moveHandler (no longer handles drag logic)
 	private _moveHandler = (param: MouseEventParams) => {
         if (this.isRotating() && this._selectedRectangle) {
             this._onRotationMouseMove(param);
@@ -341,7 +339,6 @@ export class RectangleDrawingTool {
         }
     };
 
-    // FIX 7: Cleanup the new listeners in destroy()
 	public destroy() {
         this.stopDrawing();
 		this.stopDeleting();
@@ -355,7 +352,7 @@ export class RectangleDrawingTool {
 		this._chart.unsubscribeClick(this._chartClickHandler);
 		this._chart.unsubscribeCrosshairMove(this._moveHandler);
 		document.removeEventListener('mouseup', this._mouseUpHandler);
-        document.removeEventListener('mousemove', this._dragMoveHandler); // REMOVE native mousemove listener
+        document.removeEventListener('mousemove', this._dragMoveHandler);
 		document.removeEventListener('keydown', this._keyDownHandler);
 		this._rectangles.forEach(r => this._removeRectangle(r));
 		this._rectangles = [];
@@ -367,57 +364,51 @@ export class RectangleDrawingTool {
 	}
 
 
-    // ADD: Core logic for applying coordinate delta (used by both mouse drag and key press)
     private _applyDeltaToSelectedRectangle(xDelta: number, yDelta: number) {
         if (!this._selectedRectangle) return;
 
         const timeScale = this._chart.timeScale();
-        const priceScale = this._selectedRectangle.series.priceScale();
+        const series = this._selectedRectangle.series;
 
         const p1 = this._selectedRectangle._p1;
         const p2 = this._selectedRectangle._p2;
 
-        // 1. Get current coordinates for P1 and P2
         const p1CoordX = timeScale.timeToCoordinate(p1.time);
         const p2CoordX = timeScale.timeToCoordinate(p2.time);
-        const p1CoordY = priceScale.priceToCoordinate(p1.price);
-        const p2CoordY = priceScale.priceToCoordinate(p2.price);
+        const p1CoordY = series.priceToCoordinate(p1.price);
+        const p2CoordY = series.priceToCoordinate(p2.price);
         
         if (p1CoordX === null || p2CoordX === null || p1CoordY === null || p2CoordY === null) return;
 
-        // 2. Apply the coordinate delta
         const newP1CoordX = p1CoordX + xDelta as Coordinate;
         const newP2CoordX = p2CoordX + xDelta as Coordinate;
         const newP1CoordY = p1CoordY + yDelta as Coordinate;
         const newP2CoordY = p2CoordY + yDelta as Coordinate;
 
-        // 3. Convert the new coordinates back to time and price values
         const newP1Time = timeScale.coordinateToTime(newP1CoordX);
         const newP2Time = timeScale.coordinateToTime(newP2CoordX);
-        const newP1Price = priceScale.coordinateToPrice(newP1CoordY);
-        const newP2Price = priceScale.coordinateToPrice(newP2CoordY);
+        const newP1Price = series.coordinateToPrice(newP1CoordY);
+        const newP2Price = series.coordinateToPrice(newP2CoordY);
 
         if (newP1Time === null || newP2Time === null || newP1Price === null || newP2Price === null) return;
 
-        // 4. Update the rectangle's position
         this._selectedRectangle.setPosition(
             { time: newP1Time, price: newP1Price },
             { time: newP2Time, price: newP2Price }
         );
     }
 
-    // FIX 8: Add the _keyDownHandler again since it was not fully provided in the last turn
     private _keyDownHandler = (e: KeyboardEvent) => {
         if (!this.isMoving() || !this._selectedRectangle) return;
         
         let xDelta = 0;
         let yDelta = 0;
-        const MOVE_STEP = 5; // Pixels for movement
+        const MOVE_STEP = 5;
 
         if (!e.key.startsWith('Arrow')) {
             return;
         }
-        e.preventDefault(); // Prevent page scrolling
+        e.preventDefault();
 
         switch (e.key) {
             case 'ArrowUp':
@@ -439,96 +430,9 @@ export class RectangleDrawingTool {
             this._saveDrawings();
         }
     }
-
-    // ADD 6: Core logic for applying coordinate delta (used by both mouse drag and key press)
-    private _applyDeltaToSelectedRectangle(xDelta: number, yDelta: number) {
-        if (!this._selectedRectangle) return;
-
-        const timeScale = this._chart.timeScale();
-        const priceScale = this._selectedRectangle.series.priceScale();
-
-        const p1 = this._selectedRectangle._p1;
-        const p2 = this._selectedRectangle._p2;
-
-        // 1. Get current coordinates for P1 and P2
-        const p1CoordX = timeScale.timeToCoordinate(p1.time);
-        const p2CoordX = timeScale.timeToCoordinate(p2.time);
-        const p1CoordY = priceScale.priceToCoordinate(p1.price);
-        const p2CoordY = priceScale.priceToCoordinate(p2.price);
-        
-        if (p1CoordX === null || p2CoordX === null || p1CoordY === null || p2CoordY === null) return;
-
-        // 2. Apply the coordinate delta
-        const newP1CoordX = p1CoordX + xDelta as Coordinate;
-        const newP2CoordX = p2CoordX + xDelta as Coordinate;
-        const newP1CoordY = p1CoordY + yDelta as Coordinate;
-        const newP2CoordY = p2CoordY + yDelta as Coordinate;
-
-        // 3. Convert the new coordinates back to time and price values
-        const newP1Time = timeScale.coordinateToTime(newP1CoordX);
-        const newP2Time = timeScale.coordinateToTime(newP2CoordX);
-        const newP1Price = priceScale.coordinateToPrice(newP1CoordY);
-        const newP2Price = priceScale.coordinateToPrice(newP2CoordY);
-
-        if (newP1Time === null || newP2Time === null || newP1Price === null || newP2Price === null) return;
-
-        // 4. Update the rectangle's position
-        this._selectedRectangle.setPosition(
-            { time: newP1Time, price: newP1Price },
-            { time: newP2Time, price: newP2Price }
-        );
-    }
-    
-    // FIX 3: Update _onMoveMouseMove to use the new delta function
-    private _onMoveMouseMove(param: MouseEventParams) {
-        if (!this._selectedRectangle || !this._dragStartPoint || !param.point) return;
-
-        // 1. Calculate delta in coordinate space
-        const xDelta = param.point.x - this._dragStartPoint.x;
-        const yDelta = param.point.y - this._dragStartPoint.y;
-
-        // 2. Apply delta and update rectangle position
-        this._applyDeltaToSelectedRectangle(xDelta, yDelta);
-        
-        // 3. Update dragStartPoint for the next frame to maintain continuous movement
-        this._dragStartPoint.x = param.point.x;
-        this._dragStartPoint.y = param.point.y;
-    };
-	private _moveHandler = (param: MouseEventParams) => {
-        if (this.isMoving() && this._selectedRectangle && this._dragStartPoint && param.point) {
-            this._onMoveMouseMove(param);
-        } else if (this.isRotating() && this._selectedRectangle) {
-            this._onRotationMouseMove(param);
-        } else {
-            this._onDrawMouseMove(param);
-        }
-    };
-	public destroy() {
-        this.stopDrawing();
-		this.stopDeleting();
-        this.stopRotating();
-        this.stopMoving();
-        const chartContainer = this._chart.options().layout?.container;
-        if (chartContainer) {
-            // FIX: Remove DOM listeners
-            (chartContainer as HTMLDivElement).removeEventListener('mousedown', this._mouseDownHandler);
-            (chartContainer as HTMLDivElement).removeEventListener('contextmenu', this._contextMenuHandler);
-        }
-		this._chart.unsubscribeClick(this._chartClickHandler);
-		this._chart.unsubscribeCrosshairMove(this._moveHandler);
-		document.removeEventListener('mouseup', this._mouseUpHandler);
-		document.removeEventListener('keydown', this._keyDownHandler);
-		this._rectangles.forEach(r => this._removeRectangle(r));
-		this._rectangles = [];
-		if (this._deleteButton) this._toolbarContainer.removeChild(this._deleteButton);
-        if (this._clearButton) this._toolbarContainer.removeChild(this._clearButton);
-        if (this._rotateButton) this._toolbarContainer.removeChild(this._rotateButton);
-        if (this._moveButton) this._toolbarContainer.removeChild(this._moveButton);
-	}
-
 	public startDrawing(): void {
 		this.stopDeleting();
-        this.stopRotating(); // ADD
+        this.stopRotating();
 		this._drawing = true;
 		this._points = [];
 		if (this._toolbarButton) this._toolbarButton.style.color = 'rgb(0, 120, 255)';
@@ -559,32 +463,12 @@ export class RectangleDrawingTool {
         this.stopRotating();
         this._moving = true;
         
-        // --- CRITICAL ADDITION: Attach DOM Listeners on the Chart Container ---
-        const chartContainer = this._chart.options().layout?.container;
-        if (chartContainer) {
-            // These listeners handle selection/drag start and context menu prevention
-            (chartContainer as HTMLDivElement).addEventListener('mousedown', this._mouseDownHandler);
-            (chartContainer as HTMLDivElement).addEventListener('contextmenu', this._contextMenuHandler);
-        }
-        // This listener handles arrow key movement
-        document.addEventListener('keydown', this._keyDownHandler);
-        // ----------------------------------------------------------------------
-
         if (this._moveButton) this._moveButton.style.color = 'rgb(0, 120, 255)';
     }
 
     public stopMoving(): void {
         this._moving = false;
         
-        // --- CRITICAL ADDITION: Detach DOM Listeners on the Chart Container ---
-        const chartContainer = this._chart.options().layout?.container;
-        if (chartContainer) {
-            (chartContainer as HTMLDivElement).removeEventListener('mousedown', this._mouseDownHandler);
-            (chartContainer as HTMLDivElement).removeEventListener('contextmenu', this._contextMenuHandler);
-        }
-        document.removeEventListener('keydown', this._keyDownHandler);
-        // ----------------------------------------------------------------------
-
         if (this._selectedRectangle) {
             this._selectedRectangle.deselect();
             this._selectedRectangle = null;
@@ -596,7 +480,7 @@ export class RectangleDrawingTool {
 
 	public startDeleting(): void {
         this.stopDrawing();
-        this.stopRotating(); // ADD
+        this.stopRotating();
         this._deleting = true;
         if (this._deleteButton) this._deleteButton.style.color = 'rgb(217, 48, 37)';
         this._chart.applyOptions({
@@ -612,7 +496,6 @@ export class RectangleDrawingTool {
         });
     }
 
-    // --- ADD: All new logic for rotating shapes ---
     public isRotating(): boolean {
         return this._rotating;
     }
@@ -632,96 +515,47 @@ export class RectangleDrawingTool {
         }
         if (this._rotateButton) this._rotateButton.style.color = '#d0d0d0';
     }
-
+    
+    private _handleDrawClick(param: MouseEventParams) {
+        if (!param.point || !param.time) return;
+        const price = this._series.coordinateToPrice(param.point.y);
+        if (price === null) return;
+        this._addPoint({ time: param.time, price });
+    }
     private _handleMoveClick(param: MouseEventParams) {
         if (!param.point) return;
 
-        // If a rectangle is already selected, this click is the start of a drag
         if (this._selectedRectangle) {
-            // Check if click is on the current selected rectangle (redundant check, but safer)
             const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
             if (clickedRect === this._selectedRectangle) {
-                // Start drag by setting the dragStartPoint
                 this._dragStartPoint = { x: param.point.x, y: param.point.y };
             } else {
-                // Clicked outside the selected rect, deselect and exit mode
                 this.stopMoving();
             }
             return;
         }
         
-        // Otherwise, try to select a rectangle
         const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
         if (clickedRect) {
             this._selectedRectangle = clickedRect;
             this._selectedRectangle.select();
         } else {
-            this.stopMoving(); // If no rectangle is clicked, exit move mode
+            this.stopMoving();
         }
     }
-
-    private _onMoveMouseMove(param: MouseEventParams) {
-        if (!this._selectedRectangle || !this._dragStartPoint || !param.point || !param.time) return;
-
-        // 1. Calculate delta in coordinate space
-        const xDelta = param.point.x - this._dragStartPoint.x;
-        const yDelta = param.point.y - this._dragStartPoint.y;
-
-        // 2. Get the current points' coordinates from the selected rectangle's view
-        const timeScale = this._chart.timeScale();
-        const priceScale = this._selectedRectangle.series.priceScale();
-
-        // Use the current points of the selected rectangle
-        const p1 = this._selectedRectangle._p1;
-        const p2 = this._selectedRectangle._p2;
-        
-        const p1CoordX = timeScale.timeToCoordinate(p1.time);
-        const p2CoordX = timeScale.timeToCoordinate(p2.time);
-        const p1CoordY = priceScale.priceToCoordinate(p1.price);
-        const p2CoordY = priceScale.priceToCoordinate(p2.price);
-        
-        if (p1CoordX === null || p2CoordX === null || p1CoordY === null || p2CoordY === null) return;
-
-        // 3. Apply the coordinate delta to the current coordinates to get the new coordinates
-        const newP1CoordX = p1CoordX + xDelta;
-        const newP2CoordX = p2CoordX + xDelta;
-        const newP1CoordY = p1CoordY + yDelta;
-        const newP2CoordY = p2CoordY + yDelta;
-
-        // 4. Convert the new coordinates back to time and price values
-        const newP1Time = timeScale.coordinateToTime(newP1CoordX);
-        const newP2Time = timeScale.coordinateToTime(newP2CoordX);
-        const newP1Price = priceScale.coordinateToPrice(newP1CoordY);
-        const newP2Price = priceScale.coordinateToPrice(newP2CoordY);
-
-        if (newP1Time === null || newP2Time === null || newP1Price === null || newP2Price === null) return;
-
-        // 5. Update the rectangle's position and the drag start point
-        this._selectedRectangle.setPosition(
-            { time: newP1Time, price: newP1Price },
-            { time: newP2Time, price: newP2Price }
-        );
-        
-        // Update dragStartPoint for the next frame to maintain continuous movement
-        this._dragStartPoint.x = param.point.x;
-        this._dragStartPoint.y = param.point.y;
-    }
-
     private _handleRotateClick(param: MouseEventParams) {
         if (!param.point) return;
         if (this._selectedRectangle) {
-            // If a rectangle is already selected, this click confirms the rotation.
             this.stopRotating();
             this._saveDrawings();
             return;
         }
-        // Otherwise, try to select a rectangle
         const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
         if (clickedRect) {
             this._selectedRectangle = clickedRect;
             this._selectedRectangle.select();
         } else {
-            this.stopRotating(); // If no rectangle is clicked, exit rotate mode
+            this.stopRotating();
         }
     }
 
@@ -730,11 +564,9 @@ export class RectangleDrawingTool {
         const view = this._selectedRectangle.paneViews()[0] as RectanglePaneView;
         if (view._p1.x === null || view._p1.y === null || view._p2.x === null || view._p2.y === null) return;
         
-        // Calculate the center of the rectangle
         const centerX = (view._p1.x + view._p2.x) / 2;
         const centerY = (view._p1.y + view._p2.y) / 2;
 
-        // Calculate the angle between the center and the mouse position
         const angle = Math.atan2(param.point.y - centerY, param.point.x - centerX);
         this._selectedRectangle.setAngle(angle);
     }
@@ -743,7 +575,6 @@ export class RectangleDrawingTool {
         return this._rectangles.find(rect => {
             const view = rect.paneViews()[0] as RectanglePaneView;
             if (view._p1.x === null || view._p1.y === null || view._p2.x === null || view._p2.y === null) return false;
-            // This is a simplified check; a more accurate check would account for rotation.
             const minX = Math.min(view._p1.x, view._p2.x);
             const maxX = Math.max(view._p1.x, view._p2.x);
             const minY = Math.min(view._p1.y, view._p2.y);
@@ -751,7 +582,6 @@ export class RectangleDrawingTool {
             return x >= minX && x <= maxX && y >= minY && y <= maxY;
         });
     }
-    // --- End of new logic ---
 
 
 	private _handleDeleteClick(param: MouseEventParams) {
@@ -770,12 +600,25 @@ export class RectangleDrawingTool {
         this._rectangles = [];
         this._saveDrawings();
     }
+
 	private _onDrawMouseMove(param: MouseEventParams) {
-		if (!this.isDrawing() || this._points.length === 0 || !param.point || !param.time) return;
+		if (!this.isDrawing() || this._points.length === 0 || !param.point) return;
+	
+		const timeScale = this._chart.timeScale();
+		// FIX: Manually get the time from the coordinate if the event param doesn't have it.
+		let time = param.time;
+		if (!time) {
+			time = timeScale.coordinateToTime(param.point.x);
+		}
+	
+		// If time is still null, we cannot proceed.
+		if (!time) return;
+	
 		const price = this._series.coordinateToPrice(param.point.y);
 		if (price === null) return;
+	
 		if (this._previewRectangle) {
-			this._previewRectangle.updateEndPoint({ time: param.time, price });
+			this._previewRectangle.updateEndPoint({ time: time, price });
 		}
 	}
 
@@ -813,7 +656,6 @@ export class RectangleDrawingTool {
 	}
 
     private _saveDrawings() {
-        // FIX: Save the angle along with the points
         const savedData = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2, angle: rect._angle }));
         localStorage.setItem(`drawings_${this._ticker}`, JSON.stringify(savedData));
     }
@@ -822,7 +664,6 @@ export class RectangleDrawingTool {
         const savedJSON = localStorage.getItem(`drawings_${this._ticker}`);
         if (savedJSON) {
             const savedData = JSON.parse(savedJSON);
-            // FIX: Load the angle
             savedData.forEach((data: { p1: Point, p2: Point, angle: number }) => {
                 this._addNewRectangle(data.p1, data.p2, data.angle);
             });
@@ -856,7 +697,6 @@ export class RectangleDrawingTool {
         this._toolbarContainer.appendChild(deleteButton);
         this._deleteButton = deleteButton;
 
-        // --- ADD: Rotate Button ---
         const rotateButton = document.createElement('div');
         rotateButton.style.width = '24px';
         rotateButton.style.height = '24px';
@@ -869,7 +709,6 @@ export class RectangleDrawingTool {
         });
         this._toolbarContainer.appendChild(rotateButton);
         this._rotateButton = rotateButton;
-        // --- End of Rotate Button ---
 
 
         const clearButton = document.createElement('div');
@@ -889,7 +728,6 @@ export class RectangleDrawingTool {
         moveButton.style.cursor = 'pointer';
         moveButton.style.color = '#d0d0d0';
         moveButton.title = 'Move Shape (Click a shape to select and drag)';
-        // SVG icon for moving/reordering
         moveButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-move-icon lucide-move"><path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/></svg>`;
         moveButton.addEventListener('click', () => {
             this.isMoving() ? this.stopMoving() : this.startMoving();

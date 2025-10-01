@@ -33,6 +33,8 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         timeScale: {
             borderColor: '#3c3c3c',
             timeVisible: true,
+            rightOffset: 100, // Increased offset for more room
+            rightBarStaysOnScroll: true, // FIX: Allows drawing/moving into the future
         },
         rightPriceScale: {
             borderColor: '#3c3c3c',
