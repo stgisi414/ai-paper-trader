@@ -1,8 +1,10 @@
+// components/CandlestickChart.tsx
+
 import React, { useEffect, useRef } from 'react';
 import type { FmpHistoricalData } from '../types';
 import { createChart, ColorType, UTCTimestamp, TimeRange } from 'lightweight-charts';
 import { RectangleDrawingTool } from './primitives/RectangleDrawingTool';
-import { manageChartDataHistory } from '../utils/localStorageManager'; // ADD: Import the new manager
+import { manageChartDataHistory } from '../utils/localStorageManager';
 
 interface CandlestickChartProps {
   data: FmpHistoricalData[];
@@ -16,7 +18,6 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
   useEffect(() => {
     if (!chartContainerRef.current || !toolbarContainerRef.current || data.length === 0) return;
     
-    // ADD: Run the cleanup and history management logic
     manageChartDataHistory(ticker);
 
     const chart = createChart(chartContainerRef.current, {
@@ -33,8 +34,8 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         timeScale: {
             borderColor: '#3c3c3c',
             timeVisible: true,
-            rightOffset: 100, // Increased offset for more room
-            rightBarStaysOnScroll: true, // FIX: Allows drawing/moving into the future
+            rightOffset: 100,
+            rightBarStaysOnScroll: false, // This MUST be false
         },
         rightPriceScale: {
             borderColor: '#3c3c3c',
@@ -60,10 +61,8 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
     }));
     candlestickSeries.setData(candlestickData);
     
-    // --- ADD: Logic to save and load chart zoom/pan state ---
     const chartStateKey = `chartState_${ticker}`;
 
-    // Load saved zoom/pan state if it exists
     const savedChartState = localStorage.getItem(chartStateKey);
     if (savedChartState) {
         try {
@@ -77,7 +76,6 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         chart.timeScale().fitContent();
     }
 
-    // Subscribe to changes in the visible time range to save them
     const onVisibleTimeRangeChange = () => {
         const newTimeRange = chart.timeScale().getVisibleRange();
         if (newTimeRange) {
@@ -85,7 +83,6 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         }
     };
     chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleTimeRangeChange);
-    // --- End of new logic ---
 
     const drawingTool = new RectangleDrawingTool(chart, candlestickSeries, toolbarContainerRef.current, ticker, {});
 
@@ -95,7 +92,7 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
     return () => {
       drawingTool.destroy();
       window.removeEventListener('resize', handleResize);
-      chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleTimeRangeChange); // FIX: Unsubscribe on cleanup
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleTimeRangeChange);
       chart.remove();
       if (toolbarContainerRef.current) {
           toolbarContainerRef.current.innerHTML = '';

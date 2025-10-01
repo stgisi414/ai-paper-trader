@@ -212,7 +212,7 @@ export class RectangleDrawingTool {
     private _moving: boolean = false;
     private _selectedRectangle: Rectangle | null = null;
     private _dragStartPoint: { x: Coordinate, y: Coordinate } | null = null;
-    private _isDragging: boolean = false; // ADD: State to track active drag
+    private _isDragging: boolean = false; 
     private _toolbarButton?: HTMLDivElement;
 	private _deleteButton?: HTMLDivElement;
     private _clearButton?: HTMLDivElement;
@@ -517,10 +517,12 @@ export class RectangleDrawingTool {
     }
     
     private _handleDrawClick(param: MouseEventParams) {
-        if (!param.point || !param.time) return;
+        if (!param.point) return;
+        const time = this._chart.timeScale().coordinateToTime(param.point.x);
+        if (!time) return;
         const price = this._series.coordinateToPrice(param.point.y);
         if (price === null) return;
-        this._addPoint({ time: param.time, price });
+        this._addPoint({ time, price });
     }
     private _handleMoveClick(param: MouseEventParams) {
         if (!param.point) return;
@@ -605,13 +607,11 @@ export class RectangleDrawingTool {
 		if (!this.isDrawing() || this._points.length === 0 || !param.point) return;
 	
 		const timeScale = this._chart.timeScale();
-		// FIX: Manually get the time from the coordinate if the event param doesn't have it.
 		let time = param.time;
 		if (!time) {
 			time = timeScale.coordinateToTime(param.point.x);
 		}
 	
-		// If time is still null, we cannot proceed.
 		if (!time) return;
 	
 		const price = this._series.coordinateToPrice(param.point.y);
