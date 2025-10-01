@@ -42,6 +42,12 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
     await delay(300); // Small delay for smoother transitions
 
     switch (step.action) {
+        case 'open_stock':
+            if (step.value) {
+                navigate(`/stock/${step.value.toUpperCase()}`);
+            }
+            break;
+            
         case 'navigate':
             if (step.path) {
                 navigate(step.path);
@@ -50,6 +56,7 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
 
         case 'type':
         case 'click':
+        case 'select':
             if (!step.selector) throw new Error('Selector is missing for action: ' + step.action);
             const element = document.querySelector(step.selector) as HTMLElement;
             if (!element) throw new Error(`Element not found with selector: ${step.selector}`);
@@ -64,6 +71,10 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
                 inputElement.value = String(step.value);
                 // Dispatch an event to ensure React state updates
                 inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+            } else if (step.action === 'select' && typeof step.value !== 'undefined') {
+                const selectElement = element as HTMLSelectElement;
+                selectElement.value = String(step.value);
+                selectElement.dispatchEvent(new Event('change', { bubbles: true }));
             }
             break;
             

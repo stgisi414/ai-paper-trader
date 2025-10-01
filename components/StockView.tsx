@@ -10,6 +10,7 @@ import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatt
 import { BrainCircuitIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as alpacaService from '../services/alpacaService';
+import SignatexFlow from './SignatexFlow';
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
     const [state, setState] = useState<T>(() => {
@@ -285,6 +286,7 @@ const StockView: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <SignatexFlow />
             <Link to="/" className="text-brand-blue hover:underline">&larr; Back to Dashboard</Link>
             
             <Card>
