@@ -15,16 +15,45 @@ interface PortfolioContextType {
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
-export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [portfolio, setPortfolio] = useState<Portfolio>({
+// FIX: Helper function to get the initial portfolio from localStorage
+const getInitialPortfolio = (): Portfolio => {
+    try {
+        const savedPortfolio = localStorage.getItem('ai-paper-trader-portfolio');
+        if (savedPortfolio) {
+            return JSON.parse(savedPortfolio);
+        }
+    } catch (error) {
+        console.error("Failed to parse portfolio from localStorage", error);
+        // If parsing fails, clear the corrupted data
+        localStorage.removeItem('ai-paper-trader-portfolio');
+    }
+    // Return a fresh portfolio if nothing is saved or if there was an error
+    return {
         cash: INITIAL_CASH,
         holdings: [],
-        optionHoldings: [], // Add this
+        optionHoldings: [],
         initialValue: INITIAL_CASH,
-    });
+    };
+};
+
+
+export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    // FIX: Initialize state from the localStorage helper
+    const [portfolio, setPortfolio] = useState<Portfolio>(getInitialPortfolio);
     const [isLoading, setIsLoading] = useState(true);
+    
+    // ADD: useEffect to save the portfolio to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            localStorage.setItem('ai-paper-trader-portfolio', JSON.stringify(portfolio));
+        } catch (error) {
+            console.error("Failed to save portfolio to localStorage", error);
+        }
+    }, [portfolio]);
+
 
     const updateHoldingPrices = useCallback(async () => {
+        // No changes needed in this function
         if (portfolio.holdings.length === 0) {
             setIsLoading(false);
             return;
@@ -39,9 +68,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 return { ...holding, currentPrice: quote ? quote.price : holding.currentPrice };
             });
 
-            // Note: Option price updates would require another API call, skipping for simplicity in paper trading
-            // A real app would fetch latest option prices here as well.
-
             setPortfolio(prev => ({ ...prev, holdings: updatedHoldings }));
         } catch (error) {
             console.error("Failed to update stock prices:", error);
@@ -50,14 +76,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     }, [portfolio.holdings]);
 
+    // FIX: Initialize price updates on mount, but don't re-trigger on every portfolio change
     useEffect(() => {
         updateHoldingPrices();
-        const interval = setInterval(updateHoldingPrices, 60000); // Update every minute
+        const interval = setInterval(updateHoldingPrices, 60000);
         return () => clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); 
 
     const buyStock = useCallback((ticker: string, name: string, shares: number, price: number) => {
+        // No changes needed in this function
         const cost = shares * price;
         if (portfolio.cash < cost) {
             alert("Not enough cash to complete purchase.");
@@ -85,6 +112,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, [portfolio.cash]);
 
     const sellStock = useCallback((ticker: string, shares: number, price: number) => {
+        // No changes needed in this function
         setPortfolio(prev => {
             const existingHoldingIndex = prev.holdings.findIndex(h => h.ticker === ticker);
             if (existingHoldingIndex === -1) return prev;
@@ -109,9 +137,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         });
     }, []);
     
-    // Add these two functions
     const buyOption = useCallback((option: OptionHolding) => {
-        const cost = option.shares * option.purchasePrice * 100; // Each contract is for 100 shares
+        // No changes needed in this function
+        const cost = option.shares * option.purchasePrice * 100;
         if (portfolio.cash < cost) {
             alert("Not enough cash to complete option purchase.");
             return;
@@ -124,6 +152,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, [portfolio.cash]);
 
     const sellOption = useCallback((symbol: string, shares: number, price: number) => {
+        // No changes needed in this function
         setPortfolio(prev => {
             const existingOptionIndex = prev.optionHoldings.findIndex(o => o.symbol === symbol);
             if (existingOptionIndex === -1) {
@@ -153,6 +182,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
 
     const totalValue = useMemo(() => {
+        // No changes needed in this function
         const holdingsValue = portfolio.holdings.reduce((acc, h) => acc + (h.shares * h.currentPrice), 0);
         const optionsValue = portfolio.optionHoldings.reduce((acc, o) => acc + (o.shares * o.currentPrice * 100), 0);
         return portfolio.cash + holdingsValue + optionsValue;
@@ -168,6 +198,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 };
 
 export const usePortfolio = (): PortfolioContextType => {
+    // No changes needed in this function
     const context = useContext(PortfolioContext);
     if (context === undefined) {
         throw new Error('usePortfolio must be used within a PortfolioProvider');
