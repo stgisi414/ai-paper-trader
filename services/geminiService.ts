@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GEMINI_API_KEY } from '../constants';
-import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis } from '../types';
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis } from '../types'; // ADD KeyMetricsAnalysis
 
 if (!GEMINI_API_KEY) {
     console.error("Gemini API key is not configured.");
@@ -440,5 +440,63 @@ export const getCombinedRecommendations = async (
     } catch (error) {
         console.error("Error getting combined recommendations from Gemini:", error);
         throw new Error("Failed to get AI combined recommendations.");
+    }
+};
+
+const keyMetricsAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        summary: {
+            type: Type.STRING,
+            description: "A multi-faceted friendly summary of the company based on its key metrics from an economical, financial, and laissez-faire perspective."
+        }
+    },
+    required: ["summary"]
+};
+
+export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile): Promise<KeyMetricsAnalysis> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const prompt = `
+        Provide a multi-faceted analysis for ${profile.companyName} (${profile.symbol}) based on the following key metrics. The summary should be friendly and easy to understand for a retail investor.
+
+        Key Metrics:
+        - Price: ${quote.price}
+        - Market Cap: ${quote.marketCap}
+        - 52-Week Range: ${quote.yearLow} - ${quote.yearHigh}
+        - P/E Ratio: ${quote.pe}
+        - EPS: ${quote.eps}
+        - Volume: ${quote.volume}
+        - Sector: ${profile.sector}
+        - Industry: ${profile.industry}
+
+        Please structure the analysis into three perspectives:
+        1.  **Economical**: How does this company fit into the broader economic landscape of its sector and the market as a whole?
+        2.  **Financial**: Based on these metrics, what is a snapshot of its financial health and valuation?
+        3.  **Laissez-Faire**: From a hands-off, free-market perspective, what is the company's potential for innovation and growth without heavy intervention?
+
+        Combine these points into a single, flowing summary paragraph. The output must be a JSON object matching the provided schema.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: keyMetricsAnalysisSchema,
+            },
+        });
+
+        if (!response) throw new Error("AI response was null");
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as KeyMetricsAnalysis;
+
+    } catch (error) {
+        console.error("Error analyzing key metrics with Gemini:", error);
+        throw new Error("Failed to get AI key metrics analysis.");
     }
 };

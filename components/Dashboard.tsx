@@ -60,7 +60,7 @@ const Dashboard: React.FC = () => {
     return (
         <div className="space-y-8">
             <div className="text-center">
-                <h1 className="text-4xl font-bold">AI Paper Trader</h1>
+                <h1 className="text-4xl font-bold">Signatex.co</h1>
                 <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
             </div>
             

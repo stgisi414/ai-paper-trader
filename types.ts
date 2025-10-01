@@ -316,6 +316,10 @@ export interface PortfolioRiskAnalysis {
     suggestions: string[];
 }
 
+export interface KeyMetricsAnalysis {
+    summary: string;
+}
+
 export interface CombinedRec {
     sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
     confidence: 'High' | 'Medium' | 'Low';

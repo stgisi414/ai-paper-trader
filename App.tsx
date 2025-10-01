@@ -19,7 +19,7 @@ const App: React.FC = () => {
                         <nav className="container mx-auto flex justify-between items-center">
                             <Link to="/" className="flex items-center gap-2 text-xl font-bold text-white">
                                 <TrendingUpIcon className="h-6 w-6 text-brand-blue"/>
-                                AI Paper Trader
+                                Signatex.co
                             </Link>
                             <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
                                 <BrainCircuitIcon className="h-5 w-5"/>
@@ -36,7 +36,7 @@ const App: React.FC = () => {
                     </main>
                      <footer className="text-center p-4 text-night-500 text-xs border-t border-night-800 mt-8">
                         <p>Disclaimer: This is a paper trading application for educational purposes only. Not financial advice.</p>
-                        <p>&copy; 2025 AI Paper Trader. Market data provided by Financial Modeling Prep.</p>
+                        <p>&copy; 2025 Signatex.co. Market data provided by Financial Modeling Prep.</p>
                     </footer>
                 </div>
             </HashRouter>
