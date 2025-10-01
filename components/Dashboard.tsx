@@ -9,6 +9,7 @@ import Spinner from './common/Spinner';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
 import { SearchIcon, TrendingUpIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
 import SignatexFlow from './SignatexFlow';
+import Watchlist from './Watchlist'; // ADD
 
 const Dashboard: React.FC = () => {
     const { portfolio, totalValue, isLoading: isPortfolioLoading } = usePortfolio();
@@ -65,6 +66,9 @@ const Dashboard: React.FC = () => {
                 <h1 className="text-4xl font-bold">Signatex.co</h1>
                 <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
             </div>
+
+            {/* ADD Watchlist */}
+            <Watchlist />
             
             {/* Search Bar */}
             <Card>

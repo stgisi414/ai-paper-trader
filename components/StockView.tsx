@@ -4,13 +4,15 @@ import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
 import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec, AlpacaOptionContract, OptionHolding, KeyMetricsAnalysis } from '../types'; // ADD KeyMetricsAnalysis
 import { usePortfolio } from '../hooks/usePortfolio';
+import { useWatchlist } from '../hooks/useWatchlist'; // ADD
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { BrainCircuitIcon } from './common/Icons';
+import { BrainCircuitIcon, EyeIcon, StarIcon } from './common/Icons'; // MODIFIED
 import CandlestickChart from './CandlestickChart';
 import * as alpacaService from '../services/alpacaService';
 import SignatexFlow from './SignatexFlow';
+import Watchlist from './Watchlist'; // ADD
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
     const [state, setState] = useState<T>(() => {
@@ -37,6 +39,7 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
+    const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist(); // ADD
 
     const [quote, setQuote] = useState<FmpQuote | null>(null);
     const [profile, setProfile] = useState<FmpProfile | null>(null);
@@ -52,7 +55,7 @@ const StockView: React.FC = () => {
     const [financialStatementAnalysis, setFinancialStatementAnalysis] = useState<FinancialStatementAnalysis | null>(null);
     const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
     const [combinedRec, setCombinedRec] = useState<CombinedRec | null>(null);
-    const [keyMetricsAnalysis, setKeyMetricsAnalysis] = useState<KeyMetricsAnalysis | null>(null); // ADD
+    const [keyMetricsAnalysis, setKeyMetricsAnalysis] = useState<KeyMetricsAnalysis | null>(null);
     const [options, setOptions] = useState<AlpacaOptionContract[]>([]);
     const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
 
@@ -63,7 +66,6 @@ const StockView: React.FC = () => {
     const [activeTab, setActiveTab] = useState('summary');
     const [tradeTab, setTradeTab] = usePersistentState<'stock' | 'calls' | 'puts'>(`tradeTab-${ticker}`, 'stock');
     
-    // ADD: State to track if analysis has been run for specific tabs
     const [hasRunFinancialAnalysis, setHasRunFinancialAnalysis] = useState(false);
     const [hasRunTechnicalAnalysis, setHasRunTechnicalAnalysis] = useState(false);
     const [hasRunAdvancedRecs, setHasRunAdvancedRecs] = useState(false);
@@ -224,6 +226,15 @@ const StockView: React.FC = () => {
         }
     };
 
+    const handleWatchlistToggle = () => { // ADD
+        if (!ticker || !profile) return;
+        if (isOnWatchlist(ticker)) {
+            removeFromWatchlist(ticker);
+        } else {
+            addToWatchlist(ticker, profile.companyName);
+        }
+    };
+
     const sharesOwned = portfolio.holdings.find(h => h.ticker === ticker)?.shares || 0;
     const contractsOwned = portfolio.optionHoldings.find(o => o.symbol === selectedOption?.symbol)?.shares || 0;
 
@@ -236,6 +247,7 @@ const StockView: React.FC = () => {
     }
 
     const priceChangeColor = quote.change >= 0 ? 'text-brand-green' : 'text-brand-red';
+    const onWatchlist = ticker ? isOnWatchlist(ticker) : false; // ADD
 
     const renderTabContent = () => {
         switch (activeTab) {
@@ -486,12 +498,26 @@ const StockView: React.FC = () => {
             <Link to="/" className="text-brand-blue hover:underline">&larr; Back to Dashboard</Link>
             
             <Card>
-                <div className="flex items-center gap-4">
-                    <img src={profile.image} alt={profile.companyName} className="h-16 w-16 rounded-full"/>
-                    <div>
-                        <h1 className="text-3xl font-bold">{profile.companyName} ({profile.symbol})</h1>
-                        <p className="text-night-500">{quote.exchange}</p>
+                <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                        <img src={profile.image} alt={profile.companyName} className="h-16 w-16 rounded-full"/>
+                        <div>
+                            <h1 className="text-3xl font-bold">{profile.companyName} ({profile.symbol})</h1>
+                            <p className="text-night-500">{quote.exchange}</p>
+                        </div>
                     </div>
+                    {/* ADD Watchlist Button */}
+                    <button 
+                        onClick={handleWatchlistToggle} 
+                        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors text-sm font-bold ${
+                            onWatchlist 
+                                ? 'bg-yellow-500 text-night-900 hover:bg-yellow-600' 
+                                : 'bg-night-700 hover:bg-night-600'
+                        }`}
+                    >
+                        <StarIcon className={`h-5 w-5 ${onWatchlist ? 'text-night-900' : 'text-yellow-400'}`} />
+                        {onWatchlist ? 'On Watchlist' : 'Add to Watchlist'}
+                    </button>
                 </div>
                 <div className="mt-4 flex items-baseline gap-4">
                     <span className="text-5xl font-bold">{formatCurrency(quote.price)}</span>
@@ -536,7 +562,7 @@ const StockView: React.FC = () => {
                 <div className="lg:col-span-2 space-y-6">
                     {renderTabContent()}
                 </div>
-                <div className="lg:col-span-1">
+                <div className="lg:col-span-1 space-y-6"> {/* MODIFIED */}
                     <Card>
                         <h2 className="text-xl font-bold mb-4">Trade</h2>
                         <div className="border-b border-night-700 mb-4">
@@ -599,6 +625,7 @@ const StockView: React.FC = () => {
                             </div>
                         </div>
                     </Card>
+                    <Watchlist />
                 </div>
             </div>
         </div>
