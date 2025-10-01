@@ -1,5 +1,3 @@
-// components/CandlestickChart.tsx
-
 import React, { useEffect, useRef } from 'react';
 import type { FmpHistoricalData } from '../types';
 import { createChart, ColorType, UTCTimestamp, TimeRange } from 'lightweight-charts';
@@ -34,8 +32,10 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         timeScale: {
             borderColor: '#3c3c3c',
             timeVisible: true,
-            rightOffset: 100,
-            rightBarStaysOnScroll: false, // This MUST be false
+            // Add a large offset to the right for drawing space
+            rightOffset: 200, 
+            // This MUST be false to allow scrolling past the last bar
+            rightBarStaysOnScroll: false, 
         },
         rightPriceScale: {
             borderColor: '#3c3c3c',

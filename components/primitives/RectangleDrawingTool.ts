@@ -1,4 +1,3 @@
-// components/primitives/RectangleDrawingTool.ts
 import { CanvasRenderingTarget2D } from 'fancy-canvas';
 import {
 	Coordinate,
@@ -607,10 +606,11 @@ export class RectangleDrawingTool {
 		if (!this.isDrawing() || this._points.length === 0 || !param.point) return;
 	
 		const timeScale = this._chart.timeScale();
-		let time = param.time;
-		if (!time) {
-			time = timeScale.coordinateToTime(param.point.x);
-		}
+		// THIS IS THE CRITICAL FIX:
+        // We MUST use coordinateToTime to get the time value from the mouse position.
+        // We CANNOT rely on `param.time` because it is only defined when the mouse
+        // is over a bar of data.
+		const time = timeScale.coordinateToTime(param.point.x);
 	
 		if (!time) return;
 	
