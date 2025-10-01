@@ -23,12 +23,16 @@ interface ViewPoint {
 class RectanglePaneRenderer implements IPrimitivePaneRenderer {
 	_p1: ViewPoint;
 	_p2: ViewPoint;
+    _angle: number; // ADD: Angle for rotation
 	_fillColor: string;
+    _selected: boolean; // ADD: To know when to draw handles
 
-	constructor(p1: ViewPoint, p2: ViewPoint, fillColor: string) {
+	constructor(p1: ViewPoint, p2: ViewPoint, angle: number, fillColor: string, selected: boolean) {
 		this._p1 = p1;
 		this._p2 = p2;
+        this._angle = angle;
 		this._fillColor = fillColor;
+        this._selected = selected;
 	}
 
 	draw(target: CanvasRenderingTarget2D) {
@@ -37,8 +41,34 @@ class RectanglePaneRenderer implements IPrimitivePaneRenderer {
 			const ctx = scope.context;
 			const hPos = positionsBox(this._p1.x, this._p2.x, scope.horizontalPixelRatio);
 			const vPos = positionsBox(this._p1.y, this._p2.y, scope.verticalPixelRatio);
+            
+            // --- ADD: Rotation Logic ---
+            const centerX = hPos.position + hPos.length / 2;
+            const centerY = vPos.position + vPos.length / 2;
+            ctx.save(); // Save the current state
+            ctx.translate(centerX, centerY); // Move the origin to the center of the rectangle
+            ctx.rotate(this._angle); // Rotate the canvas
+            ctx.translate(-centerX, -centerY); // Move the origin back
+            // --- End Rotation Logic ---
+
 			ctx.fillStyle = this._fillColor;
 			ctx.fillRect(hPos.position, vPos.position, hPos.length, vPos.length);
+
+            // ADD: Draw selection handles if the rectangle is selected
+            if (this._selected) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                const handleSize = 6;
+                // Top-left
+                ctx.fillRect(hPos.position - handleSize / 2, vPos.position - handleSize / 2, handleSize, handleSize);
+                // Top-right
+                ctx.fillRect(hPos.position + hPos.length - handleSize / 2, vPos.position - handleSize / 2, handleSize, handleSize);
+                // Bottom-left
+                ctx.fillRect(hPos.position - handleSize / 2, vPos.position + vPos.length - handleSize / 2, handleSize, handleSize);
+                // Bottom-right
+                ctx.fillRect(hPos.position + hPos.length - handleSize / 2, vPos.position + vPos.length - handleSize / 2, handleSize, handleSize);
+            }
+
+            ctx.restore(); // Restore to the saved state
 		});
 	}
 }
@@ -53,7 +83,6 @@ class RectanglePaneView implements IPrimitivePaneView {
 	}
 
 	update() {
-		// FIX: Add a guard clause to prevent crash if points are not yet defined.
 		if (!this._source._p1 || !this._source._p2) {
 			return;
 		}
@@ -68,7 +97,8 @@ class RectanglePaneView implements IPrimitivePaneView {
 	}
 
 	renderer() {
-		return new RectanglePaneRenderer(this._p1, this._p2, this._source._options.fillColor);
+		// FIX: Pass angle and selected state to the renderer
+		return new RectanglePaneRenderer(this._p1, this._p2, this._source._angle, this._source._options.fillColor, this._source._selected);
 	}
 }
 
@@ -93,14 +123,17 @@ class Rectangle {
 	_options: RectangleDrawingToolOptions;
 	_p1: Point;
 	_p2: Point;
+    _angle: number; // ADD: Angle property for each rectangle
+    _selected: boolean = false; // ADD: Selected state
 	_paneViews: RectanglePaneView[];
     private _requestUpdate: () => void = () => {};
 
-	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, p1: Point, p2: Point, options: Partial<RectangleDrawingToolOptions> = {}) {
+	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, p1: Point, p2: Point, angle: number = 0, options: Partial<RectangleDrawingToolOptions> = {}) {
         this._chart = chart;
         this._series = series;
 		this._p1 = p1;
 		this._p2 = p2;
+        this._angle = angle;
 		this._options = { ...defaultOptions, ...options };
 		this._paneViews = [new RectanglePaneView(this)];
 	}
@@ -117,6 +150,27 @@ class Rectangle {
 		return this._paneViews;
 	}
 
+    // --- ADD: Methods to manage selection and angle ---
+    public select() {
+        this._selected = true;
+        this.updateAllViews();
+        this.requestUpdate();
+    }
+
+    public deselect() {
+        this._selected = false;
+        this.updateAllViews();
+        this.requestUpdate();
+    }
+
+    public setAngle(angle: number) {
+        this._angle = angle;
+        this.updateAllViews();
+        this.requestUpdate();
+    }
+    // --- End of new methods ---
+
+
     protected requestUpdate() {
         this._requestUpdate();
     }
@@ -127,7 +181,7 @@ class Rectangle {
 
 class PreviewRectangle extends Rectangle {
 	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, p1: Point, p2: Point, options: Partial<RectangleDrawingToolOptions> = {}) {
-		super(chart, series, p1, p2, options);
+		super(chart, series, p1, p2, 0, options);
 		this._options.fillColor = this._options.previewFillColor;
 	}
 
@@ -149,10 +203,13 @@ export class RectangleDrawingTool {
 	private _previewRectangle?: PreviewRectangle;
 	private _points: Point[] = [];
 	private _drawing: boolean = false;
-	private _deleting: boolean = false; // ADD: State for delete mode
+	private _deleting: boolean = false;
+    private _rotating: boolean = false; // ADD: State for rotate mode
+    private _selectedRectangle: Rectangle | null = null; // ADD: Track selected rectangle
 	private _toolbarButton?: HTMLDivElement;
-	private _deleteButton?: HTMLDivElement; // ADD: Button for deleting
-    private _clearButton?: HTMLDivElement; // ADD: Button for clearing all
+	private _deleteButton?: HTMLDivElement;
+    private _clearButton?: HTMLDivElement;
+    private _rotateButton?: HTMLDivElement; // ADD: Button for rotating
     private _ticker: string;
 
 	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, toolbarContainer: HTMLDivElement, ticker: string, options: Partial<RectangleDrawingToolOptions>) {
@@ -161,42 +218,57 @@ export class RectangleDrawingTool {
 		this._toolbarContainer = toolbarContainer;
         this._ticker = ticker;
 		this._options = options;
-		this._addToolbar(); // FIX: Call new toolbar creation method
+		this._addToolbar();
 		this._chart.subscribeClick(this._clickHandler);
 		this._chart.subscribeCrosshairMove(this._moveHandler);
         this._loadDrawings();
 	}
 
 	private _clickHandler = (param: MouseEventParams) => {
-		// FIX: Prioritize delete clicks, then draw clicks
 		if (!param.point || !param.time) return;
+
 		if (this.isDeleting()) {
 			this._handleDeleteClick(param);
 			return;
 		}
+
+        // ADD: Logic for rotation mode
+        if (this.isRotating()) {
+            this._handleRotateClick(param);
+            return;
+        }
+
 		if (!this.isDrawing()) return;
 		
 		const price = this._series.coordinateToPrice(param.point.y);
 		if (price === null) return;
 		this._addPoint({ time: param.time, price });
 	};
-	private _moveHandler = (param: MouseEventParams) => this._onMouseMove(param);
-
+	private _moveHandler = (param: MouseEventParams) => {
+        // FIX: Handle mouse move for rotation as well
+        if (this.isRotating() && this._selectedRectangle) {
+            this._onRotationMouseMove(param);
+        } else {
+            this._onDrawMouseMove(param);
+        }
+    };
 	public destroy() {
         this.stopDrawing();
-		this.stopDeleting(); // ADD: Cleanup delete mode
+		this.stopDeleting();
+        this.stopRotating(); // ADD: Cleanup rotate mode
 		this._chart.unsubscribeClick(this._clickHandler);
 		this._chart.unsubscribeCrosshairMove(this._moveHandler);
 		this._rectangles.forEach(r => this._removeRectangle(r));
 		this._rectangles = [];
-		// FIX: Ensure all toolbar buttons are removed
 		if (this._toolbarButton) this._toolbarContainer.removeChild(this._toolbarButton);
         if (this._deleteButton) this._toolbarContainer.removeChild(this._deleteButton);
         if (this._clearButton) this._toolbarContainer.removeChild(this._clearButton);
+        if (this._rotateButton) this._toolbarContainer.removeChild(this._rotateButton); // ADD
 	}
 
 	public startDrawing(): void {
-		this.stopDeleting(); // ADD: Ensure only one mode is active
+		this.stopDeleting();
+        this.stopRotating(); // ADD
 		this._drawing = true;
 		this._points = [];
 		if (this._toolbarButton) this._toolbarButton.style.color = 'rgb(0, 120, 255)';
@@ -213,16 +285,15 @@ export class RectangleDrawingTool {
         return this._drawing;
     }
 
-	// --- ADD: All new logic for deleting shapes ---
 	public isDeleting(): boolean {
         return this._deleting;
     }
 
 	public startDeleting(): void {
         this.stopDrawing();
+        this.stopRotating(); // ADD
         this._deleting = true;
-        if (this._deleteButton) this._deleteButton.style.color = 'rgb(217, 48, 37)'; // Red
-		// Hide the crosshair to make it clear you're in delete mode
+        if (this._deleteButton) this._deleteButton.style.color = 'rgb(217, 48, 37)';
         this._chart.applyOptions({
             crosshair: { horzLine: { visible: false }, vertLine: { visible: false } },
         });
@@ -231,30 +302,82 @@ export class RectangleDrawingTool {
 	public stopDeleting(): void {
         this._deleting = false;
         if (this._deleteButton) this._deleteButton.style.color = '#d0d0d0';
-		// Restore crosshair
         this._chart.applyOptions({
             crosshair: { horzLine: { visible: true }, vertLine: { visible: true } },
         });
     }
 
-	private _handleDeleteClick(param: MouseEventParams) {
-        if (!param.point) return;
-        const clickX = param.point.x;
-        const clickY = param.point.y;
+    // --- ADD: All new logic for rotating shapes ---
+    public isRotating(): boolean {
+        return this._rotating;
+    }
 
-        const rectangleToDelete = this._rectangles.find(rect => {
+    public startRotating(): void {
+        this.stopDrawing();
+        this.stopDeleting();
+        this._rotating = true;
+        if (this._rotateButton) this._rotateButton.style.color = 'rgb(0, 120, 255)';
+    }
+
+    public stopRotating(): void {
+        this._rotating = false;
+        if (this._selectedRectangle) {
+            this._selectedRectangle.deselect();
+            this._selectedRectangle = null;
+        }
+        if (this._rotateButton) this._rotateButton.style.color = '#d0d0d0';
+    }
+
+    private _handleRotateClick(param: MouseEventParams) {
+        if (!param.point) return;
+        if (this._selectedRectangle) {
+            // If a rectangle is already selected, this click confirms the rotation.
+            this.stopRotating();
+            this._saveDrawings();
+            return;
+        }
+        // Otherwise, try to select a rectangle
+        const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
+        if (clickedRect) {
+            this._selectedRectangle = clickedRect;
+            this._selectedRectangle.select();
+        } else {
+            this.stopRotating(); // If no rectangle is clicked, exit rotate mode
+        }
+    }
+
+    private _onRotationMouseMove(param: MouseEventParams) {
+        if (!this._selectedRectangle || !param.point) return;
+        const view = this._selectedRectangle.paneViews()[0] as RectanglePaneView;
+        if (view._p1.x === null || view._p1.y === null || view._p2.x === null || view._p2.y === null) return;
+        
+        // Calculate the center of the rectangle
+        const centerX = (view._p1.x + view._p2.x) / 2;
+        const centerY = (view._p1.y + view._p2.y) / 2;
+
+        // Calculate the angle between the center and the mouse position
+        const angle = Math.atan2(param.point.y - centerY, param.point.x - centerX);
+        this._selectedRectangle.setAngle(angle);
+    }
+    
+    private _getRectangleAtPoint(x: Coordinate, y: Coordinate): Rectangle | undefined {
+        return this._rectangles.find(rect => {
             const view = rect.paneViews()[0] as RectanglePaneView;
-            if (view._p1.x === null || view._p1.y === null || view._p2.x === null || view._p2.y === null) {
-                return false;
-            }
-            // Check if the click is within the rectangle's pixel bounds
+            if (view._p1.x === null || view._p1.y === null || view._p2.x === null || view._p2.y === null) return false;
+            // This is a simplified check; a more accurate check would account for rotation.
             const minX = Math.min(view._p1.x, view._p2.x);
             const maxX = Math.max(view._p1.x, view._p2.x);
             const minY = Math.min(view._p1.y, view._p2.y);
             const maxY = Math.max(view._p1.y, view._p2.y);
-            return clickX >= minX && clickX <= maxX && clickY >= minY && clickY <= maxY;
+            return x >= minX && x <= maxX && y >= minY && y <= maxY;
         });
+    }
+    // --- End of new logic ---
 
+
+	private _handleDeleteClick(param: MouseEventParams) {
+        if (!param.point) return;
+		const rectangleToDelete = this._getRectangleAtPoint(param.point.x, param.point.y);
         if (rectangleToDelete) {
             this._removeRectangle(rectangleToDelete);
             this._rectangles = this._rectangles.filter(r => r !== rectangleToDelete);
@@ -268,9 +391,7 @@ export class RectangleDrawingTool {
         this._rectangles = [];
         this._saveDrawings();
     }
-	// --- End of new logic ---
-
-	private _onMouseMove(param: MouseEventParams) {
+	private _onDrawMouseMove(param: MouseEventParams) {
 		if (!this.isDrawing() || this._points.length === 0 || !param.point || !param.time) return;
 		const price = this._series.coordinateToPrice(param.point.y);
 		if (price === null) return;
@@ -290,8 +411,8 @@ export class RectangleDrawingTool {
 		}
 	}
 
-	private _addNewRectangle(p1: Point, p2: Point) {
-		const rectangle = new Rectangle(this._chart, this._series, p1, p2, { ...this._options });
+	private _addNewRectangle(p1: Point, p2: Point, angle: number = 0) {
+		const rectangle = new Rectangle(this._chart, this._series, p1, p2, angle, { ...this._options });
 		this._rectangles.push(rectangle);
 		this._series.attachPrimitive(rectangle);
 	}
@@ -313,7 +434,8 @@ export class RectangleDrawingTool {
 	}
 
     private _saveDrawings() {
-        const savedData = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2 }));
+        // FIX: Save the angle along with the points
+        const savedData = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2, angle: rect._angle }));
         localStorage.setItem(`drawings_${this._ticker}`, JSON.stringify(savedData));
     }
 
@@ -321,28 +443,27 @@ export class RectangleDrawingTool {
         const savedJSON = localStorage.getItem(`drawings_${this._ticker}`);
         if (savedJSON) {
             const savedData = JSON.parse(savedJSON);
-            savedData.forEach((data: { p1: Point, p2: Point }) => {
-                this._addNewRectangle(data.p1, data.p2);
+            // FIX: Load the angle
+            savedData.forEach((data: { p1: Point, p2: Point, angle: number }) => {
+                this._addNewRectangle(data.p1, data.p2, data.angle);
             });
         }
     }
 
-	private _addToolbar() { // FIX: Renamed and expanded method
-		// Draw Rectangle Button
+	private _addToolbar() {
 		const button = document.createElement('div');
 		button.style.width = '24px';
 		button.style.height = '24px';
         button.style.cursor = 'pointer';
 		button.style.color = '#d0d0d0';
 		button.title = 'Draw Rectangle';
-		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M2 2h20v20H2z" fill-opacity="0"/><path d="M3 7v10h18V7H3zm2 2h14v6H5V9z"/></svg>`;
+		button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M2 2h20v20H2z" fill-opacity="0"/><path transform="rotate(15 12 12)" d="M3 7v10h18V7H3zm2 2h14v6H5V9z"/></svg>`;
 		button.addEventListener('click', () => {
 			this.isDrawing() ? this.stopDrawing() : this.startDrawing();
 		});
 		this._toolbarContainer.appendChild(button);
 		this._toolbarButton = button;
 
-		// ADD: Delete Shape Button
 		const deleteButton = document.createElement('div');
         deleteButton.style.width = '24px';
 		deleteButton.style.height = '24px';
@@ -356,7 +477,22 @@ export class RectangleDrawingTool {
         this._toolbarContainer.appendChild(deleteButton);
         this._deleteButton = deleteButton;
 
-		// ADD: Clear All Shapes Button
+        // --- ADD: Rotate Button ---
+        const rotateButton = document.createElement('div');
+        rotateButton.style.width = '24px';
+        rotateButton.style.height = '24px';
+        rotateButton.style.cursor = 'pointer';
+        rotateButton.style.color = '#d0d0d0';
+        rotateButton.title = 'Rotate Shape';
+        rotateButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>`;
+        rotateButton.addEventListener('click', () => {
+            this.isRotating() ? this.stopRotating() : this.startRotating();
+        });
+        this._toolbarContainer.appendChild(rotateButton);
+        this._rotateButton = rotateButton;
+        // --- End of Rotate Button ---
+
+
         const clearButton = document.createElement('div');
         clearButton.style.width = '24px';
 		clearButton.style.height = '24px';
