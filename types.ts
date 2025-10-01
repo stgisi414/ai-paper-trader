@@ -322,3 +322,47 @@ export interface CombinedRec {
     strategy: string;
     justification: string;
 }
+
+export interface AlpacaOptionContract {
+    symbol: string;
+    name: string;
+    status: string;
+    tradable: boolean;
+    id: string;
+    asset_class: string;
+    exchange: string;
+    style: string;
+    type: 'call' | 'put';
+    expiration_date: string;
+    strike_price: string; // Is a string in the API response
+    underlying_symbol: string;
+    last_trade: {
+        price: number;
+        size: number;
+        timestamp: string;
+    } | null;
+}
+
+export interface AlpacaOptionsResponse {
+    options: AlpacaOptionContract[];
+    next_page_token: string | null;
+}
+
+// Add OptionHolding and update Portfolio
+export interface OptionHolding {
+  symbol: string;
+  underlyingTicker: string;
+  shares: number; // Number of contracts
+  purchasePrice: number; // Price per share (premium)
+  currentPrice: number;
+  optionType: 'call' | 'put';
+  strikePrice: number;
+  expirationDate: string;
+}
+
+export interface Portfolio {
+  cash: number;
+  holdings: Holding[];
+  optionHoldings: OptionHolding[];
+  initialValue: number;
+}
