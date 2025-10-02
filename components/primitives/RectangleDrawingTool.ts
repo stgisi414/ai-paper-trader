@@ -174,6 +174,12 @@ class Rectangle {
         this.requestUpdate();
     }
 
+    public setColor(color: string) {
+        this._options.fillColor = color;
+        this.updateAllViews();
+        this.requestUpdate();
+    }
+
     protected requestUpdate() {
         this._requestUpdate();
     }
@@ -207,6 +213,7 @@ export class RectangleDrawingTool {
 	private _points: Point[] = [];
 	private _drawing: boolean = false;
 	private _deleting: boolean = false;
+    private _coloring: boolean = false;
     private _rotating: boolean = false;
     private _moving: boolean = false;
     private _selectedRectangle: Rectangle | null = null;
@@ -215,6 +222,7 @@ export class RectangleDrawingTool {
     private _toolbarButton?: HTMLDivElement;
 	private _deleteButton?: HTMLDivElement;
     private _clearButton?: HTMLDivElement;
+    private _colorInput?: HTMLInputElement;
     private _rotateButton?: HTMLDivElement;
     private _moveButton?: HTMLDivElement;
     private _ticker: string;
@@ -248,6 +256,8 @@ export class RectangleDrawingTool {
             this._handleDrawClick(param);
         } else if (this.isDeleting()) {
             this._handleDeleteClick(param);
+        } else if (this.isColoring()) {
+            this._handleColorClick(param);
         } else if (this.isRotating()) {
             this._handleRotateClick(param);
         } else if (this.isMoving()) {
@@ -341,6 +351,7 @@ export class RectangleDrawingTool {
 	public destroy() {
         this.stopDrawing();
 		this.stopDeleting();
+        this.stopColoring();
         this.stopRotating();
         this.stopMoving();
         const chartContainer = this._chart.options().layout?.container;
@@ -358,6 +369,7 @@ export class RectangleDrawingTool {
 		if (this._toolbarButton) this._toolbarContainer.removeChild(this._toolbarButton);
         if (this._deleteButton) this._toolbarContainer.removeChild(this._deleteButton);
         if (this._clearButton) this._toolbarContainer.removeChild(this._clearButton);
+        if (this._colorInput) this._toolbarContainer.removeChild(this._colorInput);
         if (this._rotateButton) this._toolbarContainer.removeChild(this._rotateButton);
         if (this._moveButton) this._toolbarContainer.removeChild(this._moveButton);
 	}
@@ -429,8 +441,10 @@ export class RectangleDrawingTool {
             this._saveDrawings();
         }
     }
+
 	public startDrawing(): void {
 		this.stopDeleting();
+        this.stopColoring();
         this.stopRotating();
 		this._drawing = true;
 		this._points = [];
@@ -456,9 +470,14 @@ export class RectangleDrawingTool {
         return this._deleting;
     }
 
+	public isColoring(): boolean {
+        return this._coloring;
+    }
+
     public startMoving(): void {
         this.stopDrawing();
         this.stopDeleting();
+        this.stopColoring();
         this.stopRotating();
         this._moving = true;
         
@@ -479,6 +498,7 @@ export class RectangleDrawingTool {
 
 	public startDeleting(): void {
         this.stopDrawing();
+        this.stopColoring();
         this.stopRotating();
         this._deleting = true;
         if (this._deleteButton) this._deleteButton.style.color = 'rgb(217, 48, 37)';
@@ -495,6 +515,23 @@ export class RectangleDrawingTool {
         });
     }
 
+    public startColoring(): void {
+        this.stopDrawing();
+        this.stopDeleting();
+        this.stopRotating();
+        this._coloring = true;
+        if (this._colorInput) this._colorInput.style.border = '2px solid rgb(0, 120, 255)';
+    }
+
+    public stopColoring(): void {
+        this._coloring = false;
+        if (this._selectedRectangle) {
+            this._selectedRectangle.deselect();
+            this._selectedRectangle = null;
+        }
+        if (this._colorInput) this._colorInput.style.border = '2px solid transparent';
+    }
+
     public isRotating(): boolean {
         return this._rotating;
     }
@@ -502,6 +539,7 @@ export class RectangleDrawingTool {
     public startRotating(): void {
         this.stopDrawing();
         this.stopDeleting();
+        this.stopColoring();
         this._rotating = true;
         if (this._rotateButton) this._rotateButton.style.color = 'rgb(0, 120, 255)';
     }
@@ -542,6 +580,21 @@ export class RectangleDrawingTool {
             this._selectedRectangle.select();
         } else {
             this.stopMoving();
+        }
+    }
+    private _handleColorClick(param: MouseEventParams) {
+        if (!param.point) return;
+        if (this._selectedRectangle) {
+            this.stopColoring();
+            this._saveDrawings();
+            return;
+        }
+        const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
+        if (clickedRect) {
+            this._selectedRectangle = clickedRect;
+            this._selectedRectangle.select();
+        } else {
+            this.stopColoring();
         }
     }
     private _handleRotateClick(param: MouseEventParams) {
@@ -625,7 +678,7 @@ export class RectangleDrawingTool {
 	private _addPoint(p: Point) {
 		this._points.push(p);
 		if (this._points.length >= 2) {
-			this._addNewRectangle(this._points[0], this._points[1]);
+			this._addNewRectangle(this._points[0], this._points[1], 0, this._options.fillColor);
 			this._saveDrawings();
 			this.stopDrawing();
 		} else {
@@ -633,8 +686,12 @@ export class RectangleDrawingTool {
 		}
 	}
 
-	private _addNewRectangle(p1: Point, p2: Point, angle: number = 0) {
-		const rectangle = new Rectangle(this._chart, this._series, p1, p2, angle, { ...this._options });
+	private _addNewRectangle(p1: Point, p2: Point, angle: number = 0, color?: string) {
+		const options = { ...this._options };
+        if (color) {
+            options.fillColor = color;
+        }
+		const rectangle = new Rectangle(this._chart, this._series, p1, p2, angle, options);
 		this._rectangles.push(rectangle);
 		this._series.attachPrimitive(rectangle);
 	}
@@ -656,7 +713,7 @@ export class RectangleDrawingTool {
 	}
 
     private _saveDrawings() {
-        const savedData = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2, angle: rect._angle }));
+        const savedData = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2, angle: rect._angle, color: rect._options.fillColor }));
         localStorage.setItem(`drawings_${this._ticker}`, JSON.stringify(savedData));
     }
 
@@ -664,10 +721,17 @@ export class RectangleDrawingTool {
         const savedJSON = localStorage.getItem(`drawings_${this._ticker}`);
         if (savedJSON) {
             const savedData = JSON.parse(savedJSON);
-            savedData.forEach((data: { p1: Point, p2: Point, angle: number }) => {
-                this._addNewRectangle(data.p1, data.p2, data.angle);
+            savedData.forEach((data: { p1: Point, p2: Point, angle: number, color: string }) => {
+                this._addNewRectangle(data.p1, data.p2, data.angle, data.color);
             });
         }
+    }
+
+    private _hexToRgba(hex: string, alpha: number = 0.33): string {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
 	private _addToolbar() {
@@ -696,6 +760,28 @@ export class RectangleDrawingTool {
         });
         this._toolbarContainer.appendChild(deleteButton);
         this._deleteButton = deleteButton;
+
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.style.width = '24px';
+        colorInput.style.height = '24px';
+        colorInput.style.cursor = 'pointer';
+        colorInput.style.border = '2px solid transparent';
+        colorInput.title = 'Select Color';
+        colorInput.addEventListener('click', () => {
+            this.isColoring() ? this.stopColoring() : this.startColoring();
+        });
+        colorInput.addEventListener('input', (e) => {
+            const hexColor = (e.target as HTMLInputElement).value;
+            const rgbaColor = this._hexToRgba(hexColor, 0.33);
+            this._options.fillColor = rgbaColor;
+            if (this._selectedRectangle) {
+                this._selectedRectangle.setColor(rgbaColor);
+                this._saveDrawings();
+            }
+        });
+        this._toolbarContainer.appendChild(colorInput);
+        this._colorInput = colorInput;
 
         const rotateButton = document.createElement('div');
         rotateButton.style.width = '24px';

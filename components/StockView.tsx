@@ -88,7 +88,7 @@ const StockView: React.FC = () => {
                     fmpService.getInsiderTrading(ticker),
                     alpacaService.getOptionsContracts(ticker),
                 ]);
-
+                
                 setQuote(quoteData[0] || null);
                 setProfile(profileData[0] || null);
                 const historical = historyData.historical ? historyData.historical.reverse() : (historyData as any);
@@ -101,30 +101,19 @@ const StockView: React.FC = () => {
                 setInsiderTrades(insiderTradingData);
 
                 if (optionsData && Array.isArray(optionsData.option_contracts)) {
-                    const batchSize = 50;
                     const allOptions = optionsData.option_contracts;
-                    let processedOptions: AlpacaOptionContract[] = [];
+                    const optionSymbols = allOptions.map(o => o.symbol);
+                    
+                    // Fetch all option bar data in a single call
+                    const barsData = await alpacaService.getOptionBars(optionSymbols);
 
-                    for (let i = 0; i < allOptions.length; i += batchSize) {
-                        const batch = allOptions.slice(i, i + batchSize);
-                        const batchWithVolume = await Promise.all(batch.map(async (option) => {
-                            try {
-                                const barsData = await alpacaService.getOptionBar(option.symbol);
-                                const volume = barsData.bars.length > 0 ? barsData.bars[0].v : 0;
-                                return { ...option, volume };
-                            } catch (error) {
-                                console.error(`Failed to fetch volume for ${option.symbol}`, error);
-                                return { ...option, volume: 0 }; // Default volume on error
-                            }
-                        }));
-                        processedOptions = [...processedOptions, ...batchWithVolume];
-                        setOptions([...processedOptions]); // Update state incrementally
+                    const optionsWithVolume = allOptions.map(option => {
+                        const bars = barsData.bars[option.symbol];
+                        const volume = bars && bars.length > 0 ? bars[0].v : 0;
+                        return { ...option, volume };
+                    });
 
-                        // Delay between batches
-                        if (i + batchSize < allOptions.length) {
-                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1-second delay
-                        }
-                    }
+                    setOptions(optionsWithVolume);
                 }
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);

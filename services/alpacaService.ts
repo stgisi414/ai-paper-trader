@@ -31,3 +31,10 @@ export const getOptionBar = (symbol: string): Promise<{ bars: AlpacaOptionBar[] 
     const today = new Date().toISOString().split('T')[0];
     return fetchAlpaca<{ bars: AlpacaOptionBar[] }>(`/bars?symbols=${symbol}&timeframe=1Day&start=${today}`, 'v1beta1');
 }
+
+export const getOptionBars = (symbols: string[]): Promise<{ bars: Record<string, AlpacaOptionBar[]> }> => {
+    if (symbols.length === 0) return Promise.resolve({ bars: {} });
+    const today = new Date().toISOString().split('T')[0];
+    const symbolsString = symbols.join(',');
+    return fetchAlpaca<{ bars: Record<string, AlpacaOptionBar[]> }>(`/bars?symbols=${symbolsString}&timeframe=1Day&start=${today}`, 'v1beta1');
+}
