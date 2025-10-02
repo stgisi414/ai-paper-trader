@@ -25,16 +25,15 @@ interface YahooOptionContract {
 }
 
 interface OptionsChainResponse {
-    optionChain: {
-        result: Array<{
-            quotes?: any[];
-            options: Array<{
-                expirationDate: number;
-                calls: YahooOptionContract[];
-                puts: YahooOptionContract[];
-            }>;
-        }>;
-    };
+    // FIX 1: New top-level interface matching the actual Yahoo Finance response
+    underlyingSymbol: string;
+    options: Array<{
+        expirationDate: string; // The date is now a string, not a number (epoch)
+        calls: YahooOptionContract[];
+        puts: YahooOptionContract[];
+    }>;
+    // Add other relevant root fields if needed, but not strictly required for logic
+    quote?: any;
 }
 
 /**
@@ -51,10 +50,17 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
         const response = await fetch(url);
         if (!response.ok) {
             const errorText = await response.text();
+            // ADDED: Log the error response text to the console
+            console.error(`Options Proxy failed with status ${response.status}:`, errorText);
             throw new Error(`Options Proxy failed: ${response.status} ${errorText}`);
         }
         
-        const data = await response.json() as OptionsChainResponse;
+        // ADDED: Read the raw text, log it, and then parse it
+        const rawJsonText = await response.text();
+        console.log('Raw Options Proxy Response Text:', rawJsonText); // <-- Check this first!
+
+        const data = JSON.parse(rawJsonText) as OptionsChainResponse;
+        console.log('Parsed Options Proxy Data Object:', data); // <-- Check this second!
 
         const optionsResultList = data.optionChain?.result;
         

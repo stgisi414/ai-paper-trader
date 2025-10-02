@@ -389,3 +389,29 @@ export interface Transaction {
     optionType?: 'call' | 'put';
     strikePrice?: number;
 }
+
+interface YahooOptionContract {
+    contractSymbol: string;
+    strike: number;
+    expiration: number;
+    lastPrice: number;
+    bid: number;
+    ask: number;
+    change: number;
+    percentChange: number;
+    volume: number;
+    openInterest: number;
+    impliedVolatility: number;
+    inTheMoney: boolean;
+    // FIX/ADDITION: Add the greeks directly as they exist in the raw response structure
+    greeks?: {
+        delta: number;
+        gamma: number;
+        theta: number;
+        vega: number;
+    };
+    // ADDITION: Include these fields from the raw response to ensure type compatibility
+    currency?: string; 
+    contractSize?: string;
+    lastTradeDate?: string; 
+}

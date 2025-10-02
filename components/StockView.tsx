@@ -570,11 +570,11 @@ const StockView: React.FC = () => {
                                             {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
                                                 <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
                                                     <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
-                                                    <td className="p-1">{option.expiration_date.slice(5, 10)}</td> {/* Show Month-Day only */}
+                                                    <td className="p-1">{option.expiration_date.slice(5, 10)}</td>
                                                     <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
                                                     <td className="p-1">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
                                                     <td className="p-1">{formatGreek(option.delta)}</td>
-                                                    <td className="p-1 text-night-500">{formatNumber(option.open_interest || option.volume)}</td> {/* Show OI/Vol */}
+                                                    <td className="p-1 text-night-500">{formatNumber(option.open_interest || option.volume)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
