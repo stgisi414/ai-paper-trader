@@ -82,30 +82,6 @@ export interface FmpNews {
     url: string;
 }
 
-// NEW: Represents a single options contract from the FMP API
-export interface FmpOptionContract {
-    symbol: string;
-    date: string;
-    expirationDate: string;
-    optionType: 'call' | 'put';
-    strike: number;
-    lastPrice: number;
-    bid: number;
-    ask: number;
-    change: number;
-    percentChange: number;
-    volume: number;
-    openInterest: number;
-    impliedVolatility: number;
-}
-
-// NEW: Represents the entire option chain payload from FMP
-export interface FmpOptionChain {
-    symbol: string;
-    stockPrice: number;
-    options: FmpOptionContract[];
-}
-
 // NEW: Represents the options position summary from FMP
 export interface FmpOptionsPositionSummary {
     symbol: string;
@@ -341,6 +317,8 @@ export interface AlpacaOptionContract {
     strike_price: string; // Is a string in the API response
     underlying_symbol: string;
     close_price: number | null; // Use close_price instead of last_trade
+    volume: number | null;
+    open_interest: number | null;
 }
 
 export interface AlpacaOptionsResponse {
@@ -358,4 +336,13 @@ export interface OptionHolding {
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
+}
+
+export interface AlpacaOptionBar {
+    t: string; // Timestamp
+    o: number; // Open
+    h: number; // High
+    l: number; // Low
+    c: number; // Close
+    v: number; // Volume
 }

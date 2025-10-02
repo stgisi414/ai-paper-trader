@@ -2,17 +2,17 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
-import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec, AlpacaOptionContract, OptionHolding, KeyMetricsAnalysis } from '../types'; // ADD KeyMetricsAnalysis
+import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec, AlpacaOptionContract, OptionHolding, KeyMetricsAnalysis } from '../types';
 import { usePortfolio } from '../hooks/usePortfolio';
-import { useWatchlist } from '../hooks/useWatchlist'; // ADD
+import { useWatchlist } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { BrainCircuitIcon, EyeIcon, StarIcon } from './common/Icons'; // MODIFIED
+import { BrainCircuitIcon, StarIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as alpacaService from '../services/alpacaService';
 import SignatexFlow from './SignatexFlow';
-import Watchlist from './Watchlist'; // ADD
+import Watchlist from './Watchlist';
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
     const [state, setState] = useState<T>(() => {
@@ -39,7 +39,7 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
-    const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist(); // ADD
+    const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist();
 
     const [quote, setQuote] = useState<FmpQuote | null>(null);
     const [profile, setProfile] = useState<FmpProfile | null>(null);
@@ -99,8 +99,32 @@ const StockView: React.FC = () => {
                 setBalanceSheet(balanceSheetData[0] || null);
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
+
                 if (optionsData && Array.isArray(optionsData.option_contracts)) {
-                    setOptions(optionsData.option_contracts);
+                    const batchSize = 50;
+                    const allOptions = optionsData.option_contracts;
+                    let processedOptions: AlpacaOptionContract[] = [];
+
+                    for (let i = 0; i < allOptions.length; i += batchSize) {
+                        const batch = allOptions.slice(i, i + batchSize);
+                        const batchWithVolume = await Promise.all(batch.map(async (option) => {
+                            try {
+                                const barsData = await alpacaService.getOptionBar(option.symbol);
+                                const volume = barsData.bars.length > 0 ? barsData.bars[0].v : 0;
+                                return { ...option, volume };
+                            } catch (error) {
+                                console.error(`Failed to fetch volume for ${option.symbol}`, error);
+                                return { ...option, volume: 0 }; // Default volume on error
+                            }
+                        }));
+                        processedOptions = [...processedOptions, ...batchWithVolume];
+                        setOptions([...processedOptions]); // Update state incrementally
+
+                        // Delay between batches
+                        if (i + batchSize < allOptions.length) {
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1-second delay
+                        }
+                    }
                 }
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
@@ -226,7 +250,7 @@ const StockView: React.FC = () => {
         }
     };
 
-    const handleWatchlistToggle = () => { // ADD
+    const handleWatchlistToggle = () => {
         if (!ticker || !profile) return;
         if (isOnWatchlist(ticker)) {
             removeFromWatchlist(ticker);
@@ -247,7 +271,7 @@ const StockView: React.FC = () => {
     }
 
     const priceChangeColor = quote.change >= 0 ? 'text-brand-green' : 'text-brand-red';
-    const onWatchlist = ticker ? isOnWatchlist(ticker) : false; // ADD
+    const onWatchlist = ticker ? isOnWatchlist(ticker) : false;
 
     const renderTabContent = () => {
         switch (activeTab) {
@@ -322,7 +346,6 @@ const StockView: React.FC = () => {
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
                         </div>
-                        {/* FIX: Conditional rendering for intro text */}
                         {!isAiLoading && !hasRunFinancialAnalysis && (
                             <p className="text-night-500 mb-4">
                                 Use our AI to analyze the company's income statement, balance sheet, and cash flow statement. 
@@ -424,7 +447,6 @@ const StockView: React.FC = () => {
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
                         </div>
-                        {/* FIX: Conditional rendering for intro text */}
                         {!isAiLoading && !hasRunTechnicalAnalysis && (
                             <p className="text-night-500 mb-4">
                                 Let the AI analyze the historical price chart to identify the current trend, key support and resistance levels, and provide a summary of the technical outlook.
@@ -450,7 +472,6 @@ const StockView: React.FC = () => {
                                 {isAiLoading ? 'Analyzing...' : 'Generate Strategy'}
                             </button>
                         </div>
-                        {/* FIX: Conditional rendering for intro text */}
                         {!isAiLoading && !hasRunAdvancedRecs && (
                             <p className="text-night-500 mb-4">
                                 This advanced tool synthesizes fundamental data, analyst ratings, and technical analysis into a single, actionable recommendation. 
@@ -506,7 +527,6 @@ const StockView: React.FC = () => {
                             <p className="text-night-500">{quote.exchange}</p>
                         </div>
                     </div>
-                    {/* ADD Watchlist Button */}
                     <button 
                         onClick={handleWatchlistToggle} 
                         className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors text-sm font-bold ${
@@ -527,42 +547,9 @@ const StockView: React.FC = () => {
                 </div>
             </Card>
 
-            <Card>
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold">Price Chart</h2>
-                    <select
-                        value={chartInterval}
-                        onChange={(e) => setChartInterval(e.target.value)}
-                        className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none"
-                    >
-                        <option value="15min">15 Minute</option>
-                        <option value="1hour">1 Hour</option>
-                        <option value="4hour">4 Hour</option>
-                        <option value="1day">1 Day</option>
-                        <option value="1week">1 Week</option>
-                        <option value="1month">1 Month</option>
-                    </select>
-                </div>
-                <CandlestickChart data={historicalData} ticker={ticker as string} />
-            </Card>
-
-            <div className="border-b border-night-700 mb-6 overflow-x-auto overflow-y-hidden">
-                <nav className="-mb-px flex space-x-8 whitespace-nowrap" aria-label="Tabs">
-                    <button onClick={() => setActiveTab('summary')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'summary' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Summary</button>
-                    <button onClick={() => setActiveTab('news')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'news' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>News</button>
-                    <button onClick={() => setActiveTab('financials')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'financials' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Financials</button>
-                    <button onClick={() => setActiveTab('ratings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'ratings' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Analyst Ratings</button>
-                    <button onClick={() => setActiveTab('insider')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'insider' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Insider Trades</button>
-                    <button onClick={() => setActiveTab('technical')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'technical' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>AI Technical Analysis</button>
-                    <button onClick={() => setActiveTab('advanced')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'advanced' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Advanced Recs</button>
-                </nav>
-            </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                    {renderTabContent()}
-                </div>
-                <div className="lg:col-span-1 space-y-6"> {/* MODIFIED */}
+                <div className="lg:col-span-1 space-y-6">
+                    <Watchlist />
                     <Card>
                         <h2 className="text-xl font-bold mb-4">Trade</h2>
                         <div className="border-b border-night-700 mb-4">
@@ -587,6 +574,8 @@ const StockView: React.FC = () => {
                                                 <th className="p-1">Strike</th>
                                                 <th className="p-1">Expiry</th>
                                                 <th className="p-1">Price</th>
+                                                <th className="p-1">Volume</th>
+                                                <th className="p-1">Open Int.</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -595,6 +584,8 @@ const StockView: React.FC = () => {
                                                     <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
                                                     <td className="p-1">{option.expiration_date}</td>
                                                     <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
+                                                    <td className="p-1">{formatNumber(option.volume || 0)}</td>
+                                                    <td className="p-1">{formatNumber(option.open_interest || 0)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -625,7 +616,39 @@ const StockView: React.FC = () => {
                             </div>
                         </div>
                     </Card>
-                    <Watchlist />
+                </div>
+                <div className="lg:col-span-2 space-y-6">
+                    <Card>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">Price Chart</h2>
+                            <select
+                                value={chartInterval}
+                                onChange={(e) => setChartInterval(e.target.value)}
+                                className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none"
+                            >
+                                <option value="15min">15 Minute</option>
+                                <option value="1hour">1 Hour</option>
+                                <option value="4hour">4 Hour</option>
+                                <option value="1day">1 Day</option>
+                                <option value="1week">1 Week</option>
+                                <option value="1month">1 Month</option>
+                            </select>
+                        </div>
+                        <CandlestickChart data={historicalData} ticker={ticker as string} />
+                    </Card>
+
+                    <div className="border-b border-night-700 mb-6 overflow-x-auto overflow-y-hidden">
+                        <nav className="-mb-px flex space-x-8 whitespace-nowrap" aria-label="Tabs">
+                            <button onClick={() => setActiveTab('summary')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'summary' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Summary</button>
+                            <button onClick={() => setActiveTab('news')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'news' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>News</button>
+                            <button onClick={() => setActiveTab('financials')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'financials' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Financials</button>
+                            <button onClick={() => setActiveTab('ratings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'ratings' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Analyst Ratings</button>
+                            <button onClick={() => setActiveTab('insider')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'insider' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Insider Trades</button>
+                            <button onClick={() => setActiveTab('technical')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'technical' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>AI Technical Analysis</button>
+                            <button onClick={() => setActiveTab('advanced')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'advanced' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Advanced Recs</button>
+                        </nav>
+                    </div>
+                    {renderTabContent()}
                 </div>
             </div>
         </div>

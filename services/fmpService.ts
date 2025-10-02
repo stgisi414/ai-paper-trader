@@ -1,5 +1,5 @@
 import { FMP_BASE_URL, FMP_API_KEY } from '../constants';
-import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews, FmpOptionChain, FmpOptionsPositionSummary, FmpAnalystRating, FmpPriceTarget, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading } from '../types';
+import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews, FmpOptionsPositionSummary, FmpAnalystRating, FmpPriceTarget, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading } from '../types';
 
 const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
     if (!FMP_API_KEY) {
@@ -71,12 +71,6 @@ export const getHistoricalData = (ticker: string, interval: string = '1day'): Pr
 
 export const getNews = (ticker: string, limit: number = 20): Promise<FmpNews[]> => {
     return fetchFmp<FmpNews[]>(`/stock_news?tickers=${ticker}&limit=${limit}`);
-}
-
-// NEW: Fetches the entire option chain for a given stock
-export const getOptionChain = (ticker: string): Promise<FmpOptionChain[]> => {
-    // Note: The API returns an array, but it usually contains a single element for a single ticker.
-    return fetchFmp<FmpOptionChain[]>(`/stock_option_chain?symbol=${ticker}`);
 }
 
 // NEW: Fetches the put/call ratio and total positions

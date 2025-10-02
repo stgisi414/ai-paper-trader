@@ -14,6 +14,7 @@ interface WatchlistContextType {
     watchlist: WatchlistItem[];
     addToWatchlist: (ticker: string, name: string) => void;
     removeFromWatchlist: (ticker: string) => void;
+    reorderWatchlist: (startIndex: number, endIndex: number) => void; // ADD
     isOnWatchlist: (ticker: string) => boolean;
     isLoading: boolean;
 }
@@ -59,6 +60,7 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const tickers = watchlistTickers.join(',');
             const quotes = await fmpService.getQuote(tickers);
             
+            // Maintain the order from watchlistTickers
             const updatedWatchlist = watchlistTickers.map(ticker => {
                 const quote = quotes.find(q => q.symbol === ticker);
                 return {
@@ -94,13 +96,23 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const removeFromWatchlist = useCallback((ticker: string) => {
         setWatchlistTickers(prev => prev.filter(t => t !== ticker));
     }, []);
+    
+    // ADD: reorder function
+    const reorderWatchlist = useCallback((startIndex: number, endIndex: number) => {
+        setWatchlistTickers(prev => {
+            const result = Array.from(prev);
+            const [removed] = result.splice(startIndex, 1);
+            result.splice(endIndex, 0, removed);
+            return result;
+        });
+    }, []);
 
     const isOnWatchlist = useCallback((ticker: string) => {
         return watchlistTickers.includes(ticker);
     }, [watchlistTickers]);
 
 
-    const value = { watchlist: watchlistData, addToWatchlist, removeFromWatchlist, isOnWatchlist, isLoading };
+    const value = { watchlist: watchlistData, addToWatchlist, removeFromWatchlist, reorderWatchlist, isOnWatchlist, isLoading };
 
     return (
         <WatchlistContext.Provider value={value}>
