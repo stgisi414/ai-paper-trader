@@ -1,7 +1,8 @@
 // stgisi414/ai-paper-trader/ai-paper-trader-1aba57e32cc684602a69e276de1a20c554fe5223/utils/optionsCalculator.ts
 
-// FIX: Use a wildcard import to access Greeks functions directly as properties
-import * as blackScholes from 'black-scholes'; 
+// FIX 1: Change to a default import to correctly load the CommonJS module.
+// We expect the module export to be { blackScholes: ... }
+import { delta, gamma, theta, vega } from 'options-greeks'; 
 import { OptionHolding } from '../types';
 
 // Hardcoded risk-free rate (r) based on 10Y US Treasury Yield (approx 4.16% or 0.0416)
@@ -57,21 +58,23 @@ export const calculateGreeks = (
         const type = optionType; 
         const r = RISK_FREE_RATE; 
         const sigma = IV as number; 
+        // ADDED: Continuous dividend yield (Q), assuming zero as data is not available.
+        const Q = 0; 
         
-        // FIX: Use the direct function calls from the wildcard import
-        const delta = blackScholes.delta(type, S, K, T, r, sigma);
-        const gamma = blackScholes.gamma(S, K, T, r, sigma);
-        const thetaAnnualized = blackScholes.theta(type, S, K, T, r, sigma);
-        const vega = blackScholes.vega(S, K, T, r, sigma);
+        // FIX 2: Use the explicitly imported functions with correct parameter order.
+        const calculatedDelta = delta(S, K, T, r, sigma, type, Q);
+        const calculatedGamma = gamma(S, K, T, r, sigma, type, Q);
+        const calculatedThetaAnnualized = theta(S, K, T, r, sigma, type, Q);
+        const calculatedVega = vega(S, K, T, r, sigma, type, Q);
         
         // Theta is typically annualized; convert to daily decay
-        const thetaDaily = thetaAnnualized / 365;
+        const thetaDaily = calculatedThetaAnnualized / 365;
 
         return {
-            delta: delta,
-            gamma: gamma,
+            delta: calculatedDelta,
+            gamma: calculatedGamma,
             theta: thetaDaily,
-            vega: vega,
+            vega: calculatedVega,
             impliedVolatility: IV,
         };
     } catch (e) {
