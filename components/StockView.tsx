@@ -36,16 +36,16 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
     return [state, setState];
 };
 
-const formatGreek = useCallback((value: number | null): string => { // ADD useCallback to existing formatGreek helper
-    if (value === null) return 'N/A';
-    // Format to three decimal places for precision
-    return value.toFixed(3);
-}, []);
-
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
     const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist();
+
+    const formatGreek = useCallback((value: number | null): string => {
+        if (value === null) return 'N/A';
+        // Format to three decimal places for precision
+        return value.toFixed(3);
+    }, []);
 
     const [quote, setQuote] = useState<FmpQuote | null>(null);
     const [profile, setProfile] = useState<FmpProfile | null>(null);

@@ -4,43 +4,21 @@ import {Request, Response} from "express";
 import yahooFinance from "@gadicc/yahoo-finance2";
 // FIX: Revert cors to require for runtime stability (TS6133 fix)
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const corsModule = require("cors");
-
-// Safely extract the cors function, handling module interop
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const corsMiddlewareFactory = (corsModule as any).default || corsModule;
+const cors = require("cors");
 
 // 1. Configure Allowed Origins for CORS
-const allowedOrigins = [
+/* const allowedOrigins = [
   "http://localhost:5173",
   "https://localhost:5173",
   "https://signatex.app",
   "https://signatex-trader.web.app",
-];
+]; */
 
 // Initialize the CORS middleware
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const corsMiddleware = (corsMiddlewareFactory as any)({
-  // Add explicit types for origin and callback
-  origin: (
-    origin: string | undefined,
-    callback: (err: Error | null, allow?: boolean) => void
-  ) => {
-    // Allow requests with no origin
-    if (!origin) return callback(null, true);
-
-    // Check if the origin is in our allowed list
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    // Block requests from unapproved origins
-    callback(
-      new Error(`CORS policy blocks access from origin: ${origin}`),
-      false
-    );
-  },
-  methods: "GET",
+// Using the cors function directly, configured with allowed origins and methods
+const corsMiddleware = cors({
+  origin: true,
+  methods: ["GET"], // Explicitly allow GET method for pre-flight requests
 });
 
 /**
@@ -48,9 +26,9 @@ const corsMiddleware = (corsMiddlewareFactory as any)({
  */
 exports.optionsProxy = functions.https.onRequest(
   async (req: Request, res: Response) => {
-    // 2. Wrap the core logic in the CORS middleware
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (corsMiddleware as any)(req, res, async () => {
+    // 2. Apply the CORS middleware. The core function logic is passed as the
+    // third argument (next()).
+    corsMiddleware(req, res, async () => {
       // Ensure method is GET
       if (req.method !== "GET") {
         return res.status(405).send("Method Not Allowed");
