@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
-      }
+      },
+      // ADDITION: Explicitly tell Vite to optimize quantlib to prevent cache errors
+      optimizeDeps: {
+        include: ['quantlib'],
+      },
     };
 });

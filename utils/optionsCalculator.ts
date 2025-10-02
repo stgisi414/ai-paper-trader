@@ -1,12 +1,13 @@
 // stgisi414/ai-paper-trader/ai-paper-trader-1aba57e32cc684602a69e276de1a20c554fe5223/utils/optionsCalculator.ts
 
-// FIX 1: Change to a default import to correctly load the CommonJS module.
-// We expect the module export to be { blackScholes: ... }
-import { delta, gamma, theta, vega } from 'options-greeks'; 
+// FIX 1: Import all necessary QuantLib functionality
+import * as ql from 'quantlib'; 
 import { OptionHolding } from '../types';
 
 // Hardcoded risk-free rate (r) based on 10Y US Treasury Yield (approx 4.16% or 0.0416)
 const RISK_FREE_RATE = 0.0416;
+// ADDED: Assuming zero dividend yield, as stock data does not provide it consistently
+const DIVIDEND_YIELD = 0.0;
 
 /**
  * Calculates the time to expiration (T) in years.
@@ -44,41 +45,90 @@ export const calculateGreeks = (
     IV: number | null
 ): Pick<OptionHolding, 'delta' | 'gamma' | 'theta' | 'vega' | 'impliedVolatility'> => {
     
-    if (IV === null || IV <= 0) {
-        return { delta: null, gamma: null, theta: null, vega: null, impliedVolatility: IV };
-    }
-    
     const T = calculateTimeToExpiration(expirationDate);
     
-    if (T <= 0) {
+    if (IV === null || IV <= 0 || T <= 0) {
         return { delta: null, gamma: null, theta: null, vega: null, impliedVolatility: IV };
     }
 
     try {
-        const type = optionType; 
-        const r = RISK_FREE_RATE; 
         const sigma = IV as number; 
-        // ADDED: Continuous dividend yield (Q), assuming zero as data is not available.
-        const Q = 0; 
         
-        // FIX 2: Use the explicitly imported functions with correct parameter order.
-        const calculatedDelta = delta(S, K, T, r, sigma, type, Q);
-        const calculatedGamma = gamma(S, K, T, r, sigma, type, Q);
-        const calculatedThetaAnnualized = theta(S, K, T, r, sigma, type, Q);
-        const calculatedVega = vega(S, K, T, r, sigma, type, Q);
+        // --- QUANTLIB SETUP ---
+
+        // 1. Set Evaluation Date
+        const now = new Date();
+        const today = new ql.Date(now.getDate(), now.getMonth() + 1, now.getFullYear());
+        ql.Settings.instance().evaluationDate = today;
+
+        // 2. Market Data Quotes
+        const underlyingQuote = new ql.QuoteHandle(new ql.SimpleQuote(S));
+        const riskFreeRateQuote = new ql.QuoteHandle(new ql.SimpleQuote(RISK_FREE_RATE));
+        const volatilityQuote = new ql.QuoteHandle(new ql.SimpleQuote(sigma));
+        const dividendYieldQuote = new ql.QuoteHandle(new ql.SimpleQuote(DIVIDEND_YIELD));
+
+        // 3. Term Structures (Curves) - Using Actual/365Fixed for simple models
+        const dayCounter = new ql.Actual365Fixed();
+        const calendar = new ql.NullCalendar(); // Simplifies day counting for options
+
+        const riskFreeCurve = new ql.YieldTermStructureHandle(
+            new ql.FlatForward(today, riskFreeRateQuote, dayCounter)
+        );
+        const dividendCurve = new ql.YieldTermStructureHandle(
+            new ql.FlatForward(today, dividendYieldQuote, dayCounter)
+        );
+        const volatilityTermStructure = new ql.BlackVolTermStructureHandle(
+            new ql.BlackConstantVol(today, calendar, volatilityQuote, dayCounter)
+        );
+
+        // 4. Stochastic Process
+        const process = new ql.BlackScholesMertonProcess(
+            underlyingQuote,
+            dividendCurve, // Dividend yield term structure
+            riskFreeCurve, // Risk-free rate term structure
+            volatilityTermStructure // Volatility term structure
+        );
+
+        // 5. Option Definition
+        const dateParts = expirationDate.split('-').map(Number); // [YYYY, MM, DD]
+        const maturityDate = new ql.Date(dateParts[2], dateParts[1], dateParts[0]);
         
-        // Theta is typically annualized; convert to daily decay
-        const thetaDaily = calculatedThetaAnnualized / 365;
+        // Payoff type
+        const qlOptionType = optionType === 'call' ? ql.Option.Type.Call : ql.Option.Type.Put;
+        const payoff = new ql.PlainVanillaPayoff(qlOptionType, K);
+        
+        // Exercise type
+        const europeanExercise = new ql.EuropeanExercise(maturityDate);
+        
+        // Instrument
+        const europeanOption = new ql.VanillaOption(payoff, europeanExercise);
+
+        // 6. Pricing Engine
+        const engine = new ql.AnalyticEuropeanEngine(process);
+        europeanOption.setPricingEngine(engine);
+
+        // 7. Calculate Greeks
+        const calculatedDelta = europeanOption.delta();
+        const calculatedGamma = europeanOption.gamma();
+        
+        // QuantLib's theta is often thetaPerDay() or annualized. We use thetaPerDay 
+        // for direct daily decay (preferred) and fallback to theta/365.
+        // thetaPerDay() returns a value per day, which is what the frontend expects.
+        const thetaPerDay = europeanOption.thetaPerDay ? europeanOption.thetaPerDay() : (europeanOption.theta() || 0) / 365;
+        const calculatedVega = europeanOption.vega();
+        
+        // --- END QUANTLIB SETUP ---
 
         return {
             delta: calculatedDelta,
             gamma: calculatedGamma,
-            theta: thetaDaily,
+            theta: thetaPerDay,
             vega: calculatedVega,
             impliedVolatility: IV,
         };
     } catch (e) {
-        console.error("Black-Scholes calculation failed:", e);
+        console.error("QuantLib.js calculation failed (Check inputs S, K, T, IV):", e);
+        // Fallback to null values if QuantLib throws an error
         return { delta: null, gamma: null, theta: null, vega: null, impliedVolatility: IV };
     }
 };
