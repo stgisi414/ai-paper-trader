@@ -1,63 +1,66 @@
-import * as functions from "firebase-functions";
+import {onRequest} from "firebase-functions/v2/https";
 import {Request, Response} from "express";
-// FIX: Change to default import for functional package access (TS2614 fix)
 import yahooFinance from "@gadicc/yahoo-finance2";
-// FIX: Revert cors to require for runtime stability (TS6133 fix)
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const cors = require("cors");
+import * as logger from "firebase-functions/logger";
 
-// 1. Configure Allowed Origins for CORS
-/* const allowedOrigins = [
-  "http://localhost:5173",
-  "https://localhost:5173",
-  "https://signatex.app",
-  "https://signatex-trader.web.app",
-]; */
-
-// Initialize the CORS middleware
-// Using the cors function directly, configured with allowed origins and methods
-const corsMiddleware = cors({
-  origin: true,
-  methods: ["GET"], // Explicitly allow GET method for pre-flight requests
-});
+// --- IMPORTANT: Use the onRequest from v2 and configure CORS directly ---
 
 /**
- * HTTP Cloud Function to proxy the options data request and return Greeks.
+ * HTTP Cloud Function to proxy the options data request.
+ * * Configured for:
+ * 1. Public invocation (invoker: 'public')
+ * 2. Automatic CORS handling (cors: true)
  */
-exports.optionsProxy = functions.https.onRequest(
-  async (req: Request, res: Response) => {
-    // 2. Apply the CORS middleware. The core function logic is passed as the
-    // third argument (next()).
-    corsMiddleware(req, res, async () => {
-      // Ensure method is GET
-      if (req.method !== "GET") {
-        return res.status(405).send("Method Not Allowed");
-      }
+exports.optionsProxy = onRequest({
+  // Use 'public' invoker to allow unauthenticated access
+  // (essential for web apps)
+  invoker: "public",
+  // Set cors to true for automatic handling of all origins
+  // (or list specific origins)
+  cors: true,
+  // Ensure the region matches your current deployment if necessary,
+  // otherwise defaults to us-central1
+  region: "us-central1",
+}, async (req: Request, res: Response): Promise<void> => {
+  // FIX: Explicitly set return type to Promise<void> or just void
+  try {
+    // Handle OPTIONS preflight requests automatically managed by 'cors: true'
+    // Firebase should handle the pre-flight automatically. We just ensure GET.
+    if (req.method !== "GET") {
+      logger.warn(`Method Not Allowed: ${req.method}`);
+      // Send the response but do not try to return it from the outer function
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
 
-      // Get ticker from query parameters (e.g., ?symbol=AAPL)
-      const symbol = req.query.symbol;
-      if (!symbol || typeof symbol !== "string") {
-        return res.status(400).json({
-          error: "Missing or invalid stock symbol.",
-        });
-      }
+    // Get ticker from query parameters (e.g., ?symbol=AAPL)
+    const symbol = req.query.symbol;
+    if (!symbol || typeof symbol !== "string") {
+      logger.warn("Missing or invalid stock symbol in query.");
+      // Send the response but do not try to return it from the outer function
+      res.status(400).json({
+        error: "Missing or invalid stock symbol.",
+      });
+      return;
+    }
 
-      try {
-        // 3. Call the Yahoo Finance API for the options chain
-        // Use the default imported object to access 'options'
-        const optionsChain = await yahooFinance.options(
-          symbol.toUpperCase()
-        );
+    // Call the Yahoo Finance API for the options chain
+    // Use the default imported object to access 'options'
+    const optionsChain = await yahooFinance.options(
+      symbol.toUpperCase()
+    );
 
-        // 4. Send the raw options data back to the frontend
-        return res.status(200).json(optionsChain);
-      } catch (error) {
-        console.error("Yahoo Finance API Error:", error);
-        // Return a generic error message
-        return res.status(500).json({
-          error: "Failed to fetch options data from external API.",
-        });
-      }
+    // Send the options data back to the frontend
+    res.status(200).json(optionsChain);
+  } catch (error) {
+    // FIX: Log the full error to Firebase logs for internal diagnosis
+    logger.error("Yahoo Finance API Error (Internal Failure):", error);
+
+    // Return a generic error message to the client, but use a distinct code
+    // to suggest an upstream dependency failure
+    // (like Yahoo Finance throttling/blocking).
+    res.status(503).json({
+      error: "Failed to fetch options data from external API.",
     });
   }
-);
+});
