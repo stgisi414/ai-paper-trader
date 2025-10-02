@@ -341,6 +341,9 @@ export interface OptionHolding {
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
+  // ADDED volume/open interest, KEPT greeks for consistency
+  volume: number | null; 
+  open_interest: number | null; 
   delta: number | null;
   gamma: number | null;
   theta: number | null;

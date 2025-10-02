@@ -10,7 +10,7 @@ import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
 import { BrainCircuitIcon, StarIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
-import * as alpacaService from '../services/alpacaService';
+import * as optionsProxyService from '../services/optionsProxyService';
 import SignatexFlow from './SignatexFlow';
 import Watchlist from './Watchlist';
 
@@ -36,11 +36,11 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
     return [state, setState];
 };
 
-const formatGreek = (value: number | null): string => {
+const formatGreek = useCallback((value: number | null): string => { // ADD useCallback to existing formatGreek helper
     if (value === null) return 'N/A';
     // Format to three decimal places for precision
     return value.toFixed(3);
-};
+}, []);
 
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
@@ -82,7 +82,7 @@ const StockView: React.FC = () => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                // Fetch all data EXCEPT options volume
+                // Fetch all data including options chain from the proxy
                 const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsData] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
@@ -93,7 +93,7 @@ const StockView: React.FC = () => {
                     fmpService.getBalanceSheet(ticker),
                     fmpService.getCashFlowStatement(ticker),
                     fmpService.getInsiderTrading(ticker),
-                    alpacaService.getOptionsContracts(ticker),
+                    optionsProxyService.getOptionsChain(ticker), // UPDATED TO USE PROXY
                 ]);
                 
                 setQuote(quoteData[0] || null);
@@ -107,25 +107,8 @@ const StockView: React.FC = () => {
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
 
-                console.log("Raw Alpaca Options API Response:", optionsData);
-
-                if (optionsData && Array.isArray(optionsData.option_contracts)) {
-                    // Filter out any contracts without a closing price, as they are not tradable
-                    const viableOptions = optionsData.option_contracts.filter(option => option.close_price !== null);
-
-                    const processedOptions = viableOptions.map(option => ({
-                        ...option,
-                        // Alpaca paper environment returns limited data. We map non-standard fields to null if missing.
-                        volume: option.volume || null, 
-                        delta: (option as any).delta || null,
-                        gamma: (option as any).gamma || null,
-                        theta: (option as any).theta || null,
-                        vega: (option as any).vega || null,
-                        impliedVolatility: (option as any).impliedVolatility || null,
-                    }));
-
-                    setOptions(processedOptions);
-                }
+                // Options data is now an array of AlpacaOptionContract (our unified type)
+                setOptions(optionsData); 
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
                 alert('Failed to load stock data. Please try again.');
@@ -580,18 +563,18 @@ const StockView: React.FC = () => {
                                                 <th className="p-1">Price</th>
                                                 <th className="p-1">IV</th>
                                                 <th className="p-1">Delta</th>
-                                                <th className="p-1">Theta</th>
+                                                <th className="p-1">OI/Vol</th> {/* UPDATED COLUMN HEADER */}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
                                                 <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
                                                     <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
-                                                    <td className="p-1">{option.expiration_date}</td>
+                                                    <td className="p-1">{option.expiration_date.slice(5, 10)}</td> {/* Show Month-Day only */}
                                                     <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
-                                                    <td className="p-1">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility) : 'N/A'}</td>
+                                                    <td className="p-1">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
                                                     <td className="p-1">{formatGreek(option.delta)}</td>
-                                                    <td className="p-1">{formatGreek(option.theta)}</td>
+                                                    <td className="p-1 text-night-500">{formatNumber(option.open_interest || option.volume)}</td> {/* Show OI/Vol */}
                                                 </tr>
                                             ))}
                                         </tbody>
