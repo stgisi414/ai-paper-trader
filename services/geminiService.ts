@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GEMINI_API_KEY } from '../constants';
-import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis } from '../types'; // ADD KeyMetricsAnalysis
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener } from '../types'; // ADD AiScreener
 
 if (!GEMINI_API_KEY) {
     console.error("Gemini API key is not configured.");
@@ -498,5 +498,74 @@ export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile): P
     } catch (error) {
         console.error("Error analyzing key metrics with Gemini:", error);
         throw new Error("Failed to get AI key metrics analysis.");
+    }
+};
+
+const marketScreenerSchema = {
+    type: Type.OBJECT,
+    properties: {
+        title: { type: Type.STRING, description: "A catchy title for this list of stocks." },
+        description: { type: Type.STRING, description: "A one-sentence summary of the criteria used for this screen." },
+        picks: {
+            type: Type.ARRAY,
+            description: "A list of 5 stock picks matching the criteria.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    symbol: { type: Type.STRING, description: "The stock ticker symbol." },
+                    name: { type: Type.STRING, description: "The company name." },
+                    reason: { type: Type.STRING, description: "A 1-2 sentence explanation of why this stock was selected by the AI for this specific screen." },
+                    score: { type: Type.NUMBER, description: "A score from 80 to 100 representing how strongly this stock fits the criteria." }
+                },
+                required: ["symbol", "name", "reason", "score"]
+            }
+        }
+    },
+    required: ["title", "description", "picks"]
+};
+
+// Add this new function (e.g., around line 344)
+export const getMarketScreenerPicks = async (prompt: string): Promise<AiScreener> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    // A list of the largest tickers the AI should analyze
+    const tickerUniverse = [
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "V", 
+        "JPM", "JNJ", "WMT", "UNH", "PG", "MA", "HD", "XOM", "CVX", "LLY", "MRK"
+    ].join(', ');
+    
+    const fullPrompt = `
+        Analyze the stock market universe: ${tickerUniverse}.
+        Based on your deep market knowledge, fulfill the following screen request.
+        The output must be a JSON object matching the provided schema.
+
+        Screen Request: "${prompt}"
+
+        Instructions:
+        1. Select 5 stocks from the universe that best match the request.
+        2. Provide the company name for each stock.
+        3. Assign a score (80-100) based on fit.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-pro", // Using Pro for deep market analysis/screening
+            contents: fullPrompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: marketScreenerSchema,
+            },
+        });
+
+        if (!response) throw new Error("AI response was null");
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as AiScreener;
+
+    } catch (error) {
+        console.error("Error getting market screener picks from Gemini:", error);
+        throw new Error("Failed to get AI market screener picks.");
     }
 };

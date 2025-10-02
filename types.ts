@@ -346,3 +346,16 @@ export interface AlpacaOptionBar {
     c: number; // Close
     v: number; // Volume
 }
+
+export interface ScreenerStockPick {
+    symbol: string;
+    name: string;
+    reason: string;
+    score: number;
+}
+
+export interface AiScreener {
+    title: string;
+    description: string;
+    picks: ScreenerStockPick[];
+}

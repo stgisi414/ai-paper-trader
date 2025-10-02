@@ -10,6 +10,7 @@ import { formatCurrency, formatPercentage } from '../utils/formatters';
 import { SearchIcon, TrendingUpIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
 import SignatexFlow from './SignatexFlow';
 import Watchlist from './Watchlist';
+import MarketScreener from './MarketScreener';
 
 const Dashboard: React.FC = () => {
     const { portfolio, totalValue, isLoading: isPortfolioLoading } = usePortfolio();
@@ -212,6 +213,9 @@ const Dashboard: React.FC = () => {
                         </div>
                     </Card>
                 </div>
+            </div>
+            <div className="mt-8">
+                <MarketScreener /> 
             </div>
         </div>
     );

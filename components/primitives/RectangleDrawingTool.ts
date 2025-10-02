@@ -272,7 +272,10 @@ export class RectangleDrawingTool {
 	    e.preventDefault();
 
 	    const series = this._selectedRectangle.series;
-	    let { p1, p2 } = this._selectedRectangle;
+	    let p1 = this._selectedRectangle._p1;
+	    let p2 = this._selectedRectangle._p2;
+
+	    if (!p1 || !p2) return; 
 
 	    const data = series.data();
 	    let timeInterval = 86400;
@@ -326,6 +329,34 @@ export class RectangleDrawingTool {
     public stopMoving(): void { this._moving = false; if (this._selectedRectangle) { this._selectedRectangle.deselect(); this._selectedRectangle = null; } if (this._moveButton) this._moveButton.style.color = '#d0d0d0'; }
     public isMoving(): boolean { return this._moving; }
 
+    private _getExtrapolatedTime(x: Coordinate): Time | null {
+        let time = this._chart.timeScale().coordinateToTime(x);
+        if (time !== null) return time;
+
+        const data = this._series.data();
+        if (data.length < 2) return null;
+
+        const lastDataPoint = data[data.length - 1];
+        const secondLastDataPoint = data[data.length - 2];
+
+        if (!lastDataPoint || !secondLastDataPoint || !('time' in lastDataPoint) || !('time' in secondLastDataPoint)) return null;
+
+        const lastTime = lastDataPoint.time as number;
+        const secondLastTime = secondLastDataPoint.time as number;
+        const lastCoordinate = this._chart.timeScale().timeToCoordinate(lastTime);
+        const secondLastCoordinate = this._chart.timeScale().timeToCoordinate(secondLastTime);
+
+        const timeDiff = lastTime - secondLastTime;
+
+        if (lastCoordinate === null || secondLastCoordinate === null || timeDiff === 0) return null;
+
+        const coordinateDiff = lastCoordinate - secondLastCoordinate;
+        const timePerPixel = timeDiff / coordinateDiff;
+        const coordinateDeltaFromLast = (x as number) - lastCoordinate;
+
+        return (lastTime + (coordinateDeltaFromLast * timePerPixel)) as Time;
+    }
+
     private _handleResizeClick(param: MouseEventParams) {
         if (!param.point) { this.stopResizing(); return; }
 
@@ -339,11 +370,34 @@ export class RectangleDrawingTool {
             if (handle) {
                 this._isResizingActive = true;
                 this._activeResizeHandle = handle;
-                const { p1, p2 } = this._selectedRectangle;
-                if (handle === 'top-left') this._fixedResizePoint = p2;
-                else if (handle === 'top-right') this._fixedResizePoint = { time: p1.time, price: p2.price };
-                else if (handle === 'bottom-left') this._fixedResizePoint = { time: p2.time, price: p1.price };
-                else if (handle === 'bottom-right') this._fixedResizePoint = p1;
+                const p1 = this._selectedRectangle._p1;
+                const p2 = this._selectedRectangle._p2;
+                
+                // Determine the true min/max bounds for time and price
+                const t1 = p1.time as number;
+                const t2 = p2.time as number;
+                const minTime = Math.min(t1, t2) as Time;
+                const maxTime = Math.max(t1, t2) as Time;
+                // Note: Price decreases as you move down the chart (Y-coordinate increases).
+                // So, maxPrice is the 'top' boundary and minPrice is the 'bottom' boundary.
+                const minPrice = Math.min(p1.price, p2.price);
+                const maxPrice = Math.max(p1.price, p2.price);
+
+                // Map the clicked on-screen handle to the diagonally opposite fixed point (time/price).
+                switch (handle) {
+                    case 'top-left': // Clicked (minTime, maxPrice) -> Fixed point is (maxTime, minPrice)
+                        this._fixedResizePoint = { time: maxTime, price: minPrice };
+                        break;
+                    case 'top-right': // Clicked (maxTime, maxPrice) -> Fixed point is (minTime, minPrice)
+                        this._fixedResizePoint = { time: minTime, price: minPrice };
+                        break;
+                    case 'bottom-left': // Clicked (minTime, minPrice) -> Fixed point is (maxTime, maxPrice)
+                        this._fixedResizePoint = { time: maxTime, price: maxPrice };
+                        break;
+                    case 'bottom-right': // Clicked (maxTime, minPrice) -> Fixed point is (minTime, maxPrice)
+                        this._fixedResizePoint = { time: minTime, price: maxPrice };
+                        break;
+                }
             }
         } else {
             const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
@@ -358,7 +412,7 @@ export class RectangleDrawingTool {
 
     private _handleResizeMouseMove(param: MouseEventParams) {
         if (!this._isResizingActive || !this._selectedRectangle || !this._fixedResizePoint || !param.point) return;
-        const time = this._chart.timeScale().coordinateToTime(param.point.x);
+        const time = this._getExtrapolatedTime(param.point.x);
         const price = this._series.coordinateToPrice(param.point.y);
         if (!time || price === null) return;
         this._selectedRectangle.setPosition(this._fixedResizePoint, { time, price });
@@ -379,32 +433,51 @@ export class RectangleDrawingTool {
 	}
     
     private _getHandleAtPoint(rect: Rectangle, x: Coordinate, y: Coordinate): string | null {
-        const view = rect.paneViews()[0] as RectanglePaneView;
-        if (!view._p1.x || !view._p1.y || !view._p2.x || !view._p2.y) return null;
+	    const view = rect.paneViews()[0] as RectanglePaneView;
+	    if (!view._p1.x || !view._p1.y || !view._p2.x || !view._p2.y) return null;
 
-        const hPos = positionsBox(view._p1.x, view._p2.x, 1);
-        const vPos = positionsBox(view._p1.y, view._p2.y, 1);
-        const handleSize = 10;
-        const halfHandle = handleSize / 2;
+	    const hPos = positionsBox(view._p1.x, view._p2.x, 1);
+	    const vPos = positionsBox(view._p1.y, view._p2.y, 1);
+	    
+	    // FIX: Reverse transform the click point for accurate hit-testing on rotated rectangles
+	    const centerX = hPos.position + hPos.length / 2;
+	    const centerY = vPos.position + vPos.length / 2;
+	    const angle = -rect._angle; // Reverse angle for reverse transformation
+	    
+	    // Translate mouse point to origin
+	    const relX = x - centerX;
+	    const relY = y - centerY;
+	    
+	    // Apply reverse rotation to the mouse point
+	    const cosA = Math.cos(angle);
+	    const sinA = Math.sin(angle);
+	    
+	    const testX = relX * cosA - relY * sinA + centerX;
+	    const testY = relX * sinA + relY * cosA + centerY;
+	    // END FIX
+	    
+	    const handleSize = 10;
+	    const halfHandle = handleSize / 2;
 
-        const handles = {
-            'top-left': { x: hPos.position, y: vPos.position },
-            'top-right': { x: hPos.position + hPos.length, y: vPos.position },
-            'bottom-left': { x: hPos.position, y: vPos.position + vPos.length },
-            'bottom-right': { x: hPos.position + hPos.length, y: vPos.position + vPos.length },
-        };
+	    const handles = {
+	        'top-left': { x: hPos.position, y: vPos.position },
+	        'top-right': { x: hPos.position + hPos.length, y: vPos.position },
+	        'bottom-left': { x: hPos.position, y: vPos.position + vPos.length },
+	        'bottom-right': { x: hPos.position + hPos.length, y: vPos.position + vPos.length },
+	    };
 
-        for (const [name, pos] of Object.entries(handles)) {
-            if ( x >= pos.x - halfHandle && x <= pos.x + halfHandle && y >= pos.y - halfHandle && y <= pos.y + halfHandle ) {
-                return name;
-            }
-        }
-        return null;
-    }
+	    for (const [name, pos] of Object.entries(handles)) {
+	        // Use the reverse-transformed coordinates (testX, testY) for hit testing
+	        if ( testX >= pos.x - halfHandle && testX <= pos.x + halfHandle && testY >= pos.y - halfHandle && testY <= pos.y + halfHandle ) {
+	            return name;
+	        }
+	    }
+	    return null;
+	}
     
     private _handleDrawClick(param: MouseEventParams) {
         if (!param.point) return;
-        const time = this._chart.timeScale().coordinateToTime(param.point.x);
+        const time = this._getExtrapolatedTime(param.point.x);
         if (!time) return;
         const price = this._series.coordinateToPrice(param.point.y);
         if (price === null) return;
@@ -481,7 +554,7 @@ export class RectangleDrawingTool {
 
 	private _onDrawMouseMove(param: MouseEventParams) {
 	    if (!this.isDrawing() || this._points.length === 0 || !param.point) return;
-	    const time = this._chart.timeScale().coordinateToTime(param.point.x);
+	    const time = this._getExtrapolatedTime(param.point.x);
 	    if (!time) return;
 	    const price = this._series.coordinateToPrice(param.point.y);
 	    if (price === null) return;
