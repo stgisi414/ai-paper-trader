@@ -1,6 +1,5 @@
 import {onRequest} from "firebase-functions/v2/https";
 import {Request, Response} from "express";
-import yahooFinance from "@gadicc/yahoo-finance2";
 import * as logger from "firebase-functions/logger";
 
 // --- IMPORTANT: Use the onRequest from v2 and configure CORS directly ---
@@ -23,6 +22,24 @@ exports.optionsProxy = onRequest({
   region: "us-central1",
 }, async (req: Request, res: Response): Promise<void> => {
   // FIX: Explicitly set return type to Promise<void> or just void
+  // FIX 2: Lazy Initialization. Instantiate the client only if it's null.
+  // This prevents the Deno error during static analysis
+  // and ensures singleton usage.
+
+  // FIX: Use dynamic require to load and instantiate the client. 
+  // This is the only way to reliably bypass the library's environment checks 
+  // during the Firebase module loading phase.
+  let yfClient: any;
+  try {
+    // Access the default export which holds the constructor
+    const YahooFinanceClient = require('@gadicc/yahoo-finance2').default || require('@gadicc/yahoo-finance2');
+    yfClient = new YahooFinanceClient();
+  } catch (err) {
+    logger.error("Internal Error: Failed to dynamically load options client.", err);
+    res.status(503).json({ error: "Internal Error: Options client initialization failed." });
+    return;
+  }
+
   try {
     // Handle OPTIONS preflight requests automatically managed by 'cors: true'
     // Firebase should handle the pre-flight automatically. We just ensure GET.
@@ -46,7 +63,7 @@ exports.optionsProxy = onRequest({
 
     // Call the Yahoo Finance API for the options chain
     // Use the default imported object to access 'options'
-    const optionsChain = await yahooFinance.options(
+    const optionsChain = await yfClient.options(
       symbol.toUpperCase()
     );
 
