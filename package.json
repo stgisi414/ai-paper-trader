@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.13.0",
+    "black-scholes": "^1.1.0",
     "cors": "^2.8.5",
     "fancy-canvas": "^2.1.0",
     "lightweight-charts": "^4.1.3",
