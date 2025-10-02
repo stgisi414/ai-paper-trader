@@ -319,6 +319,11 @@ export interface AlpacaOptionContract {
     close_price: number | null; // Use close_price instead of last_trade
     volume: number | null;
     open_interest: number | null;
+    delta: number | null;
+    gamma: number | null;
+    theta: number | null;
+    vega: number | null;
+    impliedVolatility: number | null;
 }
 
 export interface AlpacaOptionsResponse {
@@ -328,7 +333,7 @@ export interface AlpacaOptionsResponse {
 
 // Add OptionHolding and update Portfolio
 export interface OptionHolding {
-  symbol: string;
+  symbol: string; // The specific option symbol, e.g., AAPL241220C00150000
   underlyingTicker: string;
   shares: number; // Number of contracts
   purchasePrice: number; // Price per share (premium)
@@ -336,6 +341,11 @@ export interface OptionHolding {
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  impliedVolatility: number | null;
 }
 
 export interface AlpacaOptionBar {
@@ -358,4 +368,21 @@ export interface AiScreener {
     title: string;
     description: string;
     picks: ScreenerStockPick[];
+}
+
+export interface Transaction {
+    id: string;
+    type: 'BUY' | 'SELL' | 'OPTION_BUY' | 'OPTION_SELL';
+    ticker: string;
+    shares: number; // For stocks: shares, for options: contracts
+    price: number; // Price per share/contract
+    totalAmount: number; // Total cash moved
+    timestamp: number;
+    // Realized P&L details (only for 'SELL' and 'OPTION_SELL')
+    purchasePrice?: number; // Original purchase price for calculating P&L
+    realizedPnl?: number;
+    // Options specific details
+    optionSymbol?: string;
+    optionType?: 'call' | 'put';
+    strikePrice?: number;
 }

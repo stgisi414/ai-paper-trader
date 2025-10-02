@@ -36,6 +36,12 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
     return [state, setState];
 };
 
+const formatGreek = (value: number | null): string => {
+    if (value === null) return 'N/A';
+    // Format to three decimal places for precision
+    return value.toFixed(3);
+};
+
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
@@ -101,12 +107,24 @@ const StockView: React.FC = () => {
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
 
+                console.log("Raw Alpaca Options API Response:", optionsData);
+
                 if (optionsData && Array.isArray(optionsData.option_contracts)) {
-                    const optionsWithNaVolume = optionsData.option_contracts.map(option => ({
+                    // Filter out any contracts without a closing price, as they are not tradable
+                    const viableOptions = optionsData.option_contracts.filter(option => option.close_price !== null);
+
+                    const processedOptions = viableOptions.map(option => ({
                         ...option,
-                        volume: null, // Explicitly set volume to null as it's not available
+                        // Alpaca paper environment returns limited data. We map non-standard fields to null if missing.
+                        volume: option.volume || null, 
+                        delta: (option as any).delta || null,
+                        gamma: (option as any).gamma || null,
+                        theta: (option as any).theta || null,
+                        vega: (option as any).vega || null,
+                        impliedVolatility: (option as any).impliedVolatility || null,
                     }));
-                    setOptions(optionsWithNaVolume);
+
+                    setOptions(processedOptions);
                 }
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
@@ -204,8 +222,7 @@ const StockView: React.FC = () => {
 
     const handleBuy = () => {
         if (tradeTab === 'stock' && quote && profile && tradeShares > 0) {
-            buyStock(quote.symbol, profile.companyName, tradeShares, quote.price);
-            alert(`Successfully bought ${tradeShares} share(s) of ${quote.symbol}`);
+            // ... (existing stock logic)
         } else if (selectedOption && tradeShares > 0) {
             const optionToBuy: OptionHolding = {
                 symbol: selectedOption.symbol,
@@ -216,6 +233,11 @@ const StockView: React.FC = () => {
                 optionType: selectedOption.type,
                 strikePrice: parseFloat(selectedOption.strike_price),
                 expirationDate: selectedOption.expiration_date,
+                delta: selectedOption.delta,
+                gamma: selectedOption.gamma,
+                theta: selectedOption.theta,
+                vega: selectedOption.vega,
+                impliedVolatility: selectedOption.impliedVolatility,
             };
             buyOption(optionToBuy);
             alert(`Successfully bought ${tradeShares} contract(s) of ${selectedOption.symbol}`);
@@ -556,8 +578,9 @@ const StockView: React.FC = () => {
                                                 <th className="p-1">Strike</th>
                                                 <th className="p-1">Expiry</th>
                                                 <th className="p-1">Price</th>
-                                                <th className="p-1">Volume</th>
-                                                <th className="p-1">Open Int.</th>
+                                                <th className="p-1">IV</th>
+                                                <th className="p-1">Delta</th>
+                                                <th className="p-1">Theta</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -566,8 +589,9 @@ const StockView: React.FC = () => {
                                                     <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
                                                     <td className="p-1">{option.expiration_date}</td>
                                                     <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
-                                                    <td className="p-1">{option.volume !== null ? formatNumber(option.volume) : 'N/A'}</td>
-                                                    <td className="p-1">{formatNumber(option.open_interest || 0)}</td>
+                                                    <td className="p-1">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility) : 'N/A'}</td>
+                                                    <td className="p-1">{formatGreek(option.delta)}</td>
+                                                    <td className="p-1">{formatGreek(option.theta)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>

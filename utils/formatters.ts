@@ -6,7 +6,8 @@ export const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-export const formatPercentage = (value: number) => {
+export const formatPercentage = (value: number | null | undefined) => {
+  if (value === null || value === undefined || isNaN(value)) return 'N/A';
   return `${value.toFixed(2)}%`;
 };
 

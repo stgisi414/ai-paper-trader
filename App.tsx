@@ -5,9 +5,9 @@ import { WatchlistProvider } from './hooks/useWatchlist'; // ADD
 import Dashboard from './components/Dashboard';
 import StockView from './components/StockView';
 import ApiKeyWarning from './components/common/ApiKeyWarning';
-import { TrendingUpIcon, BrainCircuitIcon } from './components/common/Icons';
+import { TrendingUpIcon, BrainCircuitIcon, BriefcaseIcon } from './components/common/Icons';
 import StockPicker from './components/StockPicker';
-
+import HistoryLedger from './components/HistoryLedger';
 
 const App: React.FC = () => {
     return (
@@ -22,10 +22,16 @@ const App: React.FC = () => {
                                     <TrendingUpIcon className="h-6 w-6 text-brand-blue"/>
                                     Signatex.co
                                 </Link>
-                                <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
-                                    <BrainCircuitIcon className="h-5 w-5"/>
-                                    AI Stock Picker
-                                </Link>
+                                <div className="flex gap-4"> {/* ADD wrapper div for multiple links */}
+                                     <Link to="/history" className="flex items-center gap-2 text-md font-bold text-white bg-night-700 px-4 py-2 rounded-md hover:bg-night-600 transition-colors">
+                                        <BriefcaseIcon className="h-5 w-5"/>
+                                        History
+                                    </Link>
+                                    <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
+                                        <BrainCircuitIcon className="h-5 w-5"/>
+                                        AI Stock Picker
+                                    </Link>
+                                </div> {/* END ADDITION */}
                             </nav>
                         </header>
                         <main className="container mx-auto p-4 md:p-6 lg:p-8">
@@ -33,6 +39,7 @@ const App: React.FC = () => {
                                 <Route path="/" element={<Dashboard />} />
                                 <Route path="/stock/:ticker" element={<StockView />} />
                                 <Route path="/picker" element={<StockPicker />} />
+                                <Route path="/history" element={<HistoryLedger />} /> {/* ADD HistoryLedger Route */}
                             </Routes>
                         </main>
                          <footer className="text-center p-4 text-night-500 text-xs border-t border-night-800 mt-8">

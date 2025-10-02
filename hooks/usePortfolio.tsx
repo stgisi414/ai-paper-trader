@@ -2,9 +2,11 @@ import React, { createContext, useContext, useState, useCallback, useMemo, useEf
 import type { Portfolio, Holding, OptionHolding } from '../types';
 import { INITIAL_CASH } from '../constants';
 import * as fmpService from '../services/fmpService';
+import { nanoid } from 'nanoid';
 
 interface PortfolioContextType {
     portfolio: Portfolio;
+    transactions: Transaction[];
     buyStock: (ticker: string, name: string, shares: number, price: number) => void;
     sellStock: (ticker: string, shares: number, price: number) => void;
     buyOption: (option: OptionHolding) => void;
@@ -36,10 +38,22 @@ const getInitialPortfolio = (): Portfolio => {
     };
 };
 
+const getInitialTransactions = (): Transaction[] => {
+    try {
+        const savedTransactions = localStorage.getItem('ai-paper-trader-transactions');
+        if (savedTransactions) {
+            return JSON.parse(savedTransactions);
+        }
+    } catch (error) {
+        console.error("Failed to parse transactions from localStorage", error);
+        localStorage.removeItem('ai-paper-trader-transactions');
+    }
+    return [];
+};
 
 export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // FIX: Initialize state from the localStorage helper
     const [portfolio, setPortfolio] = useState<Portfolio>(getInitialPortfolio);
+    const [transactions, setTransactions] = useState<Transaction[]>(getInitialTransactions);
     const [isLoading, setIsLoading] = useState(true);
     
     // ADD: useEffect to save the portfolio to localStorage whenever it changes
@@ -51,6 +65,13 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     }, [portfolio]);
 
+    useEffect(() => {
+        try {
+            localStorage.setItem('ai-paper-trader-transactions', JSON.stringify(transactions));
+        } catch (error) {
+            console.error("Failed to save transactions to localStorage", error);
+        }
+    }, [transactions]);
 
     const updateHoldingPrices = useCallback(async () => {
         // No changes needed in this function
@@ -84,7 +105,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, []); 
 
     const buyStock = useCallback((ticker: string, name: string, shares: number, price: number) => {
-        // No changes needed in this function
         const cost = shares * price;
         if (portfolio.cash < cost) {
             alert("Not enough cash to complete purchase.");
@@ -107,12 +127,25 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             } else {
                 newHoldings.push({ ticker, name, shares, purchasePrice: price, currentPrice: price });
             }
+            
+            // ADD Transaction Logging
+            const newTransaction: Transaction = {
+                id: nanoid(),
+                type: 'BUY',
+                ticker,
+                shares,
+                price,
+                totalAmount: cost,
+                timestamp: Date.now(),
+            };
+            setTransactions(prevT => [...prevT, newTransaction]);
+            // END ADDITION
+
             return { ...prev, cash: prev.cash - cost, holdings: newHoldings };
         });
     }, [portfolio.cash]);
 
     const sellStock = useCallback((ticker: string, shares: number, price: number) => {
-        // No changes needed in this function
         setPortfolio(prev => {
             const existingHoldingIndex = prev.holdings.findIndex(h => h.ticker === ticker);
             if (existingHoldingIndex === -1) return prev;
@@ -124,6 +157,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
 
             const proceeds = shares * price;
+            const costBasis = shares * existing.purchasePrice;
+            const realizedPnl = proceeds - costBasis;
+
             let newHoldings = [...prev.holdings];
             if (existing.shares === shares) {
                 newHoldings.splice(existingHoldingIndex, 1);
@@ -133,12 +169,25 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     shares: existing.shares - shares
                 };
             }
+            
+            const newTransaction: Transaction = {
+                id: nanoid(),
+                type: 'SELL',
+                ticker,
+                shares,
+                price,
+                totalAmount: proceeds,
+                timestamp: Date.now(),
+                purchasePrice: existing.purchasePrice,
+                realizedPnl: realizedPnl,
+            };
+            setTransactions(prevT => [...prevT, newTransaction]);
+
             return { ...prev, cash: prev.cash + proceeds, holdings: newHoldings };
         });
     }, []);
     
     const buyOption = useCallback((option: OptionHolding) => {
-        // No changes needed in this function
         const cost = option.shares * option.purchasePrice * 100;
         if (portfolio.cash < cost) {
             alert("Not enough cash to complete option purchase.");
@@ -147,14 +196,29 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         setPortfolio(prev => {
             const newOptionHoldings = [...prev.optionHoldings, option];
+            
+            const newTransaction: Transaction = {
+                id: nanoid(),
+                type: 'OPTION_BUY',
+                ticker: option.underlyingTicker,
+                shares: option.shares,
+                price: option.purchasePrice,
+                totalAmount: cost,
+                timestamp: Date.now(),
+                optionSymbol: option.symbol,
+                optionType: option.optionType,
+                strikePrice: option.strikePrice,
+            };
+            setTransactions(prevT => [...prevT, newTransaction]);
+
             return { ...prev, cash: prev.cash - cost, optionHoldings: newOptionHoldings };
         });
     }, [portfolio.cash]);
 
     const sellOption = useCallback((symbol: string, shares: number, price: number) => {
-        // No changes needed in this function
         setPortfolio(prev => {
             const existingOptionIndex = prev.optionHoldings.findIndex(o => o.symbol === symbol);
+
             if (existingOptionIndex === -1) {
                 alert("You do not own this option contract.");
                 return prev;
@@ -167,6 +231,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
 
             const proceeds = shares * price * 100;
+            const costBasis = shares * existing.purchasePrice * 100;
+            const realizedPnl = proceeds - costBasis;
+
             let newOptionHoldings = [...prev.optionHoldings];
             if (existing.shares === shares) {
                 newOptionHoldings.splice(existingOptionIndex, 1);
@@ -176,6 +243,23 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     shares: existing.shares - shares,
                 };
             }
+
+            const newTransaction: Transaction = {
+                id: nanoid(),
+                type: 'OPTION_SELL',
+                ticker: existing.underlyingTicker,
+                shares: shares,
+                price: price,
+                totalAmount: proceeds,
+                timestamp: Date.now(),
+                purchasePrice: existing.purchasePrice,
+                realizedPnl: realizedPnl,
+                optionSymbol: existing.symbol,
+                optionType: existing.optionType,
+                strikePrice: existing.strikePrice,
+            };
+            setTransactions(prevT => [...prevT, newTransaction]);
+
             return { ...prev, cash: prev.cash + proceeds, optionHoldings: newOptionHoldings };
         });
     }, []);
@@ -188,7 +272,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return portfolio.cash + holdingsValue + optionsValue;
     }, [portfolio]);
 
-    const value = { portfolio, buyStock, sellStock, buyOption, sellOption, totalValue, isLoading };
+    const value = { portfolio, transactions, buyStock, sellStock, buyOption, sellOption, totalValue, isLoading };
 
     return (
         <PortfolioContext.Provider value={value}>
