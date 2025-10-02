@@ -1,9 +1,8 @@
-const functions = require('firebase-functions');
+import * as functions from 'firebase-functions';
 const yahooFinance = require('yahoo-finance2').default;
 const cors = require('cors');
 
 // 1. Configure Allowed Origins for CORS
-// These must match the domains specified: localhost (dev), signatex.app, and signatex-trader.web.app.
 const allowedOrigins = [
     // Your local development server address (e.g., from your Vite setup)
     'http://localhost:5173', 
@@ -15,7 +14,8 @@ const allowedOrigins = [
 
 // Initialize the CORS middleware
 const corsMiddleware = cors({
-    origin: (origin, callback) => {
+    // FIX 1: Add explicit types for origin (string | undefined) and callback
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
         // Allow requests with no origin (like server-to-server or deployment tools)
         if (!origin) return callback(null, true);
         
@@ -32,9 +32,9 @@ const corsMiddleware = cors({
 
 /**
  * HTTP Cloud Function to proxy the options data request and return Greeks.
- * This is triggered by a GET request with a 'symbol' query parameter.
  */
-exports.optionsProxy = functions.https.onRequest(async (req, res) => {
+// FIX 2: Add explicit types for req and res (functions.https.Request/Response)
+exports.optionsProxy = functions.https.onRequest(async (req: functions.https.Request, res: functions.https.Response) => {
     
     // 2. Wrap the core logic in the CORS middleware
     corsMiddleware(req, res, async () => {
