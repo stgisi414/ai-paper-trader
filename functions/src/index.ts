@@ -3,7 +3,6 @@ import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
 
 // FIX 1: Declare the client globally but uninitialized with 'any'
-// to avoid compile-time dependency on the class constructor.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let yfClient: any = null;
 
@@ -18,12 +17,25 @@ exports.optionsProxy = onRequest({
   // FIX 2: Lazy Initialization using dynamic require inside the handler.
   if (yfClient === null) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires, max-len, @typescript-eslint/no-explicit-any
-      const YahooFinanceClient = require("@gadicc/yahoo-finance2").default || require("@gadicc/yahoo-finance2");
-      yfClient = new YahooFinanceClient();
+      // FIX: Assign the required module object directly, no 'new' needed.
+      /* eslint-disable @typescript-eslint/no-var-requires,
+      @typescript-eslint/no-explicit-any */
+      yfClient =
+        require("yahoo-finance2").default ||
+        require("yahoo-finance2");
+      /* eslint-enable @typescript-eslint/no-var-requires,
+      @typescript-eslint/no-explicit-any */
     } catch (err) {
-      logger.error("Internal Error: Failed to dynamically load options client.", err);
-      res.status(503).json({"error": "Internal Error: Options client initialization failed."});
+      // FIX 3: Break logger.error line to fix max-len
+      logger.error(
+        "Internal Error: Failed to dynamically load options client.",
+        err
+      );
+
+      // FIX 4: Break the JSON response line to fix max-len
+      res.status(503).json({
+        "error": "Internal Error: Options client initialization failed.",
+      });
       return;
     }
   }
@@ -51,8 +63,13 @@ exports.optionsProxy = onRequest({
 
     res.status(200).json(optionsChain);
   } catch (error) {
-    logger.error("Yahoo Finance API Error (Internal Failure):", error);
+    // FIX 5: Break the logger.error line in the final catch block
+    logger.error(
+      "Yahoo Finance API Error (Internal Failure):",
+      error
+    );
 
+    // FIX 6: Break the JSON response line in the final catch block
     res.status(503).json({
       "error": "Failed to fetch options data from external API.",
     });

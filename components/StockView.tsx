@@ -563,7 +563,7 @@ const StockView: React.FC = () => {
                                                 <th className="p-1">Price</th>
                                                 <th className="p-1">IV</th>
                                                 <th className="p-1">Delta</th>
-                                                <th className="p-1">OI/Vol</th> {/* UPDATED COLUMN HEADER */}
+                                                <th className="p-1">OI/Vol</th>
                                             </tr>
                                         </thead>
                                         <tbody>

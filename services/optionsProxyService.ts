@@ -56,7 +56,11 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
         
         const data = await response.json() as OptionsChainResponse;
 
-        const optionsResult = data.optionChain.result[0];
+        const optionsResultList = data.optionChain?.result;
+        
+        if (!optionsResultList || optionsResultList.length === 0) return [];
+        
+        const optionsResult = optionsResultList[0];
         if (!optionsResult || !optionsResult.options) return [];
 
         let allContracts: AlpacaOptionContract[] = [];
