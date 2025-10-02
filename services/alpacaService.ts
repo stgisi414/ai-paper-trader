@@ -1,13 +1,13 @@
-import { ALPACA_BASE_URL, ALPACA_API_KEY, ALPACA_SECRET_KEY } from '../constants';
+import { ALPACA_API_KEY, ALPACA_SECRET_KEY } from '../constants';
 import { AlpacaOptionsResponse, AlpacaOptionBar } from '../types';
 
-const fetchAlpaca = async <T,>(endpoint: string, apiVersion: 'v2' | 'v1beta1' = 'v2'): Promise<T> => {
+const fetchAlpaca = async <T,>(endpoint: string): Promise<T> => {
     if (!ALPACA_API_KEY || !ALPACA_SECRET_KEY) {
         throw new Error("Alpaca API keys are not configured.");
     }
-
-    const baseUrl = apiVersion === 'v1beta1' ? 'https://data.alpaca.markets/v1beta1/options' : `https://paper-api.alpaca.markets/v2/options`;
-    const url = `${baseUrl}${endpoint}`;
+    
+    // This URL structure correctly fetches the options contract list with a paper trading key.
+    const url = `https://paper-api.alpaca.markets/v2${endpoint}`;
 
     const headers = new Headers();
     headers.append('APCA-API-KEY-ID', ALPACA_API_KEY);
@@ -24,17 +24,12 @@ const fetchAlpaca = async <T,>(endpoint: string, apiVersion: 'v2' | 'v1beta1' = 
 
 
 export const getOptionsContracts = (underlyingSymbol: string): Promise<AlpacaOptionsResponse> => {
-    return fetchAlpaca<AlpacaOptionsResponse>(`/contracts?underlying_symbol=${underlyingSymbol}`);
+    return fetchAlpaca<AlpacaOptionsResponse>(`/options/contracts?underlying_symbol=${underlyingSymbol}`);
 }
 
-export const getOptionBar = (symbol: string): Promise<{ bars: AlpacaOptionBar[] }> => {
-    const today = new Date().toISOString().split('T')[0];
-    return fetchAlpaca<{ bars: AlpacaOptionBar[] }>(`/bars?symbols=${symbol}&timeframe=1Day&start=${today}`, 'v1beta1');
-}
-
-export const getOptionBars = (symbols: string[]): Promise<{ bars: Record<string, AlpacaOptionBar[]> }> => {
-    if (symbols.length === 0) return Promise.resolve({ bars: {} });
-    const today = new Date().toISOString().split('T')[0];
-    const symbolsString = symbols.join(',');
-    return fetchAlpaca<{ bars: Record<string, AlpacaOptionBar[]> }>(`/bars?symbols=${symbolsString}&timeframe=1Day&start=${today}`, 'v1beta1');
+// NOTE: The paper trading API does not support fetching latest bars/volume for options.
+// These functions are left here but should not be used with a paper-only key.
+export const getOptionBars = (symbols: string[]): Promise<{ bars: Record<string, AlpacaOptionBar> }> => {
+    console.warn("getOptionBars requires a Market Data API subscription and will not work with a paper-trading-only key.");
+    return Promise.resolve({ bars: {} });
 }

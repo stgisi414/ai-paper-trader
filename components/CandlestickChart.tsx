@@ -1,3 +1,4 @@
+// stgisi414/ai-paper-trader/ai-paper-trader-c6099c8cd571facb1867d1a78d48f34f374bf6c2/components/CandlestickChart.tsx
 import React, { useEffect, useRef } from 'react';
 import type { FmpHistoricalData } from '../types';
 import { createChart, ColorType, UTCTimestamp, TimeRange } from 'lightweight-charts';

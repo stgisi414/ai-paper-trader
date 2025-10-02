@@ -76,6 +76,7 @@ const StockView: React.FC = () => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
+                // Fetch all data EXCEPT options volume
                 const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsData] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
@@ -101,19 +102,11 @@ const StockView: React.FC = () => {
                 setInsiderTrades(insiderTradingData);
 
                 if (optionsData && Array.isArray(optionsData.option_contracts)) {
-                    const allOptions = optionsData.option_contracts;
-                    const optionSymbols = allOptions.map(o => o.symbol);
-                    
-                    // Fetch all option bar data in a single call
-                    const barsData = await alpacaService.getOptionBars(optionSymbols);
-
-                    const optionsWithVolume = allOptions.map(option => {
-                        const bars = barsData.bars[option.symbol];
-                        const volume = bars && bars.length > 0 ? bars[0].v : 0;
-                        return { ...option, volume };
-                    });
-
-                    setOptions(optionsWithVolume);
+                    const optionsWithNaVolume = optionsData.option_contracts.map(option => ({
+                        ...option,
+                        volume: null, // Explicitly set volume to null as it's not available
+                    }));
+                    setOptions(optionsWithNaVolume);
                 }
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
@@ -573,7 +566,7 @@ const StockView: React.FC = () => {
                                                     <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
                                                     <td className="p-1">{option.expiration_date}</td>
                                                     <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
-                                                    <td className="p-1">{formatNumber(option.volume || 0)}</td>
+                                                    <td className="p-1">{option.volume !== null ? formatNumber(option.volume) : 'N/A'}</td>
                                                     <td className="p-1">{formatNumber(option.open_interest || 0)}</td>
                                                 </tr>
                                             ))}

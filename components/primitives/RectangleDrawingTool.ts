@@ -376,71 +376,125 @@ export class RectangleDrawingTool {
 
 
     private _applyDeltaToSelectedRectangle(xDelta: number, yDelta: number) {
-        if (!this._selectedRectangle) return;
+	    if (!this._selectedRectangle) return;
 
-        const timeScale = this._chart.timeScale();
-        const series = this._selectedRectangle.series;
+	    const timeScale = this._chart.timeScale();
+	    const series = this._selectedRectangle.series;
 
-        const p1 = this._selectedRectangle._p1;
-        const p2 = this._selectedRectangle._p2;
+	    const p1 = this._selectedRectangle._p1;
+	    const p2 = this._selectedRectangle._p2;
 
-        const p1CoordX = timeScale.timeToCoordinate(p1.time);
-        const p2CoordX = timeScale.timeToCoordinate(p2.time);
-        const p1CoordY = series.priceToCoordinate(p1.price);
-        const p2CoordY = series.priceToCoordinate(p2.price);
-        
-        if (p1CoordX === null || p2CoordX === null || p1CoordY === null || p2CoordY === null) return;
+	    // 1. Convert the original time/price points to pixel coordinates
+	    const p1CoordX = timeScale.timeToCoordinate(p1.time);
+	    const p2CoordX = timeScale.timeToCoordinate(p2.time);
+	    const p1CoordY = series.priceToCoordinate(p1.price);
+	    const p2CoordY = series.priceToCoordinate(p2.price);
 
-        const newP1CoordX = p1CoordX + xDelta as Coordinate;
-        const newP2CoordX = p2CoordX + xDelta as Coordinate;
-        const newP1CoordY = p1CoordY + yDelta as Coordinate;
-        const newP2CoordY = p2CoordY + yDelta as Coordinate;
+	    // If any point is off-screen, we can't calculate, so exit.
+	    if (p1CoordX === null || p2CoordX === null || p1CoordY === null || p2CoordY === null) {
+	        return;
+	    }
 
-        const newP1Time = timeScale.coordinateToTime(newP1CoordX);
-        const newP2Time = timeScale.coordinateToTime(newP2CoordX);
-        const newP1Price = series.coordinateToPrice(newP1CoordY);
-        const newP2Price = series.coordinateToPrice(newP2CoordY);
+	    // 2. Add the pixel deltas (from arrow keys) to the coordinates
+	    const newP1CoordX = p1CoordX + xDelta as Coordinate;
+	    const newP2CoordX = p2CoordX + xDelta as Coordinate;
+	    const newP1CoordY = p1CoordY + yDelta as Coordinate;
+	    const newP2CoordY = p2CoordY + yDelta as Coordinate;
 
-        if (newP1Time === null || newP2Time === null || newP1Price === null || newP2Price === null) return;
+	    // 3. Convert the new pixel coordinates back to time/price values
+	    const newP1Time = timeScale.coordinateToTime(newP1CoordX);
+	    const newP2Time = timeScale.coordinateToTime(newP2CoordX);
+	    const newP1Price = series.coordinateToPrice(newP1CoordY);
+	    const newP2Price = series.coordinateToPrice(newP2CoordY);
 
-        this._selectedRectangle.setPosition(
-            { time: newP1Time, price: newP1Price },
-            { time: newP2Time, price: newP2Price }
-        );
-    }
+	    // If any new point is invalid, exit to prevent deletion/errors.
+	    if (newP1Time === null || newP2Time === null || newP1Price === null || newP2Price === null) {
+	        return;
+	    }
+
+	    // 4. Update the rectangle's position with the new, valid points.
+	    this._selectedRectangle.setPosition(
+	        { time: newP1Time, price: newP1Price },
+	        { time: newP2Time, price: newP2Price }
+	    );
+	}
 
     private _keyDownHandler = (e: KeyboardEvent) => {
-        if (!this.isMoving() || !this._selectedRectangle) return;
-        
-        let xDelta = 0;
-        let yDelta = 0;
-        const MOVE_STEP = 5;
+	    if (!this.isMoving() || !this._selectedRectangle) return;
+	    
+	    const PRICE_STEP = 5; 
+	    let yDelta = 0;
 
-        if (!e.key.startsWith('Arrow')) {
-            return;
-        }
-        e.preventDefault();
+	    if (e.key.startsWith('Arrow')) {
+	        e.preventDefault();
+	    } else {
+	        return;
+	    }
 
-        switch (e.key) {
-            case 'ArrowUp':
-                yDelta = -MOVE_STEP;
-                break;
-            case 'ArrowDown':
-                yDelta = MOVE_STEP;
-                break;
-            case 'ArrowLeft':
-                xDelta = -MOVE_STEP;
-                break;
-            case 'ArrowRight':
-                xDelta = MOVE_STEP;
-                break;
-        }
+	    const series = this._selectedRectangle.series;
+	    const p1 = this._selectedRectangle._p1;
+	    // THIS IS THE CORRECTED LINE: "this" was missing.
+	    const p2 = this._selectedRectangle._p2;
 
-        if (xDelta !== 0 || yDelta !== 0) {
-            this._applyDeltaToSelectedRectangle(xDelta, yDelta);
-            this._saveDrawings();
-        }
-    }
+	    let newP1Time = p1.time;
+	    let newP2Time = p2.time;
+	    let newP1Price = p1.price;
+	    let newP2Price = p2.price;
+
+	    switch (e.key) {
+	        case 'ArrowUp':
+	            yDelta = -PRICE_STEP;
+	            break;
+	        case 'ArrowDown':
+	            yDelta = PRICE_STEP;
+	            break;
+	        case 'ArrowLeft': {
+	            const data = series.data();
+	            if (data.length > 1) {
+	                const lastDataPoint = data[data.length - 1];
+	                const secondLastDataPoint = data[data.length - 2];
+	                if (lastDataPoint && 'time' in lastDataPoint && secondLastDataPoint && 'time' in secondLastDataPoint) {
+	                    const timeInterval = (lastDataPoint.time as number) - (secondLastDataPoint.time as number);
+	                    newP1Time = ((p1.time as number) - timeInterval) as Time;
+	                    newP2Time = ((p2.time as number) - timeInterval) as Time;
+	                }
+	            }
+	            break;
+	        }
+	        case 'ArrowRight': {
+	            const data = series.data();
+	            if (data.length > 1) {
+	                const lastDataPoint = data[data.length - 1];
+	                const secondLastDataPoint = data[data.length - 2];
+	                if (lastDataPoint && 'time' in lastDataPoint && secondLastDataPoint && 'time' in secondLastDataPoint) {
+	                    const timeInterval = (lastDataPoint.time as number) - (secondLastDataPoint.time as number);
+	                    newP1Time = ((p1.time as number) + timeInterval) as Time;
+	                    newP2Time = ((p2.time as number) + timeInterval) as Time;
+	                }
+	            }
+	            break;
+	        }
+	    }
+
+	    if (yDelta !== 0) {
+	        const p1CoordY = series.priceToCoordinate(p1.price);
+	        const p2CoordY = series.priceToCoordinate(p2.price);
+	        if (p1CoordY !== null && p2CoordY !== null) {
+	            const newP1PriceCoord = series.coordinateToPrice(p1CoordY + yDelta as Coordinate);
+	            const newP2PriceCoord = series.coordinateToPrice(p2CoordY + yDelta as Coordinate);
+	            if (newP1PriceCoord !== null && newP2PriceCoord !== null) {
+	                newP1Price = newP1PriceCoord;
+	                newP2Price = newP2PriceCoord;
+	            }
+	        }
+	    }
+
+	    this._selectedRectangle.setPosition(
+	        { time: newP1Time, price: newP1Price },
+	        { time: newP2Time, price: newP2Price }
+	    );
+	    this._saveDrawings();
+	}
 
 	public startDrawing(): void {
 		this.stopDeleting();
@@ -656,23 +710,19 @@ export class RectangleDrawingTool {
     }
 
 	private _onDrawMouseMove(param: MouseEventParams) {
-		if (!this.isDrawing() || this._points.length === 0 || !param.point) return;
-	
-		const timeScale = this._chart.timeScale();
-		// THIS IS THE CRITICAL FIX:
-        // We MUST use coordinateToTime to get the time value from the mouse position.
-        // We CANNOT rely on `param.time` because it is only defined when the mouse
-        // is over a bar of data.
-		const time = timeScale.coordinateToTime(param.point.x);
-	
-		if (!time) return;
-	
-		const price = this._series.coordinateToPrice(param.point.y);
-		if (price === null) return;
-	
-		if (this._previewRectangle) {
-			this._previewRectangle.updateEndPoint({ time: time, price });
-		}
+	    if (!this.isDrawing() || this._points.length === 0 || !param.point) return;
+
+	    const timeScale = this._chart.timeScale();
+	    const time = timeScale.coordinateToTime(param.point.x);
+
+	    if (!time) return;
+
+	    const price = this._series.coordinateToPrice(param.point.y);
+	    if (price === null) return;
+
+	    if (this._previewRectangle) {
+	        this._previewRectangle.updateEndPoint({ time: time, price });
+	    }
 	}
 
 	private _addPoint(p: Point) {
