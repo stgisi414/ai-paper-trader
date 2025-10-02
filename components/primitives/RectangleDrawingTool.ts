@@ -89,14 +89,53 @@ class RectanglePaneView implements IPrimitivePaneView {
 		const y1 = series.priceToCoordinate(this._source._p1.price);
 		const y2 = series.priceToCoordinate(this._source._p2.price);
 		const timeScale = this._source.chart.timeScale();
-		const x1 = timeScale.timeToCoordinate(this._source._p1.time);
-		const x2 = timeScale.timeToCoordinate(this._source._p2.time);
+		
+        // --- START FIX: Manually Project Future Coordinates ---
+        const getCoordinate = (time: Time): Coordinate | null => {
+            let coordinate = timeScale.timeToCoordinate(time);
+            if (coordinate !== null) {
+                return coordinate; // Use the library's coordinate if available
+            }
+
+            // If coordinate is null, we are likely in the future. Let's project it.
+            const data = series.data();
+            if (data.length < 2) return null;
+
+            const lastDataPoint = data[data.length - 1];
+            const secondLastDataPoint = data[data.length - 2];
+
+            if (!lastDataPoint || !secondLastDataPoint || !('time' in lastDataPoint) || !('time' in secondLastDataPoint)) return null;
+
+            const lastTime = lastDataPoint.time as number;
+            const secondLastTime = secondLastDataPoint.time as number;
+            
+            const lastCoordinate = timeScale.timeToCoordinate(lastTime);
+            const secondLastCoordinate = timeScale.timeToCoordinate(secondLastTime);
+
+            if (lastCoordinate === null || secondLastCoordinate === null) return null;
+
+            const timeDiff = lastTime - secondLastTime;
+            const coordinateDiff = lastCoordinate - secondLastCoordinate;
+            
+            if (timeDiff === 0) return null; // Avoid division by zero
+
+            const pixelsPerTime = coordinateDiff / timeDiff;
+            const timeDeltaFromLast = (time as number) - lastTime;
+            
+            // Calculate the new coordinate based on the last known point and the rate of change
+            coordinate = lastCoordinate + (timeDeltaFromLast * pixelsPerTime);
+            return coordinate as Coordinate;
+        };
+        
+		const x1 = getCoordinate(this._source._p1.time);
+		const x2 = getCoordinate(this._source._p2.time);
+        // --- END FIX ---
+        
 		this._p1 = { x: x1, y: y1 };
 		this._p2 = { x: x2, y: y2 };
 	}
 
 	renderer() {
-		// FIX: Pass angle and selected state to the renderer
 		return new RectanglePaneRenderer(this._p1, this._p2, this._source._angle, this._source._options.fillColor, this._source._selected);
 	}
 }
@@ -225,6 +264,7 @@ export class RectangleDrawingTool {
     private _colorInput?: HTMLInputElement;
     private _rotateButton?: HTMLDivElement;
     private _moveButton?: HTMLDivElement;
+    private _resizeButton?: HTMLDivElement;
     private _ticker: string;
 
 	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, toolbarContainer: HTMLDivElement, ticker: string, options: Partial<RectangleDrawingToolOptions>) {
@@ -252,18 +292,43 @@ export class RectangleDrawingTool {
 	}
 
     private _chartClickHandler = (param: MouseEventParams) => {
-        if (this.isDrawing()) {
-            this._handleDrawClick(param);
-        } else if (this.isDeleting()) {
-            this._handleDeleteClick(param);
-        } else if (this.isColoring()) {
-            this._handleColorClick(param);
-        } else if (this.isRotating()) {
-            this._handleRotateClick(param);
-        } else if (this.isMoving()) {
-            this._handleMoveClick(param);
-        }
-    };
+	    if (this.isDrawing()) {
+	        this._handleDrawClick(param);
+	    } else if (this.isDeleting()) {
+	        this._handleDeleteClick(param);
+	    } else if (this.isColoring()) {
+	        this._handleColorClick(param);
+	    } else if (this.isRotating()) {
+	        this._handleRotateClick(param);
+	    } else if (this.isMoving()) {
+	        this._handleMoveClick(param);
+	    } else if (this.isResizing()) {
+	        this._handleResizeClick(param);
+	    }
+
+	    if (this.isMoving() || this.isResizing()) {
+	        if (!param.point) {
+	            this.stopMoving();
+	            this.stopResizing();
+	            return;
+	        }
+
+	        const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
+
+	        if (clickedRect) {
+	            // If we clicked a new rectangle, switch the selection
+	            if (this._selectedRectangle !== clickedRect) {
+	                this._selectedRectangle?.deselect();
+	                this._selectedRectangle = clickedRect;
+	                this._selectedRectangle.select();
+	            }
+	        } else {
+	            // If we clicked outside of any rectangle, deactivate the mode
+	            this.stopMoving();
+	            this.stopResizing();
+	        }
+		}
+	};
     private _contextMenuHandler = (e: MouseEvent) => {
         if (this.isMoving() && this._selectedRectangle) {
             e.preventDefault();
@@ -271,74 +336,74 @@ export class RectangleDrawingTool {
         }
     }
     private _dragMoveHandler = (e: MouseEvent) => {
-        if (!this._isDragging || !this._selectedRectangle || !this._dragStartPoint) return;
-        
-        e.preventDefault();
+	    if (!this._isDragging || !this._selectedRectangle) return;
 
-        const xDelta = (e.clientX as Coordinate) - this._dragStartPoint.x;
-        const yDelta = (e.clientY as Coordinate) - this._dragStartPoint.y;
+	    e.preventDefault();
 
-        this._applyDeltaToSelectedRectangle(xDelta, yDelta);
+	    if (this.isResizing() && this._activeResizeHandle) {
+	        this._handleResizeDrag(e); // This remains the same
+	        return;
+	    }
 
-        this._dragStartPoint.x = e.clientX as Coordinate;
-        this._dragStartPoint.y = e.clientY as Coordinate;
-    }
+	    if (this.isMoving() && this._dragStartPoint) {
+	        const xDelta = (e.clientX as Coordinate) - this._dragStartPoint.x;
+	        const yDelta = (e.clientY as Coordinate) - this._dragStartPoint.y;
+
+	        this._applyDeltaToSelectedRectangle(xDelta, yDelta);
+
+	        // Update the start point for the next move event
+	        this._dragStartPoint.x = e.clientX as Coordinate;
+	        this._dragStartPoint.y = e.clientY as Coordinate;
+	    }
+	};
 
 	private _mouseUpHandler = () => {
-        if (this._isDragging && this._selectedRectangle) {
-            this._isDragging = false;
-            this._dragStartPoint = null;
-            this._saveDrawings();
-            
-            this._selectedRectangle.deselect();
-            this._selectedRectangle = null;
-        } else if (this._isDragging) {
-            this._isDragging = false;
-        }
-    }
+	    if (!this._isDragging) return;
+
+	    this._isDragging = false;
+	    this._dragStartPoint = null;
+	    this._activeResizeHandle = null;
+
+	    // Re-enable chart interactivity
+	    this._chart.applyOptions({
+	        handleScroll: true,
+	        handleScale: true,
+	    });
+
+	    if (this._selectedRectangle) {
+	        this._saveDrawings();
+	    }
+	};
 
 	private _mouseDownHandler = (e: MouseEvent) => {
-        if (e.button !== 0 || this.isDrawing()) return; 
+	    // Only do something if a rectangle is already selected and we are in a mode that allows dragging
+	    if (e.button !== 0 || !this._selectedRectangle) return;
 
-        e.preventDefault();
-        
-        const pointX = e.offsetX as Coordinate;
-        const pointY = e.offsetY as Coordinate;
+	    const pointX = e.offsetX as Coordinate;
+	    const pointY = e.offsetY as Coordinate;
 
-        const timeScale = this._chart.timeScale();
-        const time = timeScale.coordinateToTime(pointX);
+	    if (this.isResizing()) {
+	        const handle = this._getHandleAtPoint(this._selectedRectangle, pointX, pointY);
+	        if (handle) {
+	            e.preventDefault();
+	            this._isDragging = true;
+	            this._activeResizeHandle = handle;
+	            this._chart.applyOptions({ handleScroll: false, handleScale: false });
+	            return;
+	        }
+	    }
 
-        if (!time) return;
-        
-        const clickedRect = this._getRectangleAtPoint(pointX, pointY);
-
-        if (this.isMoving()) {
-            if (this._selectedRectangle) {
-                if (clickedRect === this._selectedRectangle) {
-                    this._isDragging = true;
-                    this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
-                } else {
-                    this._selectedRectangle.deselect();
-                    this._selectedRectangle = null;
-                    if (clickedRect) {
-                        this._selectedRectangle = clickedRect;
-                        this._selectedRectangle.select();
-                        this._isDragging = true;
-                        this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
-                    } else {
-                        this.stopMoving();
-                    }
-                }
-            } else if (clickedRect) {
-                this._selectedRectangle = clickedRect;
-                this._selectedRectangle.select();
-                this._isDragging = true;
-                this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
-            } else {
-                this.stopMoving();
-            }
-        }
-    }
+	    if (this.isMoving()) {
+	        const clickedRect = this._getRectangleAtPoint(pointX, pointY);
+	        if (clickedRect === this._selectedRectangle) {
+	            e.preventDefault();
+	            this._isDragging = true;
+	            this._dragStartPoint = { x: e.clientX as Coordinate, y: e.clientY as Coordinate };
+	            this._chart.applyOptions({ handleScroll: false, handleScale: false });
+	            return;
+	        }
+	    }
+	};
 
 	private _moveHandler = (param: MouseEventParams) => {
         if (this.isRotating() && this._selectedRectangle) {
@@ -354,6 +419,7 @@ export class RectangleDrawingTool {
         this.stopColoring();
         this.stopRotating();
         this.stopMoving();
+        this.stopResizing();
         const chartContainer = this._chart.options().layout?.container;
         if (chartContainer) {
             (chartContainer as HTMLDivElement).removeEventListener('mousedown', this._mouseDownHandler);
@@ -372,6 +438,7 @@ export class RectangleDrawingTool {
         if (this._colorInput) this._toolbarContainer.removeChild(this._colorInput);
         if (this._rotateButton) this._toolbarContainer.removeChild(this._rotateButton);
         if (this._moveButton) this._toolbarContainer.removeChild(this._moveButton);
+        if (this._resizeButton) this._toolbarContainer.removeChild(this._resizeButton);
 	}
 
 
@@ -421,19 +488,14 @@ export class RectangleDrawingTool {
 
     private _keyDownHandler = (e: KeyboardEvent) => {
 	    if (!this.isMoving() || !this._selectedRectangle) return;
-	    
-	    const PRICE_STEP = 5; 
-	    let yDelta = 0;
 
-	    if (e.key.startsWith('Arrow')) {
-	        e.preventDefault();
-	    } else {
+	    if (!e.key.startsWith('Arrow')) {
 	        return;
 	    }
+	    e.preventDefault();
 
 	    const series = this._selectedRectangle.series;
 	    const p1 = this._selectedRectangle._p1;
-	    // THIS IS THE CORRECTED LINE: "this" was missing.
 	    const p2 = this._selectedRectangle._p2;
 
 	    let newP1Time = p1.time;
@@ -441,52 +503,46 @@ export class RectangleDrawingTool {
 	    let newP1Price = p1.price;
 	    let newP2Price = p2.price;
 
-	    switch (e.key) {
-	        case 'ArrowUp':
-	            yDelta = -PRICE_STEP;
-	            break;
-	        case 'ArrowDown':
-	            yDelta = PRICE_STEP;
-	            break;
-	        case 'ArrowLeft': {
-	            const data = series.data();
-	            if (data.length > 1) {
-	                const lastDataPoint = data[data.length - 1];
-	                const secondLastDataPoint = data[data.length - 2];
-	                if (lastDataPoint && 'time' in lastDataPoint && secondLastDataPoint && 'time' in secondLastDataPoint) {
-	                    const timeInterval = (lastDataPoint.time as number) - (secondLastDataPoint.time as number);
-	                    newP1Time = ((p1.time as number) - timeInterval) as Time;
-	                    newP2Time = ((p2.time as number) - timeInterval) as Time;
-	                }
-	            }
-	            break;
-	        }
-	        case 'ArrowRight': {
-	            const data = series.data();
-	            if (data.length > 1) {
-	                const lastDataPoint = data[data.length - 1];
-	                const secondLastDataPoint = data[data.length - 2];
-	                if (lastDataPoint && 'time' in lastDataPoint && secondLastDataPoint && 'time' in secondLastDataPoint) {
-	                    const timeInterval = (lastDataPoint.time as number) - (secondLastDataPoint.time as number);
-	                    newP1Time = ((p1.time as number) + timeInterval) as Time;
-	                    newP2Time = ((p2.time as number) + timeInterval) as Time;
-	                }
-	            }
-	            break;
+	    const PRICE_PIXEL_STEP = 5;
+
+	    // Determine the time interval between bars from the most recent data
+	    const data = series.data();
+	    let timeInterval = 86400; // Default to one day in seconds as a fallback
+	    if (data.length > 1) {
+	        const lastDataPoint = data[data.length - 1];
+	        const secondLastDataPoint = data[data.length - 2];
+	        if (lastDataPoint && 'time' in lastDataPoint && secondLastDataPoint && 'time' in secondLastDataPoint) {
+	            timeInterval = (lastDataPoint.time as number) - (secondLastDataPoint.time as number);
 	        }
 	    }
 
-	    if (yDelta !== 0) {
-	        const p1CoordY = series.priceToCoordinate(p1.price);
-	        const p2CoordY = series.priceToCoordinate(p2.price);
-	        if (p1CoordY !== null && p2CoordY !== null) {
-	            const newP1PriceCoord = series.coordinateToPrice(p1CoordY + yDelta as Coordinate);
-	            const newP2PriceCoord = series.coordinateToPrice(p2CoordY + yDelta as Coordinate);
-	            if (newP1PriceCoord !== null && newP2PriceCoord !== null) {
-	                newP1Price = newP1PriceCoord;
-	                newP2Price = newP2PriceCoord;
+	    switch (e.key) {
+	        case 'ArrowUp': {
+	            const p1CoordY = series.priceToCoordinate(p1.price);
+	            const p2CoordY = series.priceToCoordinate(p2.price);
+	            if (p1CoordY !== null && p2CoordY !== null) {
+	                newP1Price = series.coordinateToPrice(p1CoordY - PRICE_PIXEL_STEP as Coordinate) ?? newP1Price;
+	                newP2Price = series.coordinateToPrice(p2CoordY - PRICE_PIXEL_STEP as Coordinate) ?? newP2Price;
 	            }
+	            break;
 	        }
+	        case 'ArrowDown': {
+	            const p1CoordY = series.priceToCoordinate(p1.price);
+	            const p2CoordY = series.priceToCoordinate(p2.price);
+	            if (p1CoordY !== null && p2CoordY !== null) {
+	                newP1Price = series.coordinateToPrice(p1CoordY + PRICE_PIXEL_STEP as Coordinate) ?? newP1Price;
+	                newP2Price = series.coordinateToPrice(p2CoordY + PRICE_PIXEL_STEP as Coordinate) ?? newP2Price;
+	            }
+	            break;
+	        }
+	        case 'ArrowLeft':
+	            newP1Time = ((p1.time as number) - timeInterval) as Time;
+	            newP2Time = ((p2.time as number) - timeInterval) as Time;
+	            break;
+	        case 'ArrowRight':
+	            newP1Time = ((p1.time as number) + timeInterval) as Time;
+	            newP2Time = ((p2.time as number) + timeInterval) as Time;
+	            break;
 	    }
 
 	    this._selectedRectangle.setPosition(
@@ -500,6 +556,8 @@ export class RectangleDrawingTool {
 		this.stopDeleting();
         this.stopColoring();
         this.stopRotating();
+        this.stopMoving();
+        this.stopResizing();
 		this._drawing = true;
 		this._points = [];
 		if (this._toolbarButton) this._toolbarButton.style.color = 'rgb(0, 120, 255)';
@@ -528,12 +586,83 @@ export class RectangleDrawingTool {
         return this._coloring;
     }
 
+    public isResizing(): boolean {
+        return this._resizing;
+    }
+
+    public startResizing(): void {
+        this.stopDrawing();
+        this.stopDeleting();
+        this.stopColoring();
+        this.stopRotating();
+        this.stopMoving();
+        this._resizing = true;
+
+        this._chart.applyOptions({
+            handleScroll: false,
+            handleScale: false,
+        });
+        
+        if (this._resizeButton) this._resizeButton.style.color = 'rgb(0, 120, 255)';
+    }
+
+    public stopResizing(): void {
+        this._resizing = false;
+        if (this._selectedRectangle) {
+            this._selectedRectangle.deselect();
+            this._selectedRectangle = null;
+        }
+        this._isDragging = false;
+        this._activeResizeHandle = null;
+
+        this._chart.applyOptions({
+            handleScroll: true,
+            handleScale: true,
+        });
+
+        if (this._resizeButton) this._resizeButton.style.color = '#d0d0d0';
+    }
+
+    private _getHandleAtPoint(rect: Rectangle, x: Coordinate, y: Coordinate): string | null {
+        const view = rect.paneViews()[0] as RectanglePaneView;
+        if (view._p1.x === null || view._p1.y === null || view._p2.x === null || view._p2.y === null) return null;
+
+        const hPos = positionsBox(view._p1.x, view._p2.x, 1);
+        const vPos = positionsBox(view._p1.y, view._p2.y, 1);
+
+        const handleSize = 8; // A bit larger for an easier click target
+        const halfHandle = handleSize / 2;
+
+        const handles = {
+            'top-left': { x: hPos.position, y: vPos.position },
+            'top-right': { x: hPos.position + hPos.length, y: vPos.position },
+            'bottom-left': { x: hPos.position, y: vPos.position + vPos.length },
+            'bottom-right': { x: hPos.position + hPos.length, y: vPos.position + vPos.length },
+        };
+
+        for (const [name, pos] of Object.entries(handles)) {
+            if (
+                x >= pos.x - halfHandle && x <= pos.x + halfHandle &&
+                y >= pos.y - halfHandle && y <= pos.y + halfHandle
+            ) {
+                return name;
+            }
+        }
+        return null;
+    }
+
     public startMoving(): void {
         this.stopDrawing();
         this.stopDeleting();
         this.stopColoring();
         this.stopRotating();
+        this.stopResizing();
         this._moving = true;
+
+        this._chart.applyOptions({
+            handleScroll: false,
+            handleScale: false,
+        });
         
         if (this._moveButton) this._moveButton.style.color = 'rgb(0, 120, 255)';
     }
@@ -547,6 +676,12 @@ export class RectangleDrawingTool {
         }
         this._dragStartPoint = null;
         this._isDragging = false;
+
+        this._chart.applyOptions({
+            handleScroll: true,
+            handleScale: true,
+        });
+
         if (this._moveButton) this._moveButton.style.color = '#d0d0d0';
     }
 
@@ -554,6 +689,8 @@ export class RectangleDrawingTool {
         this.stopDrawing();
         this.stopColoring();
         this.stopRotating();
+        this.stopMoving();
+        this.stopResizing();
         this._deleting = true;
         if (this._deleteButton) this._deleteButton.style.color = 'rgb(217, 48, 37)';
         this._chart.applyOptions({
@@ -573,6 +710,8 @@ export class RectangleDrawingTool {
         this.stopDrawing();
         this.stopDeleting();
         this.stopRotating();
+        this.stopMoving();
+        this.stopResizing();
         this._coloring = true;
         if (this._colorInput) this._colorInput.style.border = '2px solid rgb(0, 120, 255)';
     }
@@ -594,6 +733,8 @@ export class RectangleDrawingTool {
         this.stopDrawing();
         this.stopDeleting();
         this.stopColoring();
+        this.stopMoving();
+        this.stopResizing();
         this._rotating = true;
         if (this._rotateButton) this._rotateButton.style.color = 'rgb(0, 120, 255)';
     }
@@ -606,6 +747,81 @@ export class RectangleDrawingTool {
         }
         if (this._rotateButton) this._rotateButton.style.color = '#d0d0d0';
     }
+
+    private _handleResizeDrag(e: MouseEvent) {
+	    if (!this._selectedRectangle || !this._activeResizeHandle) return;
+
+	    const chartContainer = this._chart.options().layout.container;
+	    const containerRect = chartContainer.getBoundingClientRect();
+	    const newCoordX = (e.clientX - containerRect.left) as Coordinate;
+	    const newCoordY = (e.clientY - containerRect.top) as Coordinate;
+
+	    const timeScale = this._chart.timeScale();
+	    const series = this._selectedRectangle.series;
+
+	    const getProjectedTime = (px: Coordinate): Time | null => {
+	        let time = timeScale.coordinateToTime(px);
+	        if (time !== null) return time;
+	        const data = series.data();
+	        if (data.length < 2) return null;
+	        const lastDataPoint = data[data.length - 1];
+	        const secondLastDataPoint = data[data.length - 2];
+	        if (!('time' in lastDataPoint) || !('time' in secondLastDataPoint)) return null;
+	        const lastTime = lastDataPoint.time as number;
+	        const secondLastTime = secondLastDataPoint.time as number;
+	        const lastCoord = timeScale.timeToCoordinate(lastTime);
+	        const secondLastCoord = timeScale.timeToCoordinate(secondLastTime);
+	        if (lastCoord === null || secondLastCoord === null) return null;
+	        const timeDiff = lastTime - secondLastTime;
+	        const coordDiff = lastCoord - secondLastCoord;
+	        if (coordDiff === 0) return null;
+	        const timePerPixel = timeDiff / coordDiff;
+	        return (lastTime + (px - lastCoord) * timePerPixel) as Time;
+	    };
+
+	    const newTime = getProjectedTime(newCoordX);
+	    const newPrice = series.coordinateToPrice(newCoordY);
+
+	    if (newTime === null || newPrice === null) return;
+
+	    const p1 = this._selectedRectangle._p1;
+	    const p2 = this._selectedRectangle._p2;
+
+	    let p1Time = p1.time as number;
+	    let p1Price = p1.price;
+	    let p2Time = p2.time as number;
+	    let p2Price = p2.price;
+
+	    const handle = this._activeResizeHandle;
+	    if (handle.includes('left')) p1Time = newTime as number;
+	    if (handle.includes('right')) p2Time = newTime as number;
+	    if (handle.includes('top')) p1Price = newPrice;
+	    if (handle.includes('bottom')) p2Price = newPrice;
+
+	    this._selectedRectangle.setPosition(
+	        { time: Math.min(p1Time, p2Time) as Time, price: Math.min(p1Price, p2Price) },
+	        { time: Math.max(p1Time, p2Time) as Time, price: Math.max(p1Price, p2Price) }
+	    );
+	}
+    
+    private _handleResizeClick(param: MouseEventParams) {
+	    if (!param.point) return;
+
+	    // If a rectangle is already selected, clicking anywhere else stops the mode.
+	    if (this._selectedRectangle) {
+	        this.stopResizing();
+	        return;
+	    }
+
+	    // If no rectangle is selected, try to select one.
+	    const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
+	    if (clickedRect) {
+	        this._selectedRectangle = clickedRect;
+	        this._selectedRectangle.select();
+	    } else {
+	        this.stopResizing();
+	    }
+	}
     
     private _handleDrawClick(param: MouseEventParams) {
         if (!param.point) return;
@@ -616,26 +832,27 @@ export class RectangleDrawingTool {
         this._addPoint({ time, price });
     }
     private _handleMoveClick(param: MouseEventParams) {
-        if (!param.point) return;
+	    if (!param.point) return;
 
-        if (this._selectedRectangle) {
-            const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
-            if (clickedRect === this._selectedRectangle) {
-                this._dragStartPoint = { x: param.point.x, y: param.point.y };
-            } else {
-                this.stopMoving();
-            }
-            return;
-        }
-        
-        const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
-        if (clickedRect) {
-            this._selectedRectangle = clickedRect;
-            this._selectedRectangle.select();
-        } else {
-            this.stopMoving();
-        }
-    }
+	    // If a rectangle is already selected, clicking away from it stops the mode.
+	    // Clicking on it does nothing until you mousedown and drag.
+	    if (this._selectedRectangle) {
+	        const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
+	        if (clickedRect !== this._selectedRectangle) {
+	            this.stopMoving();
+	        }
+	        return;
+	    }
+	    
+	    // If no rectangle is selected, try to select one.
+	    const clickedRect = this._getRectangleAtPoint(param.point.x, param.point.y);
+	    if (clickedRect) {
+	        this._selectedRectangle = clickedRect;
+	        this._selectedRectangle.select();
+	    } else {
+	        this.stopMoving();
+	    }
+	}
     private _handleColorClick(param: MouseEventParams) {
         if (!param.point) return;
         if (this._selectedRectangle) {
@@ -870,5 +1087,18 @@ export class RectangleDrawingTool {
         });
         this._toolbarContainer.appendChild(moveButton);
         this._moveButton = moveButton;
+
+        const resizeButton = document.createElement('div');
+        resizeButton.style.width = '24px';
+        resizeButton.style.height = '24px';
+        resizeButton.style.cursor = 'pointer';
+        resizeButton.style.color = '#d0d0d0';
+        resizeButton.title = 'Resize Shape (Click to select, then drag handles)';
+        resizeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H12.5a.5.5 0 0 1-.5-.5V12"/><path d="M3 3h8.5a.5.5 0 0 1 .5.5V12"/><path d="M12 3h8.5a.5.5 0 0 1 .5.5V12"/><path d="M12 21H3.5a.5.5 0 0 1-.5-.5V12"/></svg>`;
+        resizeButton.addEventListener('click', () => {
+            this.isResizing() ? this.stopResizing() : this.startResizing();
+        });
+        this._toolbarContainer.appendChild(resizeButton);
+        this._resizeButton = resizeButton;
 	}
 }
