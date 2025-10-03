@@ -7,7 +7,7 @@ import type { FmpSearchResult, PortfolioRiskAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
-import { SearchIcon, TrendingUpIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
+import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
 import SignatexFlow from './SignatexFlow';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
@@ -59,6 +59,7 @@ const Dashboard: React.FC = () => {
     const holdingsValue = totalValue - portfolio.cash;
     const totalGain = totalValue - portfolio.initialValue;
     const totalGainPercent = portfolio.initialValue > 0 ? (totalGain / portfolio.initialValue) * 100 : 0;
+    const GainLossIcon = totalGain >= 0 ? TrendingUpIcon : TrendingDownIcon;
 
     return (
         <div>
@@ -145,7 +146,7 @@ const Dashboard: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
-                                    <TrendingUpIcon className={`h-8 w-8 ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`} />
+                                    <GainLossIcon className={`h-8 w-8 ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`} />
                                     <div>
                                         <div className="text-sm text-night-500">Total Gain / Loss</div>
                                         <div className={`text-2xl font-bold ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>

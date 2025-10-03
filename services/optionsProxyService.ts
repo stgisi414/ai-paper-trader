@@ -1,30 +1,21 @@
-// stgisi414/ai-paper-trader/ai-paper-trader-1aba57e32cc684602a69e276de1a20c554fe5223/services/optionsProxyService.ts
+// stgisi414/ai-paper-trader/ai-paper-trader-62753196656f768778662c9bd1a539920868b6d1/services/optionsProxyService.ts
 
 import { AlpacaOptionContract } from '../types';
-import { calculateGreeks } from '../utils/optionsCalculator'; // <--- Now uses correct Black-Scholes calls
+// IMPORT CLIENT-SIDE CALCULATOR
+import { calculateGreeks } from '../utils/optionsCalculator';
+import type { YahooOptionContract } from '../types';
+
 
 const OPTIONS_PROXY_URL = 'https://optionsproxy-gqoddifzlq-uc.a.run.app';
+// REMOVED: GREEKS_CALCULATOR_URL constant is no longer needed
 
-interface YahooOptionContract {
-    contractSymbol: string;
-    strike: number;
-    expiration: number;
-    lastPrice: number;
-    bid: number;
-    ask: number;
-    change: number;
-    percentChange: number;
-    volume: number;
-    openInterest: number;
-    impliedVolatility: number;
-    inTheMoney: boolean;
-    // Greeks from yahoo-finance2 (or similar)
-    greeks?: {
-        delta: number;
-        gamma: number;
-        theta: number;
-        vega: number;
-    };
+// REMOVED: calculateGreeksRemotely is no longer needed
+
+interface GreeksResult {
+    delta: number | null;
+    gamma: number | null;
+    theta: number | null;
+    vega: number | null;
 }
 
 interface OptionsChainResponse {
@@ -52,25 +43,22 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
     if (!symbol) return [];
 
     const url = `${OPTIONS_PROXY_URL}?symbol=${symbol.toUpperCase()}`;
-    let rawJsonText = ''; // FIX: Declare rawJsonText outside try block
+    let rawJsonText = '';
 
     try {
         const response = await fetch(url);
         if (!response.ok) {
             const errorText = await response.text();
-            // ADDED: Log the error response text to the console
             console.error(`Options Proxy failed with status ${response.status}:`, errorText);
             throw new Error(`Options Proxy failed: ${response.status} ${errorText}`);
         }
         
-        // ADDED: Read the raw text, log it, and then parse it
         rawJsonText = await response.text();
-        console.log('Raw Options Proxy Response Text:', rawJsonText); // <-- Check this first!
+        console.log('Raw Options Proxy Response Text:', rawJsonText);
 
-        const data = JSON.parse(rawJsonText) as OptionsChainResponse; // Use the updated interface
-        console.log('Parsed Options Proxy Data Object:', data); // <-- Check this second!
+        const data = JSON.parse(rawJsonText) as OptionsChainResponse;
+        console.log('Parsed Options Proxy Data Object:', data);
 
-        // --- START FIX: Correctly access the array of option groups from the top level ---
         const optionsExpirationGroups = data.options;
         // EXTRACT CURRENT PRICE
         const currentStockPrice = data.quote?.regularMarketPrice;
@@ -79,10 +67,9 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
 
         let allContracts: AlpacaOptionContract[] = [];
         
-        // Function to process and normalize a contract
+        // Function to process and normalize a single contract
         const processContract = (c: YahooOptionContract, type: 'call' | 'put', expirationDateRaw: string | number): AlpacaOptionContract | null => {
             
-            // FIX: Robust Date conversion and validation
             const dateObj = new Date(expirationDateRaw);
             const expirationDate = isNaN(dateObj.getTime()) 
                                     ? 'N/A' 
@@ -91,11 +78,12 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
             if (expirationDate === 'N/A') return null;
 
             const impliedVolatility = c.impliedVolatility || null;
-            let greeks = c.greeks;
 
-            // NEW LOGIC: Calculate Greeks if impliedVolatility is present AND Yahoo data did not return them
-            if (!greeks && impliedVolatility !== null && impliedVolatility > 0 && currentStockPrice) {
-                 greeks = calculateGreeks(
+            // NEW LOGIC: Calculate Greeks LOCALLY using the imported function
+            let greeks: GreeksResult | undefined = c.greeks;
+
+            if (impliedVolatility !== null && impliedVolatility > 0 && currentStockPrice) {
+                 greeks = calculateGreeks( // CALL LOCAL FUNCTION
                     type, 
                     currentStockPrice, 
                     c.strike, 
@@ -114,10 +102,10 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
                 exchange: 'N/A', 
                 style: type, 
                 type: type,
-                expiration_date: expirationDate, // Use the correctly formatted date string
+                expiration_date: expirationDate, 
                 strike_price: String(c.strike),
                 underlying_symbol: symbol.toUpperCase(),
-                close_price: c.lastPrice || c.bid || 0, // Fallback to bid if lastPrice is missing
+                close_price: c.lastPrice || c.bid || 0,
                 volume: c.volume || 0,
                 open_interest: c.openInterest || 0,
                 // Use calculated or fetched greeks
@@ -129,11 +117,10 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
             };
         };
 
-        // FIX: Iterate over the correctly identified array.
+        // Collect all contracts synchronously as the heavy calculation is now local
         optionsExpirationGroups.forEach((optionGroup: any) => { 
-            const expirationDateRaw = optionGroup.expirationDate; // raw date is string or number
+            const expirationDateRaw = optionGroup.expirationDate;
 
-            // Apply processContract and filter out null returns
             const calls = optionGroup.calls.map((c: YahooOptionContract) => processContract(c, 'call', expirationDateRaw)).filter(Boolean) as AlpacaOptionContract[];
             const puts = optionGroup.puts.map((c: YahooOptionContract) => processContract(c, 'put', expirationDateRaw)).filter(Boolean) as AlpacaOptionContract[];
 
@@ -142,7 +129,6 @@ export const getOptionsChain = async (symbol: string): Promise<AlpacaOptionContr
 
         // Filter out contracts with no tradable price
         return allContracts.filter(c => c.close_price > 0);
-        // --- END FIX ---
 
     } catch (error) {
         console.error("Failed to fetch options chain from proxy:", error);
