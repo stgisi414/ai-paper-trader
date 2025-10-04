@@ -8,10 +8,6 @@
     ],
     "rewrites": [
       {
-        "source": "**",
-        "destination": "/index.html"
-      },
-      {
         "source": "/geminiProxy",
         "function": "geminiProxy"
       },
@@ -22,6 +18,10 @@
       {
         "source": "/alpacaProxy",
         "function": "alpacaProxy"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ]
   },
@@ -42,4 +42,4 @@
       ]
     }
   ]
-}
+} 
