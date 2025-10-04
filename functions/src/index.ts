@@ -76,23 +76,66 @@ export const fmpProxy = onRequest(
   async (req: Request, res: Response): Promise<void> => {
     const endpoint = req.query.endpoint;
     if (typeof endpoint !== "string") {
-      res.status(400).send("Missing endpoint query parameter.");
+      res.status(400).json({error: "Missing endpoint query parameter."});
       return;
     }
-    
-    const queryDelimiter = endpoint.includes('?') ? '&' : '?';
 
-    const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${fmpApiKey.value()}`;
+    const apiKey = fmpApiKey.value();
+    if (!apiKey) {
+      // NEW: Explicitly check for a missing key and log it
+      logger.error("FMP_API_KEY is not configured in Firebase Functions");
+      res.status(500).json({error: "FMP API Key is missing."});
+      return;
+    }
 
+    // Check if the endpoint already has a query parameter
+    const queryDelimiter = endpoint.includes("?") ? "&" : "?";
+
+    // Build the final FMP URL
+    const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${apiKey}`;
+
+    // NEW: Log the URL to your Firebase Function logs for verification
+    logger.info(`FMP Proxy fetching URL: ${url.replace(apiKey, "REDACTED")}`);
 
     try {
       const apiResponse = await fetch(url);
-      const data = await apiResponse.json();
-      res.status(apiResponse.status).send(data);
+      const responseText = await apiResponse.text();
+
+      if (!apiResponse.ok) {
+        // Log the error response from FMP
+        logger.error(`FMP API status ${apiResponse.status}:`, responseText);
+
+        let errorDetails;
+        try {
+          // Attempt to parse the error body as JSON (for structured errors)
+          errorDetails = JSON.parse(responseText);
+        } catch {
+          // If it's not JSON (e.g., HTML/plain text error from FMP),
+          // capture the beginning
+          errorDetails = {message: responseText.slice(0, 200) ||
+           `Request failed with status ${apiResponse.status}`};
+        }
+
+        // Return a structured error to the client
+        res.status(apiResponse.status).json({
+          error: "FMP API Error",
+          status: apiResponse.status,
+          details: errorDetails,
+        });
+        return;
+      }
+
+      // Successful JSON response
+      try {
+        const data = JSON.parse(responseText);
+        res.status(200).json(data);
+      } catch (e) {
+        logger.error("Failed to parse successful response as JSON.", e);
+        res.status(500).json({error: "FMP returned unparsable on success."});
+      }
     } catch (error) {
-      logger.error("FMP Proxy Error:", error);
-      // FIX Use .json() to ensure the response content-type is application/json
-      res.status(500).json({error: "Error fetching from FMP API."});
+      logger.error("FMP Proxy Network/Connection Error:", error);
+      res.status(500).json({error: "Proxy failed to connect to FMP endpoint."});
     }
   },
 );
