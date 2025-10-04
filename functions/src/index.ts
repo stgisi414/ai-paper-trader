@@ -79,8 +79,11 @@ export const fmpProxy = onRequest(
       res.status(400).send("Missing endpoint query parameter.");
       return;
     }
+    
+    const queryDelimiter = endpoint.includes('?') ? '&' : '?';
 
-    const url = `https://financialmodelingprep.com/api${endpoint}&apikey=${fmpApiKey.value()}`;
+    const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${fmpApiKey.value()}`;
+
 
     try {
       const apiResponse = await fetch(url);
@@ -88,7 +91,8 @@ export const fmpProxy = onRequest(
       res.status(apiResponse.status).send(data);
     } catch (error) {
       logger.error("FMP Proxy Error:", error);
-      res.status(500).send("Error fetching from FMP API.");
+      // FIX Use .json() to ensure the response content-type is application/json
+      res.status(500).json({error: "Error fetching from FMP API."});
     }
   },
 );
@@ -122,7 +126,8 @@ export const alpacaProxy = onRequest(
       res.status(apiResponse.status).send(data);
     } catch (error) {
       logger.error("Alpaca Proxy Error:", error);
-      res.status(500).send("Error fetching from Alpaca API.");
+      // FIX Use .json() to ensure the response content-type is application/json
+      res.status(500).json({error: "Error fetching from Alpaca API."});
     }
   },
 );
@@ -171,12 +176,11 @@ export const geminiProxy = onRequest(
       res.status(200).send({text});
     } catch (error) {
       logger.error("Gemini Proxy Error:", error);
-      if (error instanceof Error) {
-        res.status(500)
-          .send(`Error generating content from Gemini API: ${error.message}`);
-      } else {
-        res.status(500).send("Error generating content from Gemini API.");
-      }
+      const errorMessage = error instanceof Error ?
+        `Error generating content from Gemini API: ${error.message}` :
+        "Error generating content from Gemini API.";
+      // FIX: Use .json() for a consistent, structured error response
+      res.status(500).json({error: errorMessage});
     }
   },
 );
