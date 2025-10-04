@@ -3,7 +3,7 @@ import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {defineString} from "firebase-functions/params";
-import { GoogleGenAI, GenerationConfig } from "@google/genai";
+import {GoogleGenAI, GenerationConfig} from "@google/genai";
 
 initializeApp();
 
@@ -72,7 +72,6 @@ export const fmpProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
-    secrets: ["FMP_API_KEY"],
   },
   async (req: Request, res: Response): Promise<void> => {
     const endpoint = req.query.endpoint;
@@ -99,7 +98,6 @@ export const alpacaProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
-    secrets: ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"],
   },
   async (req: Request, res: Response): Promise<void> => {
     const endpoint = req.query.endpoint;
@@ -134,7 +132,6 @@ export const geminiProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
-    secrets: ["GEMINI_API_KEY"],
   },
   async (req: Request, res: Response): Promise<void> => {
     if (req.method !== "POST") {
@@ -150,24 +147,27 @@ export const geminiProxy = onRequest(
         return;
       }
 
-      // Correctly instantiate with the API key string
-      const genAI = new GoogleGenAI(geminiApiKey.value());
+      // FIX 1: Initialize with an options object { apiKey: '...' }
+      // The Type 'string' has no properties in common with type
+      // 'GoogleGenAIOptions' error (TS2559) is fixed here.
+      const genAI = new GoogleGenAI({apiKey: geminiApiKey.value()});
 
       const generationConfig: GenerationConfig = schema ? {
         responseMimeType: "application/json",
         responseSchema: schema,
       } : {};
 
-      // Correctly call generateContent via the model property
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent({
+      // FIX 2: Access generateContent through the models property.
+      // The Property 'getGenerativeModel' does not exist on
+      // type 'GoogleGenAI' error (TS2339) is fixed here.
+      const geminiResult = await genAI.models.generateContent({
+        model: modelName,
         contents: [{role: "user", parts: [{text: prompt}]}],
-        generationConfig: generationConfig,
+        config: generationConfig,
       });
 
-      const response = result.response;
-      const text = response.text();
-      
+      const text = geminiResult.text;
+
       res.status(200).send({text});
     } catch (error) {
       logger.error("Gemini Proxy Error:", error);
