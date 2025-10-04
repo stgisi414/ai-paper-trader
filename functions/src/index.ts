@@ -7,7 +7,6 @@ import { GoogleGenAI, GenerationConfig } from "@google/genai";
 
 initializeApp();
 
-// Define API keys from environment variables
 const fmpApiKey = defineString("FMP_API_KEY");
 const alpacaApiKey = defineString("ALPACA_API_KEY");
 const alpacaApiSecret = defineString("ALPACA_SECRET_KEY");
@@ -16,7 +15,6 @@ const geminiApiKey = defineString("GEMINI_API_KEY");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let yfClient: any = null;
 
-// (This is your existing yahoo finance proxy - no changes needed here)
 const loadYahooFinanceClient = async () => {
   if (yfClient === null) {
     try {
