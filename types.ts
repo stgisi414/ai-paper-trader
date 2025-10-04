@@ -6,18 +6,6 @@ export interface Holding {
   currentPrice: number;
 }
 
-// NEW: Represents a held options contract in the portfolio
-export interface OptionHolding {
-  symbol: string; // The specific option symbol, e.g., AAPL241220C00150000
-  underlyingTicker: string;
-  shares: number; // Number of contracts
-  purchasePrice: number; // Price per share (premium)
-  currentPrice: number;
-  optionType: 'call' | 'put';
-  strikePrice: number;
-  expirationDate: string;
-}
-
 export interface Portfolio {
   cash: number;
   holdings: Holding[];
@@ -82,7 +70,6 @@ export interface FmpNews {
     url: string;
 }
 
-// NEW: Represents the options position summary from FMP
 export interface FmpOptionsPositionSummary {
     symbol: string;
     date: string;
@@ -314,9 +301,9 @@ export interface AlpacaOptionContract {
     style: string;
     type: 'call' | 'put';
     expiration_date: string;
-    strike_price: string; // Is a string in the API response
+    strike_price: string;
     underlying_symbol: string;
-    close_price: number | null; // Use close_price instead of last_trade
+    close_price: number | null;
     volume: number | null;
     open_interest: number | null;
     delta: number | null;
@@ -327,13 +314,12 @@ export interface AlpacaOptionContract {
 }
 
 export interface AlpacaOptionsResponse {
-    option_contracts: AlpacaOptionContract[]; // FIX: Changed from "options"
+    option_contracts: AlpacaOptionContract[];
     next_page_token: string | null;
 }
 
-// Add OptionHolding and update Portfolio
 export interface OptionHolding {
-  symbol: string; // The specific option symbol, e.g., AAPL241220C00150000
+  symbol: string;
   underlyingTicker: string;
   shares: number; // Number of contracts
   purchasePrice: number; // Price per share (premium)
@@ -341,7 +327,6 @@ export interface OptionHolding {
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
-  // ADDED volume/open interest, KEPT greeks for consistency
   volume: number | null; 
   open_interest: number | null; 
   delta: number | null;
@@ -377,20 +362,18 @@ export interface Transaction {
     id: string;
     type: 'BUY' | 'SELL' | 'OPTION_BUY' | 'OPTION_SELL' | 'OPTION_EXERCISE' | 'OPTION_EXPIRE';
     ticker: string;
-    shares: number; // For stocks: shares, for options: contracts
-    price: number; // Price per share/contract
-    totalAmount: number; // Total cash moved
+    shares: number;
+    price: number;
+    totalAmount: number;
     timestamp: number;
-    // Realized P&L details
     purchasePrice?: number;
     realizedPnl?: number;
-    // Options specific details
     optionSymbol?: string;
     optionType?: 'call' | 'put';
     strikePrice?: number;
 }
 
-interface YahooOptionContract {
+export interface YahooOptionContract {
     contractSymbol: string;
     strike: number;
     expiration: number;
@@ -403,14 +386,12 @@ interface YahooOptionContract {
     openInterest: number;
     impliedVolatility: number;
     inTheMoney: boolean;
-    // FIX/ADDITION: Add the greeks directly as they exist in the raw response structure
     greeks?: {
         delta: number;
         gamma: number;
         theta: number;
         vega: number;
     };
-    // ADDITION: Include these fields from the raw response to ensure type compatibility
     currency?: string; 
     contractSize?: string;
     lastTradeDate?: string; 

@@ -6,7 +6,7 @@ import * as geminiService from '../services/geminiService';
 import type { FmpSearchResult, PortfolioRiskAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
-import { formatCurrency, formatPercentage } from '../utils/formatters';
+import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
 import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
 import SignatexFlow from './SignatexFlow';
 import Watchlist from './Watchlist';
@@ -92,7 +92,6 @@ const Dashboard: React.FC = () => {
                             </button>
                         </form>
 
-                        {/* UI feedback for no results */}
                         {searchAttempted && !isSearching && searchResults.length === 0 && (
                             <div className="text-center p-4 text-night-500 border-t border-night-700 mt-4">
                                 No stocks found for "{searchQuery}".
@@ -112,7 +111,6 @@ const Dashboard: React.FC = () => {
                         )}
                     </Card>
 
-                    {/* AI Portfolio Risk Analysis */}
                     <Card>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
@@ -133,7 +131,6 @@ const Dashboard: React.FC = () => {
                         )}
                     </Card>
 
-                    {/* Portfolio Summary */}
                     <Card>
                         <h2 className="text-2xl font-bold mb-4">Portfolio Overview</h2>
                         {isPortfolioLoading ? <Spinner /> : (
@@ -172,9 +169,8 @@ const Dashboard: React.FC = () => {
                         )}
                     </Card>
 
-                    {/* Holdings List */}
                     <Card>
-                        <h2 className="text-2xl font-bold mb-4">My Holdings</h2>
+                        <h2 className="text-2xl font-bold mb-4">My Stock Holdings</h2>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead className="border-b border-night-600">
@@ -201,6 +197,48 @@ const Dashboard: React.FC = () => {
                                                     <td className="p-3">{h.shares}</td>
                                                     <td className="p-3">{formatCurrency(h.purchasePrice)}</td>
                                                     <td className="p-3">{formatCurrency(h.currentPrice)}</td>
+                                                    <td className="p-3">{formatCurrency(totalValue)}</td>
+                                                    <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                        {formatCurrency(gain)} ({formatPercentage(gainPercent)})
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+
+                    {/* NEW: Option Holdings Table */}
+                    <Card>
+                        <h2 className="text-2xl font-bold mb-4">My Option Holdings</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="border-b border-night-600">
+                                    <tr>
+                                        <th className="p-3">Symbol</th>
+                                        <th className="p-3">Contracts</th>
+                                        <th className="p-3">Avg. Premium</th>
+                                        <th className="p-3">Current Premium</th>
+                                        <th className="p-3">Total Value</th>
+                                        <th className="p-3">Gain/Loss</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {portfolio.optionHoldings.length === 0 ? (
+                                        <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
+                                    ) : (
+                                        portfolio.optionHoldings.map(o => {
+                                            const totalValue = o.shares * o.currentPrice * 100;
+                                            const gain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
+                                            const gainPercent = (gain / (o.purchasePrice * o.shares * 100)) * 100;
+                                            return (
+                                                <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
+                                                    <td className="p-3 font-bold"><Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link></td>
+                                                    <td className="p-3">{o.shares}</td>
+                                                    <td className="p-3">{formatCurrency(o.purchasePrice)}</td>
+                                                    <td className="p-3">{formatCurrency(o.currentPrice)}</td>
                                                     <td className="p-3">{formatCurrency(totalValue)}</td>
                                                     <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
                                                         {formatCurrency(gain)} ({formatPercentage(gainPercent)})
