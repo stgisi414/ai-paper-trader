@@ -375,14 +375,14 @@ export interface AiScreener {
 
 export interface Transaction {
     id: string;
-    type: 'BUY' | 'SELL' | 'OPTION_BUY' | 'OPTION_SELL';
+    type: 'BUY' | 'SELL' | 'OPTION_BUY' | 'OPTION_SELL' | 'OPTION_EXERCISE' | 'OPTION_EXPIRE';
     ticker: string;
     shares: number; // For stocks: shares, for options: contracts
     price: number; // Price per share/contract
     totalAmount: number; // Total cash moved
     timestamp: number;
-    // Realized P&L details (only for 'SELL' and 'OPTION_SELL')
-    purchasePrice?: number; // Original purchase price for calculating P&L
+    // Realized P&L details
+    purchasePrice?: number;
     realizedPnl?: number;
     // Options specific details
     optionSymbol?: string;
@@ -414,4 +414,14 @@ interface YahooOptionContract {
     currency?: string; 
     contractSize?: string;
     lastTradeDate?: string; 
+}
+
+export interface WatchlistPick {
+    symbol: string;
+    name: string;
+    reason: string;
+}
+
+export interface AiWatchlistRecs {
+    picks: WatchlistPick[];
 }

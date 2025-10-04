@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { GEMINI_API_KEY } from '../constants';
-import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener } from '../types'; // ADD AiScreener
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs } from '../types'; // ADD AiWatchlistRecs
 
 if (!GEMINI_API_KEY) {
     console.error("Gemini API key is not configured.");
@@ -393,7 +393,8 @@ const combinedRecSchema = {
         },
         strategy: {
             type: Type.STRING,
-            description: "A 2-3 sentence summary of a potential trading strategy (e.g., buying calls, writing covered calls, buying puts) based on the analysis. This should be a general strategy, not a specific contract."
+            enum: ["Buy Stock (Long)", "Short Sell Stock", "Buy Call Options", "Buy Put Options", "Covered Call", "Cash-Secured Put", "No Action"],
+            description: "A single, concrete, actionable strategy."
         },
         justification: {
             type: Type.STRING,
@@ -407,19 +408,21 @@ export const getCombinedRecommendations = async (
     profile: FmpProfile,
     ratings: FmpAnalystRating[],
     technicals: TechnicalAnalysis
-): Promise<any> => { // Using 'any' for now as we'll define the new type next
+): Promise<CombinedRec> => { // Return the specific type
     if (!GEMINI_API_KEY) {
         throw new Error("Gemini API key not set.");
     }
 
+    const latestRating = ratings.length > 0 ? ratings[0] : null;
+
     const prompt = `
         Analyze the following data for ${profile.companyName} (${profile.symbol}) to generate an advanced trading recommendation.
         1.  **Fundamental Data**: ${profile.description}
-        2.  **Analyst Ratings Summary**: ${JSON.stringify(ratings)}
+        2.  **Latest Analyst Ratings Summary**: ${JSON.stringify(latestRating)}
         3.  **AI Technical Analysis**: Trend is ${technicals.trend}, Support is at ${technicals.support}, Resistance is at ${technicals.resistance}. Summary: ${technicals.summary}
 
-        Based on a synthesis of all three data points, provide an overall sentiment, a confidence level, a potential options strategy, and a detailed justification.
-        The output must be a JSON object matching the provided schema.
+        Based on a synthesis of all three data points, provide an overall sentiment, a confidence level, a single actionable options strategy, and a detailed justification.
+        The output must be a JSON object matching the provided schema. The strategy must be one of the specified enum values.
     `;
 
     try {
@@ -567,5 +570,76 @@ export const getMarketScreenerPicks = async (prompt: string): Promise<AiScreener
     } catch (error) {
         console.error("Error getting market screener picks from Gemini:", error);
         throw new Error("Failed to get AI market screener picks.");
+    }
+};
+
+const watchlistRecsSchema = {
+    type: Type.OBJECT,
+    properties: {
+        picks: {
+            type: Type.ARRAY,
+            description: "A list of 3 stock picks to consider for the watchlist.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    symbol: { type: Type.STRING, description: "The stock ticker symbol." },
+                    name: { type: Type.STRING, description: "The company name." },
+                    reason: { type: Type.STRING, description: "A 1-2 sentence explanation of why this stock is a good addition based on the user's context and news." },
+                },
+                required: ["symbol", "name", "reason"]
+            }
+        }
+    },
+    required: ["picks"]
+};
+
+export const getWatchlistPicks = async (
+    holdings: { ticker: string, shares: number }[],
+    watchlist: string[],
+    news: string
+): Promise<AiWatchlistRecs> => {
+    if (!GEMINI_API_KEY) {
+        throw new Error("Gemini API key not set.");
+    }
+
+    const holdingsStr = holdings.map(h => h.ticker).join(', ') || 'none';
+    const watchlistStr = watchlist.join(', ') || 'none';
+    const existingAssets = [...new Set([...holdings.map(h => h.ticker), ...watchlist])].join(', ');
+
+    const prompt = `
+        Analyze the user's current financial context and the latest market news to recommend 3 new stocks for their watchlist.
+
+        **User's Context:**
+        - Current Portfolio Holdings: ${holdingsStr}
+        - Current Watchlist: ${watchlistStr}
+
+        **Latest Market News Summary:**
+        ${news}
+
+        **Instructions:**
+        1.  Identify stocks that are synergistic with the user's existing assets or are promising based on current news.
+        2.  You MUST NOT recommend any stocks that are already in the user's holdings or watchlist: ${existingAssets}.
+        3.  Provide a concise reason for each recommendation, linking it either to the user's portfolio or the news.
+        4.  The output must be a JSON object matching the provided schema.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-pro",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: watchlistRecsSchema,
+            },
+        });
+
+        if (!response) throw new Error("AI response was null");
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as AiWatchlistRecs;
+
+    } catch (error) {
+        console.error("Error getting watchlist picks from Gemini:", error);
+        throw new Error("Failed to get AI watchlist picks.");
     }
 };

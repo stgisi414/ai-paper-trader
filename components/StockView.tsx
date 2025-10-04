@@ -8,7 +8,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { BrainCircuitIcon, StarIcon } from './common/Icons';
+import { BrainCircuitIcon, StarIcon, HelpCircleIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as optionsProxyService from '../services/optionsProxyService';
 import SignatexFlow from './SignatexFlow';
@@ -36,6 +36,15 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
     return [state, setState];
 };
 
+const HelpIconWithTooltip: React.FC<{ tooltip: string }> = ({ tooltip }) => (
+    <div className="relative flex items-center group">
+        <HelpCircleIcon className="h-4 w-4 text-night-500" />
+        <div className="absolute top-full mt-2 bg-night-600 text-white text-xs rounded-md p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+            {tooltip}
+        </div>
+    </div>
+);
+
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
@@ -43,7 +52,6 @@ const StockView: React.FC = () => {
 
     const formatGreek = useCallback((value: number | null): string => {
         if (value === null) return 'N/A';
-        // Format to three decimal places for precision
         return value.toFixed(3);
     }, []);
 
@@ -60,7 +68,7 @@ const StockView: React.FC = () => {
     const [insiderTrades, setInsiderTrades] = useState<FmpInsiderTrading[]>([]);
     const [financialStatementAnalysis, setFinancialStatementAnalysis] = useState<FinancialStatementAnalysis | null>(null);
     const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
-    const [combinedRec, setCombinedRec] = useState<CombinedRec | null>(null);
+    const [combinedRec, setCombinedRec] = usePersistentState<CombinedRec | null>(`combinedRec-${ticker}`, null);
     const [keyMetricsAnalysis, setKeyMetricsAnalysis] = useState<KeyMetricsAnalysis | null>(null);
     const [options, setOptions] = useState<AlpacaOptionContract[]>([]);
     const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
@@ -68,7 +76,7 @@ const StockView: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [isKeyMetricsLoading, setIsKeyMetricsLoading] = useState(false);
-    const [tradeShares, setTradeShares] = usePersistentState<number>(`tradeShares-${ticker}`, 1);
+    const [tradeShares, setTradeShares] = usePersistentState<number | ''>(`tradeShares-${ticker}`, 1);
     const [activeTab, setActiveTab] = useState('summary');
     const [tradeTab, setTradeTab] = usePersistentState<'stock' | 'calls' | 'puts'>(`tradeTab-${ticker}`, 'stock');
     
@@ -82,7 +90,6 @@ const StockView: React.FC = () => {
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                // Fetch all data including options chain from the proxy
                 const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsData] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
@@ -93,7 +100,7 @@ const StockView: React.FC = () => {
                     fmpService.getBalanceSheet(ticker),
                     fmpService.getCashFlowStatement(ticker),
                     fmpService.getInsiderTrading(ticker),
-                    optionsProxyService.getOptionsChain(ticker), // UPDATED TO USE PROXY
+                    optionsProxyService.getOptionsChain(ticker),
                 ]);
                 
                 setQuote(quoteData[0] || null);
@@ -106,8 +113,6 @@ const StockView: React.FC = () => {
                 setBalanceSheet(balanceSheetData[0] || null);
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
-
-                // Options data is now an array of AlpacaOptionContract (our unified type)
                 setOptions(optionsData); 
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
@@ -188,7 +193,7 @@ const StockView: React.FC = () => {
         }
         setIsAiLoading(true);
         setHasRunAdvancedRecs(true);
-        setCombinedRec(null);
+        setCombinedRec(null); // Clear previous recommendation before fetching new one
         try {
             const technicals = await geminiService.getTechnicalAnalysis(historicalData);
             setTechnicalAnalysis(technicals);
@@ -201,16 +206,30 @@ const StockView: React.FC = () => {
         } finally {
             setIsAiLoading(false);
         }
-    }, [profile, historicalData, analystRatings]);
+    }, [profile, historicalData, analystRatings, setCombinedRec]);
 
+    const handleSharesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        if (value === '') {
+            setTradeShares('');
+        } else {
+            const numValue = parseInt(value, 10);
+            setTradeShares(Math.max(1, numValue) || 1);
+        }
+    };
+    
     const handleBuy = () => {
-        if (tradeTab === 'stock' && quote && profile && tradeShares > 0) {
-            // ... (existing stock logic)
-        } else if (selectedOption && tradeShares > 0) {
+        const shares = Number(tradeShares);
+        if (shares <= 0) return;
+
+        if (tradeTab === 'stock' && quote && profile) {
+            buyStock(quote.symbol, profile.companyName, shares, quote.price);
+            alert(`Successfully bought ${shares} share(s) of ${quote.symbol}`);
+        } else if (selectedOption) {
             const optionToBuy: OptionHolding = {
                 symbol: selectedOption.symbol,
                 underlyingTicker: selectedOption.underlying_symbol,
-                shares: tradeShares,
+                shares: shares,
                 purchasePrice: selectedOption.close_price || 0,
                 currentPrice: selectedOption.close_price || 0,
                 optionType: selectedOption.type,
@@ -221,19 +240,24 @@ const StockView: React.FC = () => {
                 theta: selectedOption.theta,
                 vega: selectedOption.vega,
                 impliedVolatility: selectedOption.impliedVolatility,
+                open_interest: selectedOption.open_interest,
+                volume: selectedOption.volume
             };
             buyOption(optionToBuy);
-            alert(`Successfully bought ${tradeShares} contract(s) of ${selectedOption.symbol}`);
+            alert(`Successfully bought ${shares} contract(s) of ${selectedOption.symbol}`);
         }
     };
     
     const handleSell = () => {
-        if (tradeTab === 'stock' && quote && tradeShares > 0) {
-            sellStock(quote.symbol, tradeShares, quote.price);
-            alert(`Successfully sold ${tradeShares} share(s) of ${quote.symbol}`);
-        } else if (selectedOption && tradeShares > 0) {
-            sellOption(selectedOption.symbol, tradeShares, selectedOption.close_price || 0);
-             alert(`Successfully sold ${tradeShares} contract(s) of ${selectedOption.symbol}`);
+        const shares = Number(tradeShares);
+        if (shares <= 0) return;
+
+        if (tradeTab === 'stock' && quote) {
+            sellStock(quote.symbol, shares, quote.price);
+            alert(`Successfully sold ${shares} share(s) of ${quote.symbol}`);
+        } else if (selectedOption) {
+            sellOption(selectedOption.symbol, shares, selectedOption.close_price || 0);
+             alert(`Successfully sold ${shares} contract(s) of ${selectedOption.symbol}`);
         }
     };
 
@@ -261,6 +285,31 @@ const StockView: React.FC = () => {
     const onWatchlist = ticker ? isOnWatchlist(ticker) : false;
 
     const renderTabContent = () => {
+        // This is the new, reusable section for the AI recommendation
+        const smartRecSection = (
+            <div className="bg-night-700 p-4 rounded-lg mt-6 border-l-4 border-brand-blue">
+                <h3 className="text-lg font-bold flex items-center gap-2"><BrainCircuitIcon className="h-5 w-5 text-brand-blue" /> AI Smart Recommendation</h3>
+                {(isAiLoading && hasRunAdvancedRecs) ? (
+                     <div className="mt-2"><Spinner /></div>
+                ) : combinedRec ? (
+                    <div>
+                        <p className="mt-2">
+                            <span className="font-bold">Sentiment:</span> <span className={combinedRec.sentiment === 'BULLISH' ? 'text-brand-green' : combinedRec.sentiment === 'BEARISH' ? 'text-brand-red' : ''}>{combinedRec.sentiment}</span>
+                            <span className="font-bold ml-4">Action:</span> <span className="text-yellow-400">{combinedRec.strategy}</span>
+                        </p>
+                        <p className="text-xs text-night-100 mt-1">{combinedRec.justification}</p>
+                    </div>
+                ) : (
+                    <div className="mt-2 text-center">
+                        <p className="text-sm text-night-100 mb-3">Synthesize fundamental, technical, and analyst data into a single actionable strategy.</p>
+                        <button onClick={handleAdvancedRecommendations} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600 text-sm">
+                            {isAiLoading ? 'Analyzing...' : 'Generate Strategy'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+
         switch (activeTab) {
             case 'summary':
                 return (
@@ -288,6 +337,7 @@ const StockView: React.FC = () => {
                                 <p className="text-night-100">{keyMetricsAnalysis.summary}</p>
                             </div>
                         )}
+                        {smartRecSection}
                     </Card>
                 );
             case 'news':
@@ -322,6 +372,7 @@ const StockView: React.FC = () => {
                                 <p className="text-center text-night-500">No news available for this stock.</p>
                             )}
                         </div>
+                        {smartRecSection}
                     </Card>
                 );
             case 'financials':
@@ -333,7 +384,7 @@ const StockView: React.FC = () => {
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
                         </div>
-                        {!isAiLoading && !hasRunFinancialAnalysis && (
+                        {(!isAiLoading && !hasRunFinancialAnalysis) && (
                             <p className="text-night-500 mb-4">
                                 Use our AI to analyze the company's income statement, balance sheet, and cash flow statement. 
                                 The model will identify key financial strengths and weaknesses to give you a quick overview of the company's health.
@@ -353,6 +404,7 @@ const StockView: React.FC = () => {
                                 <p className="mt-4 text-night-100">{financialStatementAnalysis.summary}</p>
                             </div>
                         )}
+                        {smartRecSection}
                     </Card>
                 );
             case 'ratings':
@@ -434,7 +486,7 @@ const StockView: React.FC = () => {
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
                         </div>
-                        {!isAiLoading && !hasRunTechnicalAnalysis && (
+                        {(!isAiLoading && !hasRunTechnicalAnalysis) && (
                             <p className="text-night-500 mb-4">
                                 Let the AI analyze the historical price chart to identify the current trend, key support and resistance levels, and provide a summary of the technical outlook.
                             </p>
@@ -448,6 +500,7 @@ const StockView: React.FC = () => {
                                 <p className="mt-4 text-night-100">{technicalAnalysis.summary}</p>
                             </div>
                         )}
+                        {smartRecSection}
                     </Card>
                 );
             case 'advanced':
@@ -455,44 +508,9 @@ const StockView: React.FC = () => {
                      <Card>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Synthesized Strategy</h2>
-                            <button onClick={handleAdvancedRecommendations} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
-                                {isAiLoading ? 'Analyzing...' : 'Generate Strategy'}
-                            </button>
+                            {/* This button is now redundant but kept for the dedicated tab */}
                         </div>
-                        {!isAiLoading && !hasRunAdvancedRecs && (
-                            <p className="text-night-500 mb-4">
-                                This advanced tool synthesizes fundamental data, analyst ratings, and technical analysis into a single, actionable recommendation. 
-                                Get an overall sentiment, confidence score, and a suggested trading strategy.
-                            </p>
-                        )}
-                        {isAiLoading && <Spinner />}
-                        {combinedRec && (
-                            <div className="bg-night-700 p-4 rounded-lg">
-                                <div className="grid grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                        <h3 className="text-sm text-night-500 font-bold">Overall Sentiment</h3>
-                                        <p className={`text-xl font-bold ${
-                                            combinedRec.sentiment === 'BULLISH' ? 'text-brand-green' :
-                                            combinedRec.sentiment === 'BEARISH' ? 'text-brand-red' : 'text-night-100'
-                                        }`}>{combinedRec.sentiment}</p>
-                                    </div>
-                                    <div>
-                                        <h3 className="text-sm text-night-500 font-bold">Confidence</h3>
-                                        <p className="text-xl font-bold">{combinedRec.confidence}</p>
-                                    </div>
-                                </div>
-
-                                <div className="border-t border-night-600 pt-4">
-                                    <h3 className="text-lg font-bold">Suggested Strategy</h3>
-                                    <p className="mt-1 text-night-100">{combinedRec.strategy}</p>
-                                </div>
-
-                                 <div className="mt-4 border-t border-night-600 pt-4">
-                                    <h3 className="text-lg font-bold">Justification</h3>
-                                    <p className="mt-1 text-night-100 text-sm">{combinedRec.justification}</p>
-                                </div>
-                            </div>
-                        )}
+                         {smartRecSection}
                     </Card>
                 );
             default:
@@ -542,8 +560,12 @@ const StockView: React.FC = () => {
                         <div className="border-b border-night-700 mb-4">
                             <nav className="-mb-px flex space-x-4" aria-label="Tabs">
                                 <button onClick={() => setTradeTab('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
-                                <button onClick={() => setTradeTab('calls')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Calls</button>
-                                <button onClick={() => setTradeTab('puts')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Puts</button>
+                                <button onClick={() => setTradeTab('calls')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                    Calls <HelpIconWithTooltip tooltip="Call options give the holder the right, but not the obligation, to buy a stock at a specified price before a certain date." />
+                                </button>
+                                <button onClick={() => setTradeTab('puts')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                    Puts <HelpIconWithTooltip tooltip="Put options give the holder the right, but not the obligation, to sell a stock at a specified price before a certain date." />
+                                </button>
                             </nav>
                         </div>
                         <div className="space-y-4">
@@ -554,27 +576,53 @@ const StockView: React.FC = () => {
                                 </>
                             )}
                             {(tradeTab === 'calls' || tradeTab === 'puts') && (
-                                <div className="h-48 overflow-y-auto bg-night-700 p-2 rounded-md">
-                                    <table className="w-full text-left text-xs">
+                                <div className="h-48 overflow-auto bg-night-700 p-2 rounded-md">
+                                    <table className="text-left text-xs">
                                         <thead>
                                             <tr>
-                                                <th className="p-1">Strike</th>
-                                                <th className="p-1">Expiry</th>
-                                                <th className="p-1">Price</th>
-                                                <th className="p-1">IV</th>
-                                                <th className="p-1">Delta</th>
-                                                <th className="p-1">OI/Vol</th>
+                                                <th className="p-2 whitespace-nowrap">Strike</th>
+                                                <th className="p-2 whitespace-nowrap">Expiry</th>
+                                                <th className="p-2 whitespace-nowrap">Price</th>
+                                                <th className="p-2 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        IV <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
+                                                    </div>
+                                                </th>
+                                                <th className="p-2 whitespace-nowrap">OI/Vol</th>
+                                                <th className="p-2 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        Δ <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
+                                                    </div>
+                                                </th>
+                                                <th className="p-2 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        Γ <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
+                                                    </div>
+                                                </th>
+                                                <th className="p-2 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        Θ <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
+                                                    </div>
+                                                </th>
+                                                <th className="p-2 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        ν <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
+                                                    </div>
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
                                                 <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
-                                                    <td className="p-1">{formatCurrency(parseFloat(option.strike_price))}</td>
-                                                    <td className="p-1">{option.expiration_date.slice(5, 10)}</td>
-                                                    <td className="p-1">{formatCurrency(option.close_price || 0)}</td>
-                                                    <td className="p-1">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
-                                                    <td className="p-1">{formatGreek(option.delta)}</td>
-                                                    <td className="p-1 text-night-500">{formatNumber(option.open_interest || option.volume)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
+                                                    <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
+                                                    <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
+                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -593,12 +641,13 @@ const StockView: React.FC = () => {
                                     type="number"
                                     id="shares"
                                     value={tradeShares}
-                                    onChange={(e) => setTradeShares(Math.max(1, parseInt(e.target.value) || 1))}
+                                    onChange={handleSharesChange}
                                     className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none"
                                     min="1"
+                                    placeholder="0"
                                 />
                             </div>
-                            <div className="text-center font-bold">Total: {formatCurrency(tradeShares * (tradeTab === 'stock' ? quote.price : (selectedOption?.close_price || 0) * 100))}</div>
+                            <div className="text-center font-bold">Total: {formatCurrency(Number(tradeShares) * (tradeTab === 'stock' ? quote.price : (selectedOption?.close_price || 0) * 100))}</div>
                             <div className="flex gap-4">
                                 <button onClick={handleBuy} disabled={tradeTab !== 'stock' && !selectedOption} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">Buy</button>
                                 <button onClick={handleSell} disabled={(tradeTab === 'stock' && sharesOwned === 0) || (tradeTab !== 'stock' && contractsOwned === 0)} className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600">Sell</button>

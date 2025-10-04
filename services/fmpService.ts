@@ -112,3 +112,7 @@ export const getInsiderTrading = (ticker: string): Promise<FmpInsiderTrading[]> 
     // We need to call fetch directly here instead of our helper function
     return fetch(endpoint).then(res => res.json());
 }
+
+export const getGeneralNews = (limit: number = 10): Promise<FmpNews[]> => {
+    return fetchFmp<FmpNews[]>(`/stock_news?limit=${limit}`);
+}

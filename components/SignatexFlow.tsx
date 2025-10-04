@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getWorkflowFromPrompt, WorkflowStep } from '../services/signatexFlowService';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { getWorkflowFromPrompt, WorkflowStep, AppContext } from '../services/signatexFlowService';
 import { executeStep, cleanupHighlight } from '../utils/workflowExecutor';
 import { SignatexFlowIcon, MicrophoneIcon, SendIcon } from './common/Icons';
 import Spinner from './common/Spinner';
+import { usePortfolio } from '../hooks/usePortfolio';
+import { useWatchlist } from '../hooks/useWatchlist';
 
 interface Message {
     sender: 'user' | 'bot';
@@ -24,6 +26,11 @@ const SignatexFlow: React.FC = () => {
     const navigate = useNavigate();
     const recognitionRef = useRef<any>(null);
     const chatBodyRef = useRef<HTMLDivElement>(null);
+
+    const { portfolio } = usePortfolio();
+    const { watchlist } = useWatchlist();
+    const location = useLocation();
+    const params = useParams();
 
     useEffect(() => {
         // Scroll to the bottom of the chat on new messages
@@ -81,7 +88,16 @@ const SignatexFlow: React.FC = () => {
         setIsAwaitingContinue(false);
 
         try {
-            const response = await getWorkflowFromPrompt(inputValue);
+            const context: AppContext = {
+                currentPage: location.pathname,
+                currentTicker: params.ticker,
+                portfolio: {
+                    cash: portfolio.cash,
+                    holdings: portfolio.holdings.map(({ ticker, shares }) => ({ ticker, shares })),
+                },
+                watchlist: watchlist.map(item => item.ticker),
+            };
+            const response = await getWorkflowFromPrompt(inputValue, context);
             setWorkflow(response.steps);
             addMessage('bot', "Okay, I've got a plan. Let's start!");
             runNextStep(response.steps, 0);

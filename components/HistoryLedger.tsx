@@ -3,6 +3,7 @@ import { usePortfolio } from '../hooks/usePortfolio';
 import Card from './common/Card';
 import { formatCurrency } from '../utils/formatters';
 import { BriefcaseIcon } from './common/Icons';
+import SignatexFlow from './SignatexFlow';
 
 const HistoryLedger: React.FC = () => {
     const { transactions } = usePortfolio();
@@ -34,56 +35,59 @@ const HistoryLedger: React.FC = () => {
 
 
     return (
-        <Card>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <BriefcaseIcon className="h-6 w-6 text-brand-blue" /> Transaction History
-                </h2>
-                <div className="text-right">
-                    <div className="text-sm text-night-500">Total Realized P&L (Closed Positions)</div>
-                    <div className={`text-xl font-bold ${realizedPnl >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                        {formatPriceOrPnl(realizedPnl)}
+        <>
+            <SignatexFlow />
+            <Card>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-bold flex items-center gap-2">
+                        <BriefcaseIcon className="h-6 w-6 text-brand-blue" /> Transaction History
+                    </h2>
+                    <div className="text-right">
+                        <div className="text-sm text-night-500">Total Realized P&L (Closed Positions)</div>
+                        <div className={`text-xl font-bold ${realizedPnl >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                            {formatPriceOrPnl(realizedPnl)}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="overflow-x-auto">
-                <table className="min-w-full text-left divide-y divide-night-700">
-                    <thead className="bg-night-700">
-                        <tr>
-                            <th className="p-3 text-sm font-semibold">Time</th>
-                            <th className="p-3 text-sm font-semibold">Type</th>
-                            <th className="p-3 text-sm font-semibold">Ticker/Option</th>
-                            <th className="p-3 text-sm font-semibold">Shares/Contracts</th>
-                            <th className="p-3 text-sm font-semibold">Price</th>
-                            <th className="p-3 text-sm font-semibold">Total Amount</th>
-                            <th className="p-3 text-sm font-semibold text-right">Realized P&L</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-night-700">
-                        {sortedTransactions.length === 0 ? (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-left divide-y divide-night-700">
+                        <thead className="bg-night-700">
                             <tr>
-                                <td colSpan={7} className="text-center p-6 text-night-500">No transactions recorded yet.</td>
+                                <th className="p-3 text-sm font-semibold">Time</th>
+                                <th className="p-3 text-sm font-semibold">Type</th>
+                                <th className="p-3 text-sm font-semibold">Ticker/Option</th>
+                                <th className="p-3 text-sm font-semibold">Shares/Contracts</th>
+                                <th className="p-3 text-sm font-semibold">Price</th>
+                                <th className="p-3 text-sm font-semibold">Total Amount</th>
+                                <th className="p-3 text-sm font-semibold text-right">Realized P&L</th>
                             </tr>
-                        ) : (
-                            sortedTransactions.map(t => (
-                                <tr key={t.id} className="hover:bg-night-700">
-                                    <td className="p-3 text-xs text-night-500">{new Date(t.timestamp).toLocaleString()}</td>
-                                    <td className={`p-3 font-semibold ${getTypeColor(t.type, t.realizedPnl)}`}>{t.type.replace('_', ' ')}</td>
-                                    <td className="p-3 font-bold">{t.optionSymbol || t.ticker}</td>
-                                    <td className="p-3">{t.shares}</td>
-                                    <td className="p-3">{formatPriceOrPnl(t.price)}</td>
-                                    <td className="p-3">{formatPriceOrPnl(t.totalAmount)}</td>
-                                    <td className={`p-3 font-bold text-right ${getTypeColor(t.type, t.realizedPnl)}`}>
-                                        {t.realizedPnl !== undefined ? formatPriceOrPnl(t.realizedPnl) : '—'}
-                                    </td>
+                        </thead>
+                        <tbody className="divide-y divide-night-700">
+                            {sortedTransactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="text-center p-6 text-night-500">No transactions recorded yet.</td>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </Card>
+                            ) : (
+                                sortedTransactions.map(t => (
+                                    <tr key={t.id} className="hover:bg-night-700">
+                                        <td className="p-3 text-xs text-night-500">{new Date(t.timestamp).toLocaleString()}</td>
+                                        <td className={`p-3 font-semibold ${getTypeColor(t.type, t.realizedPnl)}`}>{t.type.replace('_', ' ')}</td>
+                                        <td className="p-3 font-bold">{t.optionSymbol || t.ticker}</td>
+                                        <td className="p-3">{t.shares}</td>
+                                        <td className="p-3">{formatPriceOrPnl(t.price)}</td>
+                                        <td className="p-3">{formatPriceOrPnl(t.totalAmount)}</td>
+                                        <td className={`p-3 font-bold text-right ${getTypeColor(t.type, t.realizedPnl)}`}>
+                                            {t.realizedPnl !== undefined ? formatPriceOrPnl(t.realizedPnl) : '—'}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        </>
     );
 };
 

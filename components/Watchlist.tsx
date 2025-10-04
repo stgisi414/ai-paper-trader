@@ -1,19 +1,35 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { usePortfolio } from '../hooks/usePortfolio';
 import * as fmpService from '../services/fmpService';
-import type { FmpSearchResult } from '../types';
+import * as geminiService from '../services/geminiService';
+import type { FmpSearchResult, CombinedRec, WatchlistPick } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
-import { formatCurrency, formatPercentage } from '../utils/formatters';
-import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon } from './common/Icons';
+import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
+import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon } from './common/Icons';
+
+const getSmartRecForTicker = (ticker: string): CombinedRec | null => {
+    try {
+        const savedRec = localStorage.getItem(`combinedRec-${ticker}`);
+        return savedRec ? JSON.parse(savedRec) : null;
+    } catch {
+        return null;
+    }
+};
 
 const Watchlist: React.FC = () => {
     const { watchlist, addToWatchlist, removeFromWatchlist, reorderWatchlist, isLoading } = useWatchlist();
+    const { portfolio } = usePortfolio();
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [isRecLoading, setIsRecLoading] = useState(false);
+    const [recError, setRecError] = useState<string | null>(null);
+    const [recommendations, setRecommendations] = useState<WatchlistPick[]>([]);
+
 
     // Refs for drag and drop
     const dragItem = useRef<number | null>(null);
@@ -51,6 +67,27 @@ const Watchlist: React.FC = () => {
         dragItem.current = null;
         dragOverItem.current = null;
     };
+    
+    const handleSmartRecs = useCallback(async () => {
+        setIsRecLoading(true);
+        setRecError(null);
+        setRecommendations([]);
+        try {
+            const generalNews = await fmpService.getGeneralNews(15);
+            const newsSummary = generalNews.map(n => n.title).join('. ');
+
+            const holdings = portfolio.holdings.map(h => ({ ticker: h.ticker, shares: h.shares }));
+            const watchlistTickers = watchlist.map(w => w.ticker);
+            const result = await geminiService.getWatchlistPicks(holdings, watchlistTickers, newsSummary);
+            setRecommendations(result.picks);
+        } catch (error) {
+            console.error("Smart Picker failed:", error);
+            setRecError("Could not generate recommendations at this time.");
+        } finally {
+            setIsRecLoading(false);
+        }
+    }, [portfolio.holdings, watchlist]);
+
 
     return (
         <Card>
@@ -58,13 +95,18 @@ const Watchlist: React.FC = () => {
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                     <EyeIcon className="h-6 w-6 text-brand-blue" /> My Watchlist
                 </h2>
-                <button onClick={() => setIsSearchOpen(!isSearchOpen)} className="text-night-500 hover:text-brand-blue">
-                    <PlusIcon className="h-6 w-6" />
-                </button>
+                <div className="flex items-center gap-2">
+                     <button onClick={handleSmartRecs} disabled={isRecLoading} className="text-night-100 hover:text-yellow-400" title="Get AI Recommendations">
+                        <LightbulbIcon className="h-6 w-6" />
+                    </button>
+                    <button onClick={() => setIsSearchOpen(!isSearchOpen)} className="text-night-100 hover:text-brand-blue" title="Add to Watchlist">
+                        <PlusIcon className="h-6 w-6" />
+                    </button>
+                </div>
             </div>
             {isSearchOpen && (
                 <div className="relative mb-4">
-                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-night-500" />
+                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-night-100" />
                     <input
                         type="text"
                         value={searchQuery}
@@ -84,6 +126,24 @@ const Watchlist: React.FC = () => {
                     )}
                 </div>
             )}
+            
+            {isRecLoading && <Spinner />}
+            {recError && <p className="text-sm text-brand-red text-center mb-2">{recError}</p>}
+            {recommendations.length > 0 && (
+                <div className="mb-4 p-4 bg-night-700 rounded-lg space-y-3">
+                    <h3 className="font-bold text-yellow-400">AI Suggestions</h3>
+                    {recommendations.map(rec => (
+                        <div key={rec.symbol} className="text-sm">
+                            <div className="flex justify-between items-center">
+                                <span className="font-bold">{rec.symbol} - {rec.name}</span>
+                                <button onClick={() => addToWatchlist(rec.symbol, rec.name)} className="text-xs bg-brand-blue text-white px-2 py-1 rounded-md hover:bg-blue-600">+</button>
+                            </div>
+                            <p className="text-night-100 italic">"{rec.reason}"</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {isLoading && watchlist.length === 0 ? <Spinner /> : (
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -93,15 +153,17 @@ const Watchlist: React.FC = () => {
                                 <th className="p-3">Ticker</th>
                                 <th className="p-3">Price</th>
                                 <th className="p-3">Change</th>
+                                <th className="p-3">AI Rec</th>
                                 <th className="p-3"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {watchlist.length === 0 ? (
-                                <tr><td colSpan={5} className="text-center p-6 text-night-500">Your watchlist is empty.</td></tr>
+                                <tr><td colSpan={6} className="text-center p-6 text-night-500">Your watchlist is empty.</td></tr>
                             ) : (
                                 watchlist.map((item, index) => {
                                     const priceChangeColor = item.change >= 0 ? 'text-brand-green' : 'text-brand-red';
+                                    const smartRec = getSmartRecForTicker(item.ticker);
                                     return (
                                         <tr 
                                             key={item.ticker} 
@@ -118,9 +180,18 @@ const Watchlist: React.FC = () => {
                                             <td className="p-3 font-bold">
                                                 <Link to={`/stock/${item.ticker}`} className="text-brand-blue hover:underline">{item.ticker}</Link>
                                             </td>
-                                            <td className={`p-3 font-semibold ${priceChangeColor}`}>{formatCurrency(item.price)}</td>
+                                            <td className="p-3 font-semibold">{formatCurrency(item.price)}</td>
                                             <td className={`p-3 font-semibold ${priceChangeColor}`}>
                                                 {formatCurrency(item.change)} ({formatPercentage(item.changesPercentage)})
+                                            </td>
+                                            <td className="p-3 text-xs">
+                                                {smartRec ? (
+                                                    <div className={`font-bold ${smartRec.sentiment === 'BULLISH' ? 'text-brand-green' : smartRec.sentiment === 'BEARISH' ? 'text-brand-red' : ''}`}>
+                                                        {smartRec.sentiment}: <span className="text-yellow-400">{smartRec.strategy}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-night-500">N/A</span>
+                                                )}
                                             </td>
                                             <td className="p-3 text-right">
                                                 <button onClick={() => removeFromWatchlist(item.ticker)} className="text-night-500 hover:text-brand-red">
