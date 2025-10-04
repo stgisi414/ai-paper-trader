@@ -3,8 +3,7 @@ import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {defineString} from "firebase-functions/params";
-// Corrected import
-import {GoogleGenerativeAI, GenerationConfig} from "@google/genai";
+import { GoogleGenAI, GenerationConfig } from "@google/genai";
 
 initializeApp();
 
@@ -132,7 +131,6 @@ export const alpacaProxy = onRequest(
   },
 );
 
-
 export const geminiProxy = onRequest(
   {
     invoker: "public",
@@ -153,16 +151,17 @@ export const geminiProxy = onRequest(
         res.status(400).send("Bad Request: Missing prompt.");
         return;
       }
-      
-      // Corrected Constructor
-      const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-      const model = genAI.getGenerativeModel({model: modelName});
+
+      // Correctly instantiate with the API key string
+      const genAI = new GoogleGenAI(geminiApiKey.value());
 
       const generationConfig: GenerationConfig = schema ? {
         responseMimeType: "application/json",
         responseSchema: schema,
       } : {};
 
+      // Correctly call generateContent via the model property
+      const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent({
         contents: [{role: "user", parts: [{text: prompt}]}],
         generationConfig: generationConfig,
@@ -171,7 +170,6 @@ export const geminiProxy = onRequest(
       const response = result.response;
       const text = response.text();
       
-      // Removed "return" statement
       res.status(200).send({text});
     } catch (error) {
       logger.error("Gemini Proxy Error:", error);
