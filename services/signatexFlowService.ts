@@ -1,11 +1,4 @@
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { GEMINI_API_KEY } from '../constants';
-
-if (!GEMINI_API_KEY) {
-    console.error("Gemini API key is not configured for Signatex Flow.");
-}
-
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY || '' });
+import { GEMINI_BASE_URL } from '../constants';
 
 // Defines the structure of a single step in the workflow
 export interface WorkflowStep {
@@ -54,21 +47,21 @@ const buildContextPrompt = (context: AppContext): string => {
 
 // Define the JSON schema for the AI response
 const signatexFlowSchema = {
-    type: Type.OBJECT,
+    type: "OBJECT",
     properties: {
         steps: {
-            type: Type.ARRAY,
+            type: "ARRAY",
             description: "A sequence of actions to perform on the website.",
             items: {
-                type: Type.OBJECT,
+                type: "OBJECT",
                 properties: {
-                    action: { type: Type.STRING, enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock'] },
-                    selector: { type: Type.STRING, description: "CSS selector for the target element." },
-                    value: { type: Type.STRING, description: "Text to type, value to select, or stock ticker to open." },
-                    path: { type: Type.STRING, description: "URL path for navigation (e.g., '/')." },
-                    message: { type: Type.STRING, description: "A message to say to the user." },
-                    duration: { type: Type.NUMBER, description: "How long to wait in milliseconds." },
-                    comment: { type: Type.STRING, description: "A comment explaining the step." }
+                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock'] },
+                    selector: { type: "STRING", description: "CSS selector for the target element." },
+                    value: { type: "STRING", description: "Text to type, value to select, or stock ticker to open." },
+                    path: { type: "STRING", description: "URL path for navigation (e.g., '/')." },
+                    message: { type: "STRING", description: "A message to say to the user." },
+                    duration: { type: "NUMBER", description: "How long to wait in milliseconds." },
+                    comment: { type: "STRING", description: "A comment explaining the step." }
                 },
                 required: ["action", "comment"]
             }
@@ -83,13 +76,9 @@ const signatexFlowSchema = {
  * @returns A promise that resolves to an object containing an array of workflow steps.
  */
 export const getWorkflowFromPrompt = async (prompt: string, context: AppContext): Promise<SignatexFlowResponse> => {
-    if (!GEMINI_API_KEY) {
-        throw new Error("Gemini API key not set.");
-    }
-
     const contextPrompt = buildContextPrompt(context);
 
-    const systemPrompt = `
+    const fullPrompt = `
         You are an expert site navigator for Signatex.co, a paper trading web application. Your task is to convert a user's natural language command into a precise JSON object representing a series of actions based on the current context of the application.
 
         ${contextPrompt}
@@ -118,7 +107,7 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         * **Dashboard ('/')**:
             * Search Input: \`input[placeholder*="Search for a stock ticker"]\`
             * Search Button: \`button[type="submit"]\`
-            * AI Stock Picker Link: \`a[href="#/picker"]\`
+            * AI Stock Picker Link: \`a[href="/picker"]\`
 
         * **Stock View ('/stock/:ticker')**:
             * **Chart Interval**: Use the \`select\` action with the selector \`select\`. The value can be "15min", "1hour", "4hour", "1day", "1week", or "1month".
@@ -142,26 +131,33 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
 
         * **AI Stock Picker ('/picker')**:
             * Get My Picks Button: \`button[type="submit"]\`
+
+        User command: "${prompt}"
+        Please provide only the raw JSON object in your response, without any markdown formatting.
     `;
 
     try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            systemInstruction: systemPrompt,
-            contents: `User command: "${prompt}"`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: signatexFlowSchema,
-            },
+        const response = await fetch(GEMINI_BASE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: fullPrompt,
+                model: "gemini-1.5-flash", // Using a fast model for UI navigation
+                schema: signatexFlowSchema,
+            }),
         });
 
-        if (!response) throw new Error("AI response was null");
-
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText) as SignatexFlowResponse;
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Gemini proxy failed: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        const cleanedText = data.text.replace(/^```json\s*/, '').replace(/```$/, '');
+        return JSON.parse(cleanedText) as SignatexFlowResponse;
 
     } catch (error) {
-        console.error("Error getting workflow from Gemini:", error);
+        console.error("Error getting workflow from proxy:", error);
         throw new Error("Failed to generate AI workflow.");
     }
 };

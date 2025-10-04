@@ -4,7 +4,6 @@ import { PortfolioProvider } from './hooks/usePortfolio';
 import { WatchlistProvider } from './hooks/useWatchlist'; // ADD
 import Dashboard from './components/Dashboard';
 import StockView from './components/StockView';
-import ApiKeyWarning from './components/common/ApiKeyWarning';
 import { TrendingUpIcon, BrainCircuitIcon, BriefcaseIcon } from './components/common/Icons';
 import StockPicker from './components/StockPicker';
 import HistoryLedger from './components/HistoryLedger';
@@ -12,9 +11,8 @@ import HistoryLedger from './components/HistoryLedger';
 const App: React.FC = () => {
     return (
         <PortfolioProvider>
-            <WatchlistProvider> {/* ADD */}
+            <WatchlistProvider>
                 <HashRouter>
-                    <ApiKeyWarning />
                     <div className="min-h-screen text-night-100">
                         <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                             <nav className="container mx-auto flex justify-between items-center">
@@ -31,7 +29,7 @@ const App: React.FC = () => {
                                         <BrainCircuitIcon className="h-5 w-5"/>
                                         AI Stock Picker
                                     </Link>
-                                </div> {/* END ADDITION */}
+                                </div>
                             </nav>
                         </header>
                         <main className="container mx-auto p-4 md:p-6 lg:p-8">

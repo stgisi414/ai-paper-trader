@@ -1,12 +1,8 @@
-import { FMP_BASE_URL, FMP_API_KEY } from '../constants';
+import { FMP_BASE_URL } from '../constants';
 import { FmpQuote, FmpProfile, FmpSearchResult, FmpHistoricalData, FmpNews, FmpOptionsPositionSummary, FmpAnalystRating, FmpPriceTarget, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading } from '../types';
 
 const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
-    if (!FMP_API_KEY) {
-        throw new Error("FMP API key is not configured.");
-    }
-    const separator = endpoint.includes('?') ? '&' : '?';
-    const url = `${FMP_BASE_URL}${endpoint}${separator}apikey=${FMP_API_KEY}`;
+    const url = `${FMP_BASE_URL}${endpoint}`;
     
     const maxRetries = 3;
     let lastError: Error | null = null;
@@ -36,21 +32,21 @@ const fetchFmp = async <T,>(endpoint: string): Promise<T> => {
 
 
 export const searchStocks = (query: string): Promise<FmpSearchResult[]> => {
-    return fetchFmp<FmpSearchResult[]>(`/search?query=${query}`);
+    return fetchFmp<FmpSearchResult[]>(`/v3/search?query=${query}`);
 }
 
 export const getQuote = (ticker: string): Promise<FmpQuote[]> => {
-    return fetchFmp<FmpQuote[]>(`/quote/${ticker}`);
+    return fetchFmp<FmpQuote[]>(`/v3/quote/${ticker}`);
 }
 
 export const getProfile = (ticker: string): Promise<FmpProfile[]> => {
-    return fetchFmp<FmpProfile[]>(`/profile/${ticker}`);
+    return fetchFmp<FmpProfile[]>(`/v3/profile/${ticker}`);
 }
 
 export const getHistoricalData = (ticker: string, interval: string = '1day'): Promise<{ historical: FmpHistoricalData[] }> => {
     if (['15min', '1hour', '4hour'].includes(interval)) {
         // Use the intraday endpoint for these intervals
-        return fetchFmp<FmpHistoricalData[]>(`/historical-chart/${interval}/${ticker}`).then(data => ({ historical: data }));
+        return fetchFmp<FmpHistoricalData[]>(`/v3/historical-chart/${interval}/${ticker}`).then(data => ({ historical: data }));
     }
 
     // For daily, weekly, and monthly views, we'll fetch daily data over different time ranges.
@@ -66,11 +62,11 @@ export const getHistoricalData = (ticker: string, interval: string = '1day'): Pr
         // Fetch 1 year of daily data for the "daily" view
         from = new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString().split('T')[0];
     }
-    return fetchFmp<{ historical: FmpHistoricalData[] }>(`/historical-price-full/${ticker}?from=${from}&to=${to}`);
+    return fetchFmp<{ historical: FmpHistoricalData[] }>(`/v3/historical-price-full/${ticker}?from=${from}&to=${to}`);
 }
 
 export const getNews = (ticker: string, limit: number = 20): Promise<FmpNews[]> => {
-    return fetchFmp<FmpNews[]>(`/stock_news?tickers=${ticker}&limit=${limit}`);
+    return fetchFmp<FmpNews[]>(`/v3/stock_news?tickers=${ticker}&limit=${limit}`);
 }
 
 // NEW: Fetches the put/call ratio and total positions
@@ -81,38 +77,34 @@ export const getOptionsPositionSummary = (ticker: string): Promise<FmpOptionsPos
 
 // NEW: Fetches analyst ratings for a given stock
 export const getAnalystRatings = (ticker: string): Promise<FmpAnalystRating[]> => {
-    return fetchFmp<FmpAnalystRating[]>(`/analyst-stock-recommendations/${ticker}`);
+    return fetchFmp<FmpAnalystRating[]>(`/v3/analyst-stock-recommendations/${ticker}`);
 }
 
 // NEW: Fetches price targets for a given stock
 export const getPriceTargets = (ticker: string): Promise<FmpPriceTarget[]> => {
-    return fetchFmp<FmpPriceTarget[]>(`/price-target/${ticker}`);
+    return fetchFmp<FmpPriceTarget[]>(`/v3/price-target/${ticker}`);
 }
 
 // NEW: Fetches the income statement for a given stock
 export const getIncomeStatement = (ticker: string): Promise<FmpIncomeStatement[]> => {
-    return fetchFmp<FmpIncomeStatement[]>(`/income-statement/${ticker}?period=annual`);
+    return fetchFmp<FmpIncomeStatement[]>(`/v3/income-statement/${ticker}?period=annual`);
 }
 
 // NEW: Fetches the balance sheet for a given stock
 export const getBalanceSheet = (ticker: string): Promise<FmpBalanceSheet[]> => {
-    return fetchFmp<FmpBalanceSheet[]>(`/balance-sheet-statement/${ticker}?period=annual`);
+    return fetchFmp<FmpBalanceSheet[]>(`/v3/balance-sheet-statement/${ticker}?period=annual`);
 }
 
 // NEW: Fetches the cash flow statement for a given stock
 export const getCashFlowStatement = (ticker: string): Promise<FmpCashFlowStatement[]> => {
-    return fetchFmp<FmpCashFlowStatement[]>(`/cash-flow-statement/${ticker}?period=annual`);
+    return fetchFmp<FmpCashFlowStatement[]>(`/v3/cash-flow-statement/${ticker}?period=annual`);
 }
 
 // NEW: Fetches insider trading information for a given stock
 export const getInsiderTrading = (ticker: string): Promise<FmpInsiderTrading[]> => {
-    // We construct the full URL here to override the default v3 base path
-    const endpoint = `https://financialmodelingprep.com/api/v4/insider-trading?symbol=${ticker}&page=0&apikey=${FMP_API_KEY}`;
-    
-    // We need to call fetch directly here instead of our helper function
-    return fetch(endpoint).then(res => res.json());
+    return fetchFmp<FmpInsiderTrading[]>(`/v4/insider-trading?symbol=${ticker}&page=0`);
 }
 
 export const getGeneralNews = (limit: number = 10): Promise<FmpNews[]> => {
-    return fetchFmp<FmpNews[]>(`/stock_news?limit=${limit}`);
+    return fetchFmp<FmpNews[]>(`/v3/stock_news?limit=${limit}`);
 }
