@@ -28,21 +28,11 @@ export default defineConfig({
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
-    },
-  },
-  server: {
-    proxy: {
-      '/geminiProxy': {
-        target: 'http://127.0.0.1:5000',
+      // ADDITION
+      '/userSearch': {
+        target: 'http://127.0.0.1:5001/signatex-trader/us-central1/userSearch',
         changeOrigin: true,
-      },
-      '/fmpProxy': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
-      },
-      '/alpacaProxy': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/userSearch/, ''),
       },
     },
   },

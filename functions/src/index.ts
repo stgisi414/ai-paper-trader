@@ -4,6 +4,7 @@ import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {defineString} from "firebase-functions/params";
 import {GoogleGenAI, GenerationConfig} from "@google/genai";
+import {findUsers} from "./users";
 
 initializeApp();
 
@@ -33,6 +34,35 @@ const loadYahooFinanceClient = async () => {
     }
   }
 };
+
+export const userSearch = onRequest(
+  {
+    invoker: "public",
+    cors: true,
+    region: "us-central1",
+  },
+  async (req: Request, res: Response): Promise<void> => {
+    if (req.method !== "GET") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    const query = req.query.query as string;
+
+    if (!query) {
+      res.status(400).json({error: "Missing search query."});
+      return;
+    }
+
+    try {
+      const users = await findUsers(query);
+      res.status(200).json(users);
+    } catch (error) {
+      logger.error("User Search Error:", error);
+      res.status(500).json({error: "Error searching for users."});
+    }
+  },
+);
 
 export const optionsProxy = onRequest(
   {

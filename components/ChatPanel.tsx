@@ -8,6 +8,7 @@ import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../src/hooks/useAuth';
 import { subscribeToChat, sendMessage, ChatMessage } from '../services/chatService';
+import { User } from '../types';
 
 interface LocalMessage {
     sender: 'user' | 'bot' | 'system';
@@ -16,10 +17,10 @@ interface LocalMessage {
 
 type ChatMode = 'ai' | 'private';
 
-interface MockUser {
-    id: string;
-    name: string;
-    email: string;
+interface User {
+  id: string;
+  name: string;
+  email: string;
 }
 
 const ChatPanel: React.FC = () => {
@@ -46,6 +47,7 @@ const ChatPanel: React.FC = () => {
 
     // Private Chat State
     const [searchUserQuery, setSearchUserQuery] = useState('');
+    const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
     const [privateChatTarget, setPrivateChatTarget] = useState<MockUser | null>(null);
 
     const recognitionRef = useRef<any>(null);
@@ -152,30 +154,20 @@ const ChatPanel: React.FC = () => {
 
     // --- Search and Chat Logic ---
     
-    // MOCK: Search implementation must be mocked since we lack a backend API for real user search.
-    const handleUserSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        const query = searchUserQuery.trim().toLowerCase();
-        setSearchUserQuery('');
-        
-        if (!query) return;
-
-        // Since you couldn't find yourself, we mock two users for easy testing:
-        const mockUsers: MockUser[] = [
-            { id: 'mock-user-1', name: 'AI Studio User', email: 'studio.user@mock.com' },
-            { id: 'mock-user-2', name: 'Test Trader Jane', email: 'jane.doe@test.com' },
-        ];
-        
-        const foundUser = mockUsers.find(
-            u => u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query)
-        );
-
-        if (foundUser) {
-            setPrivateChatTarget(foundUser);
-            // The useEffect listener will handle clearing and subscribing to the chat messages
-        } else {
-             setPrivateChatTarget(null);
-             addLocalMessage('system', 'No user found matching that name or email address.');
+    const handleUserSearch = async (query: string) => {
+        setSearchUserQuery(query);
+        if (!query.trim()) {
+            setUserSearchResults([]);
+            return;
+        }
+        try {
+            const response = await fetch(`/userSearch?query=${query}`);
+            if (response.ok) {
+                const users = await response.json();
+                setUserSearchResults(users);
+            }
+        } catch (error) {
+            console.error("Error searching for users:", error);
         }
     };
 
@@ -270,16 +262,28 @@ const ChatPanel: React.FC = () => {
                 <div className="space-y-3">
                     <h3 className="text-lg font-bold text-brand-blue flex items-center gap-2"><UsersIcon className="w-6 h-6"/> Private Chat</h3>
                     <p className="text-xs text-night-500">Search for a user by email or name to start a private conversation.</p>
-                    <form onSubmit={handleUserSearch} className="flex gap-2">
+                    <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
                         <input
                             type="text"
                             value={searchUserQuery}
-                            onChange={(e) => setSearchUserQuery(e.target.value)}
+                            onChange={(e) => handleUserSearch(e.target.value)}
                             placeholder="Search user by email/name..."
                             className="flex-1 bg-night-700 border border-night-600 rounded-md py-1 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none text-sm"
                         />
-                        <button type="submit" className="p-2 bg-brand-blue rounded-md hover:bg-blue-600"><SearchIcon className="w-4 h-4 text-white"/></button>
                     </form>
+                    {userSearchResults.length > 0 && (
+                        <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
+                            {userSearchResults.map((userResult) => (
+                                <li key={userResult.uid} onClick={() => {
+                                    setPrivateChatTarget({ id: userResult.uid, name: userResult.displayName, email: userResult.email });
+                                    setUserSearchResults([]);
+                                    setSearchUserQuery('');
+                                }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
+                                    {userResult.displayName}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             );
         }

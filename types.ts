@@ -406,3 +406,10 @@ export interface WatchlistPick {
 export interface AiWatchlistRecs {
     picks: WatchlistPick[];
 }
+
+export interface User {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string;
+}

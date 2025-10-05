@@ -19,6 +19,11 @@
         "source": "/alpacaProxy",
         "function": "alpacaProxy"
       },
+      // ADDITION
+      {
+        "source": "/userSearch",
+        "function": "userSearch"
+      },
       {
         "source": "**",
         "destination": "/index.html"
@@ -42,4 +47,4 @@
       ]
     }
   ]
-} 
+}
