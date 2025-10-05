@@ -1,7 +1,7 @@
 // App.tsx
 import React from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './hooks/useAuth';
+import { AuthProvider, useAuth } from './src/hooks/useAuth.tsx';
 import { PortfolioProvider } from './hooks/usePortfolio';
 import { WatchlistProvider } from './hooks/useWatchlist';
 import Dashboard from './components/Dashboard';

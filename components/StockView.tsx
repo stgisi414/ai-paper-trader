@@ -534,17 +534,19 @@ const StockView: React.FC = () => {
                             <p className="text-night-500">{quote.exchange}</p>
                         </div>
                     </div>
-                    <button 
-                        onClick={handleWatchlistToggle} 
-                        className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors text-sm font-bold ${
-                            onWatchlist 
-                                ? 'bg-yellow-500 text-night-900 hover:bg-yellow-600' 
-                                : 'bg-night-700 hover:bg-night-600'
-                        }`}
-                    >
-                        <StarIcon className={`h-5 w-5 ${onWatchlist ? 'text-night-900' : 'text-yellow-400'}`} />
-                        {onWatchlist ? 'On Watchlist' : 'Add to Watchlist'}
-                    </button>
+                    {user && 
+                        <button 
+                            onClick={handleWatchlistToggle} 
+                            className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors text-sm font-bold ${
+                                onWatchlist 
+                                    ? 'bg-yellow-500 text-night-900 hover:bg-yellow-600' 
+                                    : 'bg-night-700 hover:bg-night-600'
+                            }`}
+                        >
+                            <StarIcon className={`h-5 w-5 ${onWatchlist ? 'text-night-900' : 'text-yellow-400'}`} />
+                            {onWatchlist ? 'On Watchlist' : 'Add to Watchlist'}
+                        </button>
+                    }
                 </div>
                 <div className="mt-4 flex items-baseline gap-4">
                     <span className="text-5xl font-bold">{formatCurrency(quote.price)}</span>

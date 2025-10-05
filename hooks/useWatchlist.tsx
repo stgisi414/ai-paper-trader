@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig'; // <-- CORRECTED PATH
-import { useAuth } from '../src/hooks/useAuth'; // <-- CORRECTED PATH
+import { useAuth } from '../src/hooks/useAuth.tsx'; // <-- CORRECTED PATH
 import type { FmpQuote } from '../types';
 import * as fmpService from '../services/fmpService';
 

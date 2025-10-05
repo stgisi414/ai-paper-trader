@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig'; // <-- CORRECTED PATH
-import { useAuth } from '../src/hooks/useAuth'; // <-- CORRECTED PATH
+import { useAuth } from '../src/hooks/useAuth.tsx'; //
 import type { Portfolio, Holding, OptionHolding, Transaction } from '../types';
 import { INITIAL_CASH } from '../constants';
 import * as fmpService from '../services/fmpService';
