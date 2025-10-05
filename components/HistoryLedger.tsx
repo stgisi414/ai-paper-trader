@@ -3,7 +3,7 @@ import { usePortfolio } from '../hooks/usePortfolio';
 import Card from './common/Card';
 import { formatCurrency } from '../utils/formatters';
 import { BriefcaseIcon } from './common/Icons';
-import SignatexFlow from './SignatexFlow';
+import ChatPanel from './ChatPanel';
 import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const HistoryLedger: React.FC = () => {
@@ -43,7 +43,7 @@ const HistoryLedger: React.FC = () => {
 
     return (
         <>
-            <SignatexFlow />
+            <ChatPanel />
             <Card>
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold flex items-center gap-2">

@@ -8,7 +8,7 @@ import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
 import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
-import SignatexFlow from './SignatexFlow';
+import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
 import { useAuth } from '../src/hooks/useAuth.tsx';
@@ -65,7 +65,7 @@ const Dashboard: React.FC = () => {
 
     return (
         <div>
-            {user && <SignatexFlow />} {/* MODIFIED: Only show SignatexFlow if logged in */}
+            {user && <ChatPanel />} {/* MODIFIED: Only show SignatexFlow if logged in */}
             <div className="text-center">
                 <h1 className="text-4xl font-bold">Signatex.co</h1>
                 <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
@@ -144,7 +144,7 @@ const Dashboard: React.FC = () => {
                         <Card>
                             <h2 className="text-2xl font-bold mb-4">Portfolio Overview</h2>
                             {isPortfolioLoading ? <Spinner /> : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"> 
                                     <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
                                         <BriefcaseIcon className="h-8 w-8 text-brand-blue" />
                                         <div>

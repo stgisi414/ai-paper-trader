@@ -37,29 +37,33 @@ const MainApp: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen text-night-100">
+        <div className="min-h-screen text-night-100 overflow-x-hidden">
             <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                 <nav className="container mx-auto flex justify-between items-center">
                     <Link to="/" className="flex items-center gap-2 text-xl font-bold text-white">
                         <TrendingUpIcon className="h-6 w-6 text-brand-blue" />
-                        Signatex.co
+                        <span className="hidden sm:inline">Signatex.co</span> {/* MODIFIED: Hide text logo on small screens */}
+                        <span className="inline sm:hidden text-lg">Signatex</span> {/* ADDITION: Shorter mobile logo */}
                     </Link>
-                    <div className="flex gap-4">
+                    <div className="flex gap-2 sm:gap-4 items-center"> {/* MODIFIED: Reduced gap on small screens */}
                         {user && (
                             <>
-                                <Link to="/history" className="flex items-center gap-2 text-md font-bold text-white bg-night-700 px-4 py-2 rounded-md hover:bg-night-600 transition-colors">
+                                <Link to="/history" className="flex items-center gap-2 text-md font-bold text-white bg-night-700 px-3 py-2 rounded-md hover:bg-night-600 transition-colors" title="History"> {/* MODIFIED: Smaller padding/title for mobile */}
                                     <BriefcaseIcon className="h-5 w-5" />
-                                    History
+                                    <span className="hidden sm:inline">History</span> {/* ADDITION: Hide text on mobile */}
                                 </Link>
-                                <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
+                                <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-3 py-2 rounded-md hover:bg-blue-600 transition-colors" title="AI Stock Picker"> {/* MODIFIED: Smaller padding/title for mobile */}
                                     <BrainCircuitIcon className="h-5 w-5" />
-                                    AI Stock Picker
+                                    <span className="hidden sm:inline">AI Stock Picker</span> {/* ADDITION: Hide text on mobile */}
                                 </Link>
-                                <button onClick={handleSignOut} className="text-md font-bold text-white">Sign Out</button>
+                                <button onClick={handleSignOut} className="text-md font-bold text-white p-2 rounded-md hover:bg-night-700" title="Sign Out">
+                                    <span className="hidden sm:inline">Sign Out</span>
+                                    <span className="inline sm:hidden text-sm">Out</span> {/* ADDITION: Minimal text for sign out */}
+                                </button>
                             </>
                         )}
                         {!user && (
-                             <Link to="/login" className="text-md font-bold text-white bg-brand-blue px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">
+                             <Link to="/login" className="text-md font-bold text-white bg-brand-blue px-3 py-2 rounded-md hover:bg-blue-600 transition-colors"> {/* MODIFIED: Smaller padding */}
                                 Login
                             </Link>
                         )}

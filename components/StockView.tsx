@@ -11,7 +11,7 @@ import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatt
 import { BrainCircuitIcon, StarIcon, HelpCircleIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as optionsProxyService from '../services/optionsProxyService';
-import SignatexFlow from './SignatexFlow';
+import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import { useAuth } from '../src/hooks/useAuth.tsx';
 
@@ -522,7 +522,7 @@ const StockView: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            {user && <SignatexFlow />} {/* MODIFIED: Only show SignatexFlow if logged in */}
+            {user && <ChatPanel />} {/* MODIFIED: Only show SignatexFlow if logged in */}
             <Link to="/" className="text-brand-blue hover:underline">&larr; Back to Dashboard</Link>
             
             <Card>
