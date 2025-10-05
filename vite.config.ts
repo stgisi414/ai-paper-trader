@@ -28,10 +28,12 @@ export default defineConfig({
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
-      // Corrected proxy configuration for userSearch
       '/userSearch': {
-        target: 'http://127.0.0.1:5001/signatex-trader/us-central1',
+        // Target the full URL including the project ID, region, and function name
+        target: 'http://127.0.0.1:5001/signatex-trader/us-central1/userSearch',
         changeOrigin: true,
+        // Rewrite: Strip the leading '/userSearch' so only '?query=...' is appended to the target
+        rewrite: (path) => path.replace('/userSearch', ''), 
       },
     },
   },

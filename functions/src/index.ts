@@ -4,7 +4,7 @@ import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {defineString} from "firebase-functions/params";
 import {GoogleGenAI, GenerationConfig} from "@google/genai";
-import {findUsers} from "./users";
+import {getFirestore} from "firebase-admin/firestore";
 
 initializeApp();
 
@@ -21,8 +21,8 @@ const loadYahooFinanceClient = async () => {
     try {
       /* eslint-disable @typescript-eslint/no-var-requires,
       @typescript-eslint/no-explicit-any */
-      yfClient =
-        require("yahoo-finance2").default || require("yahoo-finance2");
+      const yahooFinance2 = await import("yahoo-finance2");
+      yfClient = yahooFinance2.default || yahooFinance2;
       /* eslint-enable @typescript-eslint/no-var-requires,
       @typescript-eslint/no-explicit-any */
     } catch (err) {
@@ -33,6 +33,34 @@ const loadYahooFinanceClient = async () => {
       throw new Error("Internal Error: Options client initialization failed.");
     }
   }
+};
+
+interface User {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
+export const findUsers = async (query: string): Promise<User[]> => {
+  const db = getFirestore();
+  const usersRef = db.collection("users");
+  const users: User[] = [];
+
+  const snapshot = await usersRef
+    .where("displayName", ">=", query)
+    .where("displayName", "<=", query + "\uf8ff")
+    .limit(10)
+    .get();
+
+  snapshot.forEach((doc) => {
+    users.push({
+      uid: doc.id,
+      ...doc.data(),
+    } as User);
+  });
+
+  return users;
 };
 
 export const userSearch = onRequest(
@@ -55,6 +83,7 @@ export const userSearch = onRequest(
     }
 
     try {
+      // The findUsers function is now local and should work directly.
       const users = await findUsers(query);
       res.status(200).json(users);
     } catch (error) {
