@@ -1,4 +1,4 @@
-import {onRequest} from "firebase-functions/v2/onRequest";
+import {onRequest} from "firebase-functions/v2/https";
 import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
@@ -20,26 +20,28 @@ const alpacaApiKey = defineString("ALPACA_API_KEY");
 const alpacaApiSecret = defineString("ALPACA_SECRET_KEY");
 const geminiApiKey = defineString("GEMINI_API_KEY");
 
-
 // --- User Search Logic ---
 
-const queryUsersByField = async (usersRef: FirebaseFirestore.CollectionReference, field: string, query: string): Promise<User[]> => {
-    const users: User[] = [];
-    // The \uf8ff character is a high-end Unicode character that allows Firestore to treat the query as a "starts-with" search.
-    const endQuery = query + "\uf8ff";
-    const snapshot = await usersRef
-      .where(field, ">=", query)
-      .where(field, "<=", endQuery)
-      .limit(10)
-      .get();
-    
-    snapshot.forEach((doc) => {
-        users.push({
-          uid: doc.id,
-          ...doc.data(),
-        } as User);
-    });
-    return users;
+const queryUsersByField = async (
+  usersRef: FirebaseFirestore.CollectionReference,
+  field: string,
+  query: string
+): Promise<User[]> => {
+  const users: User[] = [];
+  const endQuery = query + "\uf8ff";
+  const snapshot = await usersRef
+    .where(field, ">=", query)
+    .where(field, "<=", endQuery)
+    .limit(10)
+    .get();
+
+  snapshot.forEach((doc) => {
+    users.push({
+      uid: doc.id,
+      ...doc.data(),
+    } as User);
+  });
+  return users;
 };
 
 const findUsers = async (query: string): Promise<User[]> => {
@@ -48,29 +50,37 @@ const findUsers = async (query: string): Promise<User[]> => {
   try {
     const db = getFirestore();
     const usersRef = db.collection("users");
-    logger.info("Got 'users' collection reference.", {collectionPath: usersRef.path});
+    logger.info("Got 'users' collection reference.", {
+      collectionPath: usersRef.path,
+    });
 
     const displayNameQueries = [
-        query,
-        query.toLowerCase(),
-        // Capitalize first letter for better name matching
-        query.charAt(0).toUpperCase() + query.slice(1).toLowerCase()
+      query,
+      query.toLowerCase(),
+      query.charAt(0).toUpperCase() + query.slice(1).toLowerCase(),
     ];
-    
+
     const uniqueDisplayNameQueries = [...new Set(displayNameQueries)];
-    
-    // Create promises to search by display name variations and by email
-    const displayNamePromises = uniqueDisplayNameQueries.map(q => queryUsersByField(usersRef, "displayName", q));
-    const emailPromises = [queryUsersByField(usersRef, "email", query.toLowerCase())];
-    
-    const results = await Promise.all([...displayNamePromises, ...emailPromises]);
-    
+
+    const displayNamePromises = uniqueDisplayNameQueries.map((q) =>
+      queryUsersByField(usersRef, "displayName", q)
+    );
+    const emailPromises = [
+      queryUsersByField(usersRef, "email", query.toLowerCase()),
+    ];
+
+    const results = await Promise.all([...displayNamePromises,
+      ...emailPromises]);
+
     const allUsers = results.flat();
 
-    // Use a Map to easily remove duplicate users by their UID
-    const uniqueUsers = Array.from(new Map(allUsers.map(user => [user.uid, user])).values());
+    const uniqueUsers = Array.from(
+      new Map(allUsers.map((user) => [user.uid, user])).values()
+    );
 
-    logger.info("Finished processing documents. Returning users.", {userCount: uniqueUsers.length});
+    logger.info("Finished processing documents. Returning users.", {
+      userCount: uniqueUsers.length,
+    });
     return uniqueUsers;
   } catch (error) {
     logger.error("Error within findUsers function:", error);
@@ -87,16 +97,12 @@ let yfClient: any = null;
 const loadYahooFinanceClient = async () => {
   if (yfClient === null) {
     try {
-      /* eslint-disable @typescript-eslint/no-var-requires,
-      @typescript-eslint/no-explicit-any */
-      yfClient =
-        require("yahoo-finance2").default || require("yahoo-finance2");
-      /* eslint-enable @typescript-eslint/no-var-requires,
-      @typescript-eslint/no-explicit-any */
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      yfClient = require("yahoo-finance2").default || require("yahoo-finance2");
     } catch (err) {
       logger.error(
         "Internal Error: Failed to dynamically load options client.",
-        err,
+        err
       );
       throw new Error("Internal Error: Options client initialization failed.");
     }
@@ -110,7 +116,10 @@ export const userSearch = onRequest(
     region: "us-central1",
   },
   async (req: Request, res: Response): Promise<void> => {
-    logger.info("userSearch function triggered.", {method: req.method, query: req.query});
+    logger.info("userSearch function triggered.", {
+      method: req.method,
+      query: req.query,
+    });
 
     if (req.method !== "GET") {
       logger.warn("Method Not Allowed:", {method: req.method});
@@ -120,7 +129,6 @@ export const userSearch = onRequest(
 
     const query = req.query.query as string;
     logger.info("Received search query:", {query});
-
 
     if (!query) {
       logger.warn("Missing search query.");
@@ -137,7 +145,7 @@ export const userSearch = onRequest(
       logger.error("User Search Error in 'userSearch' function:", error);
       res.status(500).json({error: "Error searching for users."});
     }
-  },
+  }
 );
 
 export const optionsProxy = onRequest(
@@ -170,7 +178,7 @@ export const optionsProxy = onRequest(
         error: "Failed to fetch options data from external API.",
       });
     }
-  },
+  }
 );
 
 export const fmpProxy = onRequest(
@@ -208,8 +216,11 @@ export const fmpProxy = onRequest(
         try {
           errorDetails = JSON.parse(responseText);
         } catch {
-          errorDetails = {message: responseText.slice(0, 200) ||
-           `Request failed with status ${apiResponse.status}`};
+          errorDetails = {
+            message:
+              responseText.slice(0, 200) ||
+              `Request failed with status ${apiResponse.status}`,
+          };
         }
         res.status(apiResponse.status).json({
           error: "FMP API Error",
@@ -228,9 +239,9 @@ export const fmpProxy = onRequest(
       }
     } catch (error) {
       logger.error("FMP Proxy Network/Connection Error:", error);
-      res.status(500).json({error: "Proxy failed to connect to FMP endpoint."});
+      res.status(500).json({error: "Proxy failed to connect to FMP."});
     }
-  },
+  }
 );
 
 export const alpacaProxy = onRequest(
@@ -264,7 +275,7 @@ export const alpacaProxy = onRequest(
       logger.error("Alpaca Proxy Error:", error);
       res.status(500).json({error: "Error fetching from Alpaca API."});
     }
-  },
+  }
 );
 
 export const geminiProxy = onRequest(
@@ -289,10 +300,12 @@ export const geminiProxy = onRequest(
 
       const genAI = new GoogleGenAI({apiKey: geminiApiKey.value()});
 
-      const generationConfig: GenerationConfig = schema ? {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-      } : {};
+      const generationConfig: GenerationConfig = schema ?
+        {
+          responseMimeType: "application/json",
+          responseSchema: schema,
+        } :
+        {};
 
       const geminiResult = await genAI.models.generateContent({
         model: modelName,
@@ -305,10 +318,11 @@ export const geminiProxy = onRequest(
       res.status(200).send({text});
     } catch (error) {
       logger.error("Gemini Proxy Error:", error);
-      const errorMessage = error instanceof Error ?
-        `Error generating content from Gemini API: ${error.message}` :
-        "Error generating content from Gemini API.";
+      const errorMessage =
+        error instanceof Error ?
+          `Error generating content from Gemini API: ${error.message}` :
+          "Error generating content from Gemini API.";
       res.status(500).json({error: errorMessage});
     }
-  },
+  }
 );
