@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../src/firebaseConfig';
-import { useAuth } from '../src/hooks/useAuth.tsx';
-import type { FmpQuote } from '@/types';
-import * as fmpService from '@/services/fmpService';
+import { db } from '../src/firebaseConfig'; // <-- CORRECTED PATH
+import { useAuth } from '../src/hooks/useAuth'; // <-- CORRECTED PATH
+import type { FmpQuote } from '../types';
+import * as fmpService from '../services/fmpService';
 
 export interface WatchlistItem {
     ticker: string;
@@ -33,7 +33,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Effect to listen for watchlist changes in Firestore
     useEffect(() => {
         if (!user) {
-            // Existing logic to reset state for logged-out users
             setWatchlistTickers([]);
             setWatchlistData([]);
             setIsLoading(false);

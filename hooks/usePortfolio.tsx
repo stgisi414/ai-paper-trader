@@ -1,7 +1,8 @@
+// hooks/usePortfolio.tsx
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../src/firebaseConfig';
-import { useAuth } from '../src/hooks/useAuth.tsx';
+import { db } from '../src/firebaseConfig'; // <-- CORRECTED PATH
+import { useAuth } from '../src/hooks/useAuth'; // <-- CORRECTED PATH
 import type { Portfolio, Holding, OptionHolding, Transaction } from '../types';
 import { INITIAL_CASH } from '../constants';
 import * as fmpService from '../services/fmpService';
@@ -32,9 +33,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-     useEffect(() => {
+    useEffect(() => {
         if (!user) {
-            // Existing logic to reset state for logged-out users
+            // Reset state for logged-out users and stop loading
             setPortfolio({
                 cash: INITIAL_CASH,
                 holdings: [],
