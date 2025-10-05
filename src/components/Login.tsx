@@ -1,6 +1,8 @@
 // src/components/Login.tsx
 import React from 'react';
-import { GoogleAuthProvider, signInWithPopup, getAuth } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, getAuth, User } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { db } from '../../src/firebaseConfig';
 import Card from '../../components/common/Card';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,12 +13,43 @@ const Login: React.FC = () => {
     const handleGoogleSignIn = async () => {
         const provider = new GoogleAuthProvider();
         try {
-            await signInWithPopup(auth, provider);
+            const result = await signInWithPopup(auth, provider);
+            const user = result.user;
+
+            // After successful sign-in, create a user document in Firestore
+            await createUserDocument(user);
+
             navigate('/');
         } catch (error) {
             console.error("Error signing in with Google", error);
         }
     };
+
+    const createUserDocument = async (user: User) => {
+        if (!user) return;
+    
+        const userDocRef = doc(db, 'users', user.uid);
+    
+        // Check if the document already exists
+        const docSnap = await getDoc(userDocRef);
+    
+        if (!docSnap.exists()) {
+            // Document doesn't exist, so create it
+            try {
+                await setDoc(userDocRef, {
+                    displayName: user.displayName,
+                    email: user.email,
+                    photoURL: user.photoURL,
+                });
+                console.log("User document created in Firestore for user:", user.uid);
+            } catch (error) {
+                console.error("Error creating user document:", error);
+            }
+        } else {
+            console.log("User document already exists for user:", user.uid);
+        }
+    };
+    
 
     return (
         <div className="flex justify-center items-center" style={{ height: 'calc(100vh - 200px)' }}>

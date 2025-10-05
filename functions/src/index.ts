@@ -1,10 +1,17 @@
-import {onRequest} from "firebase-functions/v2/https";
+import {onRequest} from "firebase-functions/v2/onRequest";
 import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
+import {getFirestore} from "firebase-admin/firestore";
 import {defineString} from "firebase-functions/params";
 import {GoogleGenAI, GenerationConfig} from "@google/genai";
-import {getFirestore} from "firebase-admin/firestore";
+
+interface User {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
 
 initializeApp();
 
@@ -12,6 +19,67 @@ const fmpApiKey = defineString("FMP_API_KEY");
 const alpacaApiKey = defineString("ALPACA_API_KEY");
 const alpacaApiSecret = defineString("ALPACA_SECRET_KEY");
 const geminiApiKey = defineString("GEMINI_API_KEY");
+
+
+// --- User Search Logic ---
+
+const queryUsersByField = async (usersRef: FirebaseFirestore.CollectionReference, field: string, query: string): Promise<User[]> => {
+    const users: User[] = [];
+    // The \uf8ff character is a high-end Unicode character that allows Firestore to treat the query as a "starts-with" search.
+    const endQuery = query + "\uf8ff";
+    const snapshot = await usersRef
+      .where(field, ">=", query)
+      .where(field, "<=", endQuery)
+      .limit(10)
+      .get();
+    
+    snapshot.forEach((doc) => {
+        users.push({
+          uid: doc.id,
+          ...doc.data(),
+        } as User);
+    });
+    return users;
+};
+
+const findUsers = async (query: string): Promise<User[]> => {
+  logger.info("findUsers function started.", {query});
+
+  try {
+    const db = getFirestore();
+    const usersRef = db.collection("users");
+    logger.info("Got 'users' collection reference.", {collectionPath: usersRef.path});
+
+    const displayNameQueries = [
+        query,
+        query.toLowerCase(),
+        // Capitalize first letter for better name matching
+        query.charAt(0).toUpperCase() + query.slice(1).toLowerCase()
+    ];
+    
+    const uniqueDisplayNameQueries = [...new Set(displayNameQueries)];
+    
+    // Create promises to search by display name variations and by email
+    const displayNamePromises = uniqueDisplayNameQueries.map(q => queryUsersByField(usersRef, "displayName", q));
+    const emailPromises = [queryUsersByField(usersRef, "email", query.toLowerCase())];
+    
+    const results = await Promise.all([...displayNamePromises, ...emailPromises]);
+    
+    const allUsers = results.flat();
+
+    // Use a Map to easily remove duplicate users by their UID
+    const uniqueUsers = Array.from(new Map(allUsers.map(user => [user.uid, user])).values());
+
+    logger.info("Finished processing documents. Returning users.", {userCount: uniqueUsers.length});
+    return uniqueUsers;
+  } catch (error) {
+    logger.error("Error within findUsers function:", error);
+    throw error;
+  }
+};
+
+
+// --- Cloud Functions ---
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let yfClient: any = null;
@@ -21,8 +89,8 @@ const loadYahooFinanceClient = async () => {
     try {
       /* eslint-disable @typescript-eslint/no-var-requires,
       @typescript-eslint/no-explicit-any */
-      const yahooFinance2 = await import("yahoo-finance2");
-      yfClient = yahooFinance2.default || yahooFinance2;
+      yfClient =
+        require("yahoo-finance2").default || require("yahoo-finance2");
       /* eslint-enable @typescript-eslint/no-var-requires,
       @typescript-eslint/no-explicit-any */
     } catch (err) {
@@ -35,34 +103,6 @@ const loadYahooFinanceClient = async () => {
   }
 };
 
-interface User {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-}
-
-export const findUsers = async (query: string): Promise<User[]> => {
-  const db = getFirestore();
-  const usersRef = db.collection("users");
-  const users: User[] = [];
-
-  const snapshot = await usersRef
-    .where("displayName", ">=", query)
-    .where("displayName", "<=", query + "\uf8ff")
-    .limit(10)
-    .get();
-
-  snapshot.forEach((doc) => {
-    users.push({
-      uid: doc.id,
-      ...doc.data(),
-    } as User);
-  });
-
-  return users;
-};
-
 export const userSearch = onRequest(
   {
     invoker: "public",
@@ -70,24 +110,31 @@ export const userSearch = onRequest(
     region: "us-central1",
   },
   async (req: Request, res: Response): Promise<void> => {
+    logger.info("userSearch function triggered.", {method: req.method, query: req.query});
+
     if (req.method !== "GET") {
+      logger.warn("Method Not Allowed:", {method: req.method});
       res.status(405).send("Method Not Allowed");
       return;
     }
 
     const query = req.query.query as string;
+    logger.info("Received search query:", {query});
+
 
     if (!query) {
+      logger.warn("Missing search query.");
       res.status(400).json({error: "Missing search query."});
       return;
     }
 
     try {
-      // The findUsers function is now local and should work directly.
+      logger.info("Calling findUsers function.");
       const users = await findUsers(query);
+      logger.info("Successfully found users.", {userCount: users.length});
       res.status(200).json(users);
     } catch (error) {
-      logger.error("User Search Error:", error);
+      logger.error("User Search Error in 'userSearch' function:", error);
       res.status(500).json({error: "Error searching for users."});
     }
   },
@@ -141,19 +188,14 @@ export const fmpProxy = onRequest(
 
     const apiKey = fmpApiKey.value();
     if (!apiKey) {
-      // NEW: Explicitly check for a missing key and log it
       logger.error("FMP_API_KEY is not configured in Firebase Functions");
       res.status(500).json({error: "FMP API Key is missing."});
       return;
     }
 
-    // Check if the endpoint already has a query parameter
     const queryDelimiter = endpoint.includes("?") ? "&" : "?";
-
-    // Build the final FMP URL
     const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${apiKey}`;
 
-    // NEW: Log the URL to your Firebase Function logs for verification
     logger.info(`FMP Proxy fetching URL: ${url.replace(apiKey, "REDACTED")}`);
 
     try {
@@ -161,21 +203,14 @@ export const fmpProxy = onRequest(
       const responseText = await apiResponse.text();
 
       if (!apiResponse.ok) {
-        // Log the error response from FMP
         logger.error(`FMP API status ${apiResponse.status}:`, responseText);
-
         let errorDetails;
         try {
-          // Attempt to parse the error body as JSON (for structured errors)
           errorDetails = JSON.parse(responseText);
         } catch {
-          // If it's not JSON (e.g., HTML/plain text error from FMP),
-          // capture the beginning
           errorDetails = {message: responseText.slice(0, 200) ||
            `Request failed with status ${apiResponse.status}`};
         }
-
-        // Return a structured error to the client
         res.status(apiResponse.status).json({
           error: "FMP API Error",
           status: apiResponse.status,
@@ -184,7 +219,6 @@ export const fmpProxy = onRequest(
         return;
       }
 
-      // Successful JSON response
       try {
         const data = JSON.parse(responseText);
         res.status(200).json(data);
@@ -228,7 +262,6 @@ export const alpacaProxy = onRequest(
       res.status(apiResponse.status).send(data);
     } catch (error) {
       logger.error("Alpaca Proxy Error:", error);
-      // FIX Use .json() to ensure the response content-type is application/json
       res.status(500).json({error: "Error fetching from Alpaca API."});
     }
   },
@@ -254,9 +287,6 @@ export const geminiProxy = onRequest(
         return;
       }
 
-      // FIX 1: Initialize with an options object { apiKey: '...' }
-      // The Type 'string' has no properties in common with type
-      // 'GoogleGenAIOptions' error (TS2559) is fixed here.
       const genAI = new GoogleGenAI({apiKey: geminiApiKey.value()});
 
       const generationConfig: GenerationConfig = schema ? {
@@ -264,9 +294,6 @@ export const geminiProxy = onRequest(
         responseSchema: schema,
       } : {};
 
-      // FIX 2: Access generateContent through the models property.
-      // The Property 'getGenerativeModel' does not exist on
-      // type 'GoogleGenAI' error (TS2339) is fixed here.
       const geminiResult = await genAI.models.generateContent({
         model: modelName,
         contents: [{role: "user", parts: [{text: prompt}]}],
@@ -281,7 +308,6 @@ export const geminiProxy = onRequest(
       const errorMessage = error instanceof Error ?
         `Error generating content from Gemini API: ${error.message}` :
         "Error generating content from Gemini API.";
-      // FIX: Use .json() for a consistent, structured error response
       res.status(500).json({error: errorMessage});
     }
   },

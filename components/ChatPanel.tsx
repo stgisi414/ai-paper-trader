@@ -7,8 +7,9 @@ import Spinner from './common/Spinner';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../src/hooks/useAuth';
-import { subscribeToChat, sendMessage, ChatMessage } from '../services/chatService';
+import { subscribeToChat, sendMessage, ChatMessage, clearUnreadMessage } from '../services/chatService';
 import { User } from '../types';
+import { useNotification } from '../hooks/useNotification';
 
 interface LocalMessage {
     sender: 'user' | 'bot' | 'system';
@@ -46,6 +47,7 @@ const ChatPanel: React.FC = () => {
 
     const recognitionRef = useRef<any>(null);
     const chatBodyRef = useRef<HTMLDivElement>(null);
+    const { chatTarget, openChatWith } = useNotification();
 
     // --- Message Management Helpers ---
 
@@ -77,11 +79,27 @@ const ChatPanel: React.FC = () => {
         }
     }, [user, isOpen]);
 
-    // NEW EFFECT: Firestore Listener for Private Chat
+    useEffect(() => {
+        if (chatTarget && user) {
+            // A notification was clicked, so open the chat panel to that user
+            setIsOpen(true);
+            setMode('private');
+            setPrivateChatTarget(chatTarget);
+            
+            // Clear the unread message notification from Firestore
+            clearUnreadMessage(user.uid, chatTarget.uid);
+
+            // Reset the global target so it doesn't re-trigger
+            openChatWith(null);
+        }
+    }, [chatTarget, user, openChatWith]);
+    
     useEffect(() => {
         if (mode !== 'private' || !user || !privateChatTarget) return;
 
-        // Subscribe to the chat when a target user is selected
+        // When opening a chat, clear the notification for it
+        clearUnreadMessage(user.uid, privateChatTarget.uid);
+
         const unsubscribe = subscribeToChat(
             user.uid, 
             privateChatTarget.uid, 
@@ -194,9 +212,9 @@ const ChatPanel: React.FC = () => {
                 setIsLoading(false);
             }
         } else if (mode === 'private' && privateChatTarget && user) {
-            // PRIVATE CHAT LOGIC: Send message to Firestore
             try {
-                await sendMessage(user, privateChatTarget.uid, userMessage);
+                // Pass the full privateChatTarget object
+                await sendMessage(user, privateChatTarget, userMessage);
             } catch (error) {
                  console.error(error);
                  addLocalMessage('system', "Failed to send message: Check Firestore rules or network.");
@@ -273,7 +291,8 @@ const ChatPanel: React.FC = () => {
                                     setUserSearchResults([]);
                                     setSearchUserQuery('');
                                 }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
-                                    {userResult.displayName}
+                                    <span className="font-bold">{userResult.displayName}</span>
+                                    <span className="text-xs text-night-500 block">{userResult.email}</span>
                                 </li>
                             ))}
                         </ul>
@@ -286,11 +305,15 @@ const ChatPanel: React.FC = () => {
             <div className="space-y-1">
                 <h3 className="text-lg font-bold text-brand-blue flex justify-between items-center">
                     <span>Chatting with: {privateChatTarget.displayName}</span>
-                    <button onClick={() => setPrivateChatTarget(null)} className="text-xs text-night-500 hover:text-night-100">End Chat</button>
+                    <button onClick={() => {
+                        setPrivateChatTarget(null);
+                        setPrivateChatMessages([]); // FIX: Clear messages on end chat
+                    }} className="text-xs text-night-500 hover:text-night-100">End Chat</button>
                 </h3>
                 <p className="text-xs text-night-500">{privateChatTarget.email}</p>
             </div>
         );
+
     };
 
 

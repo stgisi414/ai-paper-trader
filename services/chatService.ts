@@ -1,23 +1,21 @@
-// services/chatService.ts
-import { collection, onSnapshot, query, orderBy, Timestamp, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, Timestamp, addDoc, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig';
-import { User } from 'firebase/auth';
+import { User as FirebaseAuthUser } from 'firebase/auth';
+import { User } from '../types';
 
-interface ChatMessage {
+export interface ChatMessage {
     id?: string;
     senderId: string;
     text: string;
     timestamp: Timestamp;
+    senderDisplayName: string;
+    senderPhotoURL: string;
 }
 
-// Helper to determine a consistent chat room ID regardless of who initiates
 const getChatRoomId = (userId1: string, userId2: string): string => {
     return [userId1, userId2].sort().join('_');
 };
 
-/**
- * Subscribes to messages in a specific chat room.
- */
 export const subscribeToChat = (
     currentUserId: string, 
     targetUserId: string, 
@@ -26,7 +24,6 @@ export const subscribeToChat = (
     const chatRoomId = getChatRoomId(currentUserId, targetUserId);
     const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
     
-    // Order by timestamp to get the correct message sequence
     const q = query(messagesRef, orderBy('timestamp'));
 
     return onSnapshot(q, (snapshot) => {
@@ -38,25 +35,47 @@ export const subscribeToChat = (
     });
 };
 
-/**
- * Sends a new message to the chat room.
- */
 export const sendMessage = async (
-    sender: User, 
-    targetUserId: string, 
+    sender: FirebaseAuthUser, 
+    targetUser: User, 
     text: string
 ): Promise<void> => {
     if (!text.trim()) return;
 
-    const chatRoomId = getChatRoomId(sender.uid, targetUserId);
+    const chatRoomId = getChatRoomId(sender.uid, targetUser.uid);
     const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
 
+    // 1. Add the message to the chat room
     await addDoc(messagesRef, {
         senderId: sender.uid,
         text: text,
         timestamp: Timestamp.now(),
+        senderDisplayName: sender.displayName,
+        senderPhotoURL: sender.photoURL,
+    });
+
+    // 2. Create a notification document for the recipient
+    const notificationRef = doc(db, 'users', targetUser.uid, 'unreadMessages', sender.uid);
+    await setDoc(notificationRef, {
+        text: text,
+        timestamp: Timestamp.now(),
+        sender: {
+            uid: sender.uid,
+            displayName: sender.displayName,
+            email: sender.email,
+            photoURL: sender.photoURL,
+        }
     });
 };
 
-// Export interfaces for ChatPanel.tsx
+export const clearUnreadMessage = async (currentUserId: string, senderId: string): Promise<void> => {
+    if (!currentUserId || !senderId) return;
+    try {
+        const notificationRef = doc(db, 'users', currentUserId, 'unreadMessages', senderId);
+        await deleteDoc(notificationRef);
+    } catch (error) {
+        console.error("Error clearing unread message:", error);
+    }
+};
+
 export type { ChatMessage };

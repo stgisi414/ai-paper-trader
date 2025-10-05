@@ -1,4 +1,3 @@
-// App.tsx
 import React from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './src/hooks/useAuth.tsx';
@@ -11,15 +10,20 @@ import StockPicker from './components/StockPicker';
 import HistoryLedger from './components/HistoryLedger';
 import Login from './src/components/Login';
 import { getAuth, signOut } from 'firebase/auth';
+import { NotificationProvider } from './hooks/useNotification';
+import { useUnreadListener } from './hooks/useUnreadListener';
+import NotificationPopup from './components/common/NotificationPopup';
 
 const App: React.FC = () => {
     return (
         <AuthProvider>
             <PortfolioProvider>
                 <WatchlistProvider>
-                    <HashRouter>
-                        <MainApp />
-                    </HashRouter>
+                    <NotificationProvider>
+                        <HashRouter>
+                            <MainApp />
+                        </HashRouter>
+                    </NotificationProvider>
                 </WatchlistProvider>
             </PortfolioProvider>
         </AuthProvider>
@@ -30,6 +34,7 @@ const MainApp: React.FC = () => {
     const { user } = useAuth();
     const auth = getAuth();
     const navigate = useNavigate();
+    useUnreadListener();
 
     const handleSignOut = async () => {
         await signOut(auth);
@@ -38,6 +43,7 @@ const MainApp: React.FC = () => {
 
     return (
         <div className="min-h-screen text-night-100 overflow-x-hidden">
+            <NotificationPopup />
             <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                 <nav className="container mx-auto flex justify-between items-center">
                     <Link to="/" className="flex items-center gap-2 text-xl font-bold text-white">
