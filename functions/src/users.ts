@@ -13,7 +13,10 @@ export const findUsers = async (query: string): Promise<User[]> => {
     .get();
 
   snapshot.forEach((doc) => {
-    users.push(doc.data() as User);
+    users.push({
+      uid: doc.id,
+      ...doc.data(),
+    } as User);
   });
 
   return users;

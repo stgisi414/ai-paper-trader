@@ -17,12 +17,6 @@ interface LocalMessage {
 
 type ChatMode = 'ai' | 'private';
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
-
 const ChatPanel: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -48,7 +42,7 @@ const ChatPanel: React.FC = () => {
     // Private Chat State
     const [searchUserQuery, setSearchUserQuery] = useState('');
     const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
-    const [privateChatTarget, setPrivateChatTarget] = useState<MockUser | null>(null);
+    const [privateChatTarget, setPrivateChatTarget] = useState<User | null>(null);
 
     const recognitionRef = useRef<any>(null);
     const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -90,14 +84,14 @@ const ChatPanel: React.FC = () => {
         // Subscribe to the chat when a target user is selected
         const unsubscribe = subscribeToChat(
             user.uid, 
-            privateChatTarget.id, 
+            privateChatTarget.uid, 
             (messages) => {
                 setPrivateChatMessages(messages);
             }
         );
 
         // Notify user about new chat
-        addLocalMessage('system', `Chat with ${privateChatTarget.name} opened.`);
+        addLocalMessage('system', `Chat with ${privateChatTarget.displayName} opened.`);
 
         return () => unsubscribe();
     }, [mode, user, privateChatTarget]);
@@ -163,7 +157,7 @@ const ChatPanel: React.FC = () => {
         try {
             const response = await fetch(`/userSearch?query=${query}`);
             if (response.ok) {
-                const users = await response.json();
+                const users: User[] = await response.json();
                 setUserSearchResults(users);
             }
         } catch (error) {
@@ -202,7 +196,7 @@ const ChatPanel: React.FC = () => {
         } else if (mode === 'private' && privateChatTarget && user) {
             // PRIVATE CHAT LOGIC: Send message to Firestore
             try {
-                await sendMessage(user, privateChatTarget.id, userMessage);
+                await sendMessage(user, privateChatTarget.uid, userMessage);
             } catch (error) {
                  console.error(error);
                  addLocalMessage('system', "Failed to send message: Check Firestore rules or network.");
@@ -275,7 +269,7 @@ const ChatPanel: React.FC = () => {
                         <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
                             {userSearchResults.map((userResult) => (
                                 <li key={userResult.uid} onClick={() => {
-                                    setPrivateChatTarget({ id: userResult.uid, name: userResult.displayName, email: userResult.email });
+                                    setPrivateChatTarget(userResult);
                                     setUserSearchResults([]);
                                     setSearchUserQuery('');
                                 }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
@@ -291,7 +285,7 @@ const ChatPanel: React.FC = () => {
         return (
             <div className="space-y-1">
                 <h3 className="text-lg font-bold text-brand-blue flex justify-between items-center">
-                    <span>Chatting with: {privateChatTarget.name}</span>
+                    <span>Chatting with: {privateChatTarget.displayName}</span>
                     <button onClick={() => setPrivateChatTarget(null)} className="text-xs text-night-500 hover:text-night-100">End Chat</button>
                 </h3>
                 <p className="text-xs text-night-500">{privateChatTarget.email}</p>
