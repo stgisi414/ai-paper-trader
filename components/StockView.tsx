@@ -13,6 +13,7 @@ import CandlestickChart from './CandlestickChart';
 import * as optionsProxyService from '../services/optionsProxyService';
 import SignatexFlow from './SignatexFlow';
 import Watchlist from './Watchlist';
+import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
     const [state, setState] = useState<T>(() => {
@@ -49,6 +50,7 @@ const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
     const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist();
+    const { user } = useAuth();
 
     const formatGreek = useCallback((value: number | null): string => {
         if (value === null) return 'N/A';
@@ -520,7 +522,7 @@ const StockView: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <SignatexFlow />
+            {user && <SignatexFlow />} {/* MODIFIED: Only show SignatexFlow if logged in */}
             <Link to="/" className="text-brand-blue hover:underline">&larr; Back to Dashboard</Link>
             
             <Card>
@@ -554,106 +556,111 @@ const StockView: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-6">
-                    <Watchlist />
-                    <Card>
-                        <h2 className="text-xl font-bold mb-4">Trade</h2>
-                        <div className="border-b border-night-700 mb-4">
-                            <nav className="-mb-px flex space-x-4" aria-label="Tabs">
-                                <button onClick={() => setTradeTab('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
-                                <button onClick={() => setTradeTab('calls')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
-                                    Calls <HelpIconWithTooltip tooltip="Call options give the holder the right, but not the obligation, to buy a stock at a specified price before a certain date." />
-                                </button>
-                                <button onClick={() => setTradeTab('puts')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
-                                    Puts <HelpIconWithTooltip tooltip="Put options give the holder the right, but not the obligation, to sell a stock at a specified price before a certain date." />
-                                </button>
-                            </nav>
-                        </div>
-                        <div className="space-y-4">
-                            {tradeTab === 'stock' && (
-                                <>
-                                    <div className="text-sm">Shares Owned: <span className="font-bold">{sharesOwned}</span></div>
-                                    <div className="text-sm">Cash Available: <span className="font-bold">{formatCurrency(portfolio.cash)}</span></div>
-                                </>
-                            )}
-                            {(tradeTab === 'calls' || tradeTab === 'puts') && (
-                                <div className="h-48 overflow-auto bg-night-700 p-2 rounded-md">
-                                    <table className="text-left text-xs">
-                                        <thead>
-                                            <tr>
-                                                <th className="p-2 whitespace-nowrap">Strike</th>
-                                                <th className="p-2 whitespace-nowrap">Expiry</th>
-                                                <th className="p-2 whitespace-nowrap">Price</th>
-                                                <th className="p-2 whitespace-nowrap">
-                                                    <div className="flex items-center gap-1">
-                                                        IV <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
-                                                    </div>
-                                                </th>
-                                                <th className="p-2 whitespace-nowrap">OI/Vol</th>
-                                                <th className="p-2 whitespace-nowrap">
-                                                    <div className="flex items-center gap-1">
-                                                        Δ <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
-                                                    </div>
-                                                </th>
-                                                <th className="p-2 whitespace-nowrap">
-                                                    <div className="flex items-center gap-1">
-                                                        Γ <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
-                                                    </div>
-                                                </th>
-                                                <th className="p-2 whitespace-nowrap">
-                                                    <div className="flex items-center gap-1">
-                                                        Θ <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
-                                                    </div>
-                                                </th>
-                                                <th className="p-2 whitespace-nowrap">
-                                                    <div className="flex items-center gap-1">
-                                                        ν <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
-                                                    </div>
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
-                                                <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
-                                                    <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
-                                                    <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
-                                                    <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
-                                                    <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
-                                                    <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
-                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
-                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
-                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
-                                                    <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
+                    {user && <Watchlist />} {/* MODIFIED: Only show Watchlist if logged in */}
+                    {/* MODIFIED: Conditionally render Trade Card */}
+                    {user ? (
+                        <Card>
+                            <h2 className="text-xl font-bold mb-4">Trade</h2>
+                            <div className="border-b border-night-700 mb-4">
+                                <nav className="-mb-px flex space-x-4" aria-label="Tabs">
+                                    <button onClick={() => setTradeTab('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
+                                    <button onClick={() => setTradeTab('calls')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                        Calls <HelpIconWithTooltip tooltip="Call options give the holder the right, but not the obligation, to buy a stock at a specified price before a certain date." />
+                                    </button>
+                                    <button onClick={() => setTradeTab('puts')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                        Puts <HelpIconWithTooltip tooltip="Put options give the holder the right, but not the obligation, to sell a stock at a specified price before a certain date." />
+                                    </button>
+                                </nav>
+                            </div>
+                            <div className="space-y-4">
+                                {tradeTab === 'stock' && (
+                                    <>
+                                        <div className="text-sm">Shares Owned: <span className="font-bold">{sharesOwned}</span></div>
+                                        <div className="text-sm">Cash Available: <span className="font-bold">{formatCurrency(portfolio.cash)}</span></div>
+                                    </>
+                                )}
+                                {(tradeTab === 'calls' || tradeTab === 'puts') && (
+                                    <div className="h-48 overflow-auto bg-night-700 p-2 rounded-md">
+                                        <table className="text-left text-xs">
+                                            <thead>
+                                                <tr>
+                                                    <th className="p-2 whitespace-nowrap">Strike</th>
+                                                    <th className="p-2 whitespace-nowrap">Expiry</th>
+                                                    <th className="p-2 whitespace-nowrap">Price</th>
+                                                    <th className="p-2 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1">
+                                                            IV <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
+                                                        </div>
+                                                    </th>
+                                                    <th className="p-2 whitespace-nowrap">OI/Vol</th>
+                                                    <th className="p-2 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1">
+                                                            Δ <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
+                                                        </div>
+                                                    </th>
+                                                    <th className="p-2 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1">
+                                                            Γ <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
+                                                        </div>
+                                                    </th>
+                                                    <th className="p-2 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1">
+                                                            Θ <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
+                                                        </div>
+                                                    </th>
+                                                    <th className="p-2 whitespace-nowrap">
+                                                        <div className="flex items-center gap-1">
+                                                            ν <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
+                                                        </div>
+                                                    </th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                            </thead>
+                                            <tbody>
+                                                {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
+                                                    <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
+                                                        <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
+                                                        <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
+                                                        <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
+                                                        <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
+                                                        <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
+                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
+                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
+                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
+                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                {selectedOption && (tradeTab === 'calls' || tradeTab === 'puts') && (
+                                     <div className="text-sm bg-night-700 p-2 rounded-md">
+                                        Selected: {selectedOption.symbol} <br/>
+                                        Contracts Owned: <span className="font-bold">{contractsOwned}</span>
+                                    </div>
+                                )}
+                                <div>
+                                    <label htmlFor="shares" className="block text-sm font-medium text-night-100 mb-1">{tradeTab === 'stock' ? 'Shares' : 'Contracts'}</label>
+                                    <input
+                                        type="number"
+                                        id="shares"
+                                        value={tradeShares}
+                                        onChange={handleSharesChange}
+                                        className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none"
+                                        min="1"
+                                        placeholder="0"
+                                    />
                                 </div>
-                            )}
-                            {selectedOption && (tradeTab === 'calls' || tradeTab === 'puts') && (
-                                 <div className="text-sm bg-night-700 p-2 rounded-md">
-                                    Selected: {selectedOption.symbol} <br/>
-                                    Contracts Owned: <span className="font-bold">{contractsOwned}</span>
+                                <div className="text-center font-bold">Total: {formatCurrency(Number(tradeShares) * (tradeTab === 'stock' ? quote.price : (selectedOption?.close_price || 0) * 100))}</div>
+                                <div className="flex gap-4">
+                                    <button onClick={handleBuy} disabled={tradeTab !== 'stock' && !selectedOption} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">Buy</button>
+                                    <button onClick={handleSell} disabled={(tradeTab === 'stock' && sharesOwned === 0) || (tradeTab !== 'stock' && contractsOwned === 0)} className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600">Sell</button>
                                 </div>
-                            )}
-                            <div>
-                                <label htmlFor="shares" className="block text-sm font-medium text-night-100 mb-1">{tradeTab === 'stock' ? 'Shares' : 'Contracts'}</label>
-                                <input
-                                    type="number"
-                                    id="shares"
-                                    value={tradeShares}
-                                    onChange={handleSharesChange}
-                                    className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none"
-                                    min="1"
-                                    placeholder="0"
-                                />
                             </div>
-                            <div className="text-center font-bold">Total: {formatCurrency(Number(tradeShares) * (tradeTab === 'stock' ? quote.price : (selectedOption?.close_price || 0) * 100))}</div>
-                            <div className="flex gap-4">
-                                <button onClick={handleBuy} disabled={tradeTab !== 'stock' && !selectedOption} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">Buy</button>
-                                <button onClick={handleSell} disabled={(tradeTab === 'stock' && sharesOwned === 0) || (tradeTab !== 'stock' && contractsOwned === 0)} className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600">Sell</button>
-                            </div>
-                        </div>
-                    </Card>
+                        </Card>
+                    ) : (
+                         <Card><p className="text-center text-night-500 p-4">Please log in to trade stocks or options.</p></Card>
+                    )}
                 </div>
                 <div className="lg:col-span-2 space-y-6">
                     <Card>

@@ -1,7 +1,7 @@
 // src/components/Login.tsx
 import React from 'react';
 import { GoogleAuthProvider, signInWithPopup, getAuth } from 'firebase/auth';
-import Card from './common/Card';
+import Card from '../../components/common/Card';
 
 const Login: React.FC = () => {
     const auth = getAuth();

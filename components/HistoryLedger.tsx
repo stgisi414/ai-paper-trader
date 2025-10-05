@@ -4,9 +4,16 @@ import Card from './common/Card';
 import { formatCurrency } from '../utils/formatters';
 import { BriefcaseIcon } from './common/Icons';
 import SignatexFlow from './SignatexFlow';
+import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const HistoryLedger: React.FC = () => {
     const { transactions } = usePortfolio();
+    const { user } = useAuth();
+
+    // ADDITION: Robust check against unprotected access (even though route is protected)
+    if (!user) { 
+        return <div className="text-center text-night-500 mt-10">You must be logged in to view your transaction history.</div>;
+    }
     
     const realizedPnl = useMemo(() => {
         return transactions.reduce((sum, t) => sum + (t.realizedPnl || 0), 0);

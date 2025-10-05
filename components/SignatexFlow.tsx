@@ -6,6 +6,7 @@ import { SignatexFlowIcon, MicrophoneIcon, SendIcon } from './common/Icons';
 import Spinner from './common/Spinner';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useAuth } from '../src/hooks/useAuth.tsx';
 
 interface Message {
     sender: 'user' | 'bot';
@@ -31,6 +32,9 @@ const SignatexFlow: React.FC = () => {
     const { watchlist } = useWatchlist();
     const location = useLocation();
     const params = useParams();
+
+    const { user } = useAuth();
+    if (!user) return null; 
 
     useEffect(() => {
         // Scroll to the bottom of the chat on new messages

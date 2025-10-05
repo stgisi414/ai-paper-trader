@@ -11,6 +11,3 @@ node_modules/
 
 # env
 .env.signatex-trader
-
-# ADDITION: Ignore the Firebase config file
-src/firebaseConfig.ts 

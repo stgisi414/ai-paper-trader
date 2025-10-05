@@ -5,7 +5,14 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
-    }
+      // ADDITION 1: Alias for Firebase modules to prevent resolution issues
+      'firebase/auth': 'firebase/auth',
+      'firebase/firestore': 'firebase/firestore',
+    },
+  },
+  define: {
+    // ADDITION 2: Polyfill for Buffer needed by some Firebase dependencies
+    'global.Buffer': {} 
   },
   server: {
     proxy: {

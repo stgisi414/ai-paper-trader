@@ -11,8 +11,10 @@ import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, Briefcase
 import SignatexFlow from './SignatexFlow';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
+import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const Dashboard: React.FC = () => {
+    const { user } = useAuth();
     const { portfolio, totalValue, isLoading: isPortfolioLoading } = usePortfolio();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
@@ -63,7 +65,7 @@ const Dashboard: React.FC = () => {
 
     return (
         <div>
-            <SignatexFlow />
+            {user && <SignatexFlow />} {/* MODIFIED: Only show SignatexFlow if logged in */}
             <div className="text-center">
                 <h1 className="text-4xl font-bold">Signatex.co</h1>
                 <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
@@ -71,7 +73,8 @@ const Dashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
                 <div className="lg:col-span-1">
-                    <Watchlist />
+                    {/* MODIFIED: Conditionally render Watchlist or a login prompt */}
+                    {user ? <Watchlist /> : <Card><p className="text-center text-night-500 p-4">Log in to view your Watchlist.</p></Card>}
                 </div>
                 <div className="lg:col-span-2 space-y-8">
                     {/* Search Bar */}
@@ -111,146 +114,165 @@ const Dashboard: React.FC = () => {
                         )}
                     </Card>
 
-                    <Card>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
-                            <button onClick={handlePortfolioAnalysis} disabled={isAnalyzing} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
-                                {isAnalyzing ? 'Analyzing...' : 'Run Risk Analysis'}
-                            </button>
-                        </div>
-                        {isAnalyzing && <Spinner />}
-                        {portfolioAnalysis && (
-                            <div className="bg-night-700 p-4 rounded-lg">
-                                <h3 className="text-lg font-bold">Risk Level: <span className="text-brand-blue">{portfolioAnalysis.riskLevel}</span></h3>
-                                <p className="text-night-100 mt-2">Highest Sector Concentration: <span className="font-bold">{portfolioAnalysis.concentration.highestSector} ({formatPercentage(portfolioAnalysis.concentration.percentage)})</span></p>
-                                <h3 className="text-lg font-bold mt-4">Suggestions</h3>
-                                <ul className="list-disc list-inside text-night-100">
-                                    {portfolioAnalysis.suggestions.map((item, index) => <li key={index}>{item}</li>)}
-                                </ul>
+                    {/* MODIFIED: Portfolio Risk Analysis - now conditional */}
+                    {user ? (
+                        <Card>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
+                                <button onClick={handlePortfolioAnalysis} disabled={isAnalyzing} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                    {isAnalyzing ? 'Analyzing...' : 'Run Risk Analysis'}
+                                </button>
                             </div>
-                        )}
-                    </Card>
-
-                    <Card>
-                        <h2 className="text-2xl font-bold mb-4">Portfolio Overview</h2>
-                        {isPortfolioLoading ? <Spinner /> : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-                                <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
-                                    <BriefcaseIcon className="h-8 w-8 text-brand-blue" />
-                                    <div>
-                                        <div className="text-sm text-night-500">Total Value</div>
-                                        <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>
-                                    </div>
+                            {isAnalyzing && <Spinner />}
+                            {portfolioAnalysis && (
+                                <div className="bg-night-700 p-4 rounded-lg">
+                                    <h3 className="text-lg font-bold">Risk Level: <span className="text-brand-blue">{portfolioAnalysis.riskLevel}</span></h3>
+                                    <p className="text-night-100 mt-2">Highest Sector Concentration: <span className="font-bold">{portfolioAnalysis.concentration.highestSector} ({formatPercentage(portfolioAnalysis.concentration.percentage)})</span></p>
+                                    <h3 className="text-lg font-bold mt-4">Suggestions</h3>
+                                    <ul className="list-disc list-inside text-night-100">
+                                        {portfolioAnalysis.suggestions.map((item, index) => <li key={index}>{item}</li>)}
+                                    </ul>
                                 </div>
-                                <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
-                                    <GainLossIcon className={`h-8 w-8 ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`} />
-                                    <div>
-                                        <div className="text-sm text-night-500">Total Gain / Loss</div>
-                                        <div className={`text-2xl font-bold ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                                            {formatCurrency(totalGain)} ({formatPercentage(totalGainPercent)})
+                            )}
+                        </Card>
+                    ) : (
+                        <Card><p className="text-center text-night-500 p-4">Log in to run AI Portfolio Risk Analysis.</p></Card>
+                    )}
+
+                    {/* MODIFIED: Portfolio Overview - now conditional */}
+                    {user ? (
+                        <Card>
+                            <h2 className="text-2xl font-bold mb-4">Portfolio Overview</h2>
+                            {isPortfolioLoading ? <Spinner /> : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                                    <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
+                                        <BriefcaseIcon className="h-8 w-8 text-brand-blue" />
+                                        <div>
+                                            <div className="text-sm text-night-500">Total Value</div>
+                                            <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
+                                        <GainLossIcon className={`h-8 w-8 ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`} />
+                                        <div>
+                                            <div className="text-sm text-night-500">Total Gain / Loss</div>
+                                            <div className={`text-2xl font-bold ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                {formatCurrency(totalGain)} ({formatPercentage(totalGainPercent)})
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
+                                        <DollarSignIcon className="h-8 w-8 text-brand-green" />
+                                        <div>
+                                            <div className="text-sm text-night-500">Cash Balance</div>
+                                            <div className="text-2xl font-bold">{formatCurrency(portfolio.cash)}</div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
+                                        <BriefcaseIcon className="h-8 w-8 text-night-100 opacity-50" />
+                                        <div>
+                                            <div className="text-sm text-night-500">Holdings Value</div>
+                                            <div className="text-2xl font-bold">{formatCurrency(holdingsValue)}</div>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
-                                    <DollarSignIcon className="h-8 w-8 text-brand-green" />
-                                    <div>
-                                        <div className="text-sm text-night-500">Cash Balance</div>
-                                        <div className="text-2xl font-bold">{formatCurrency(portfolio.cash)}</div>
-                                    </div>
-                                </div>
-                                <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
-                                    <BriefcaseIcon className="h-8 w-8 text-night-100 opacity-50" />
-                                    <div>
-                                        <div className="text-sm text-night-500">Holdings Value</div>
-                                        <div className="text-2xl font-bold">{formatCurrency(holdingsValue)}</div>
-                                    </div>
-                                </div>
+                            )}
+                        </Card>
+                    ) : (
+                        <Card><p className="text-center text-night-500 p-4">Log in to view your Portfolio Overview.</p></Card>
+                    )}
+
+                    {/* MODIFIED: Stock Holdings - now conditional */}
+                    {user ? (
+                        <Card>
+                            <h2 className="text-2xl font-bold mb-4">My Stock Holdings</h2>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead className="border-b border-night-600">
+                                        <tr>
+                                            <th className="p-3">Ticker</th>
+                                            <th className="p-3">Shares</th>
+                                            <th className="p-3">Avg. Price</th>
+                                            <th className="p-3">Current Price</th>
+                                            <th className="p-3">Total Value</th>
+                                            <th className="p-3">Day's Gain/Loss</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {portfolio.holdings.length === 0 ? (
+                                            <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any stocks.</td></tr>
+                                        ) : (
+                                            portfolio.holdings.map(h => {
+                                                const totalValue = h.shares * h.currentPrice;
+                                                const gain = (h.currentPrice - h.purchasePrice) * h.shares;
+                                                const gainPercent = (gain / (h.purchasePrice * h.shares)) * 100;
+                                                return (
+                                                    <tr key={h.ticker} className="border-b border-night-700 hover:bg-night-700">
+                                                        <td className="p-3 font-bold"><Link to={`/stock/${h.ticker}`} className="text-brand-blue hover:underline">{h.ticker}</Link></td>
+                                                        <td className="p-3">{h.shares}</td>
+                                                        <td className="p-3">{formatCurrency(h.purchasePrice)}</td>
+                                                        <td className="p-3">{formatCurrency(h.currentPrice)}</td>
+                                                        <td className="p-3">{formatCurrency(totalValue)}</td>
+                                                        <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                            {formatCurrency(gain)} ({formatPercentage(gainPercent)})
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
-                        )}
-                    </Card>
+                        </Card>
+                    ) : (
+                         <Card><p className="text-center text-night-500 p-4">Log in to view your Stock Holdings.</p></Card>
+                    )}
 
-                    <Card>
-                        <h2 className="text-2xl font-bold mb-4">My Stock Holdings</h2>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="border-b border-night-600">
-                                    <tr>
-                                        <th className="p-3">Ticker</th>
-                                        <th className="p-3">Shares</th>
-                                        <th className="p-3">Avg. Price</th>
-                                        <th className="p-3">Current Price</th>
-                                        <th className="p-3">Total Value</th>
-                                        <th className="p-3">Day's Gain/Loss</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {portfolio.holdings.length === 0 ? (
-                                        <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any stocks.</td></tr>
-                                    ) : (
-                                        portfolio.holdings.map(h => {
-                                            const totalValue = h.shares * h.currentPrice;
-                                            const gain = (h.currentPrice - h.purchasePrice) * h.shares;
-                                            const gainPercent = (gain / (h.purchasePrice * h.shares)) * 100;
-                                            return (
-                                                <tr key={h.ticker} className="border-b border-night-700 hover:bg-night-700">
-                                                    <td className="p-3 font-bold"><Link to={`/stock/${h.ticker}`} className="text-brand-blue hover:underline">{h.ticker}</Link></td>
-                                                    <td className="p-3">{h.shares}</td>
-                                                    <td className="p-3">{formatCurrency(h.purchasePrice)}</td>
-                                                    <td className="p-3">{formatCurrency(h.currentPrice)}</td>
-                                                    <td className="p-3">{formatCurrency(totalValue)}</td>
-                                                    <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                                                        {formatCurrency(gain)} ({formatPercentage(gainPercent)})
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
-
-                    {/* NEW: Option Holdings Table */}
-                    <Card>
-                        <h2 className="text-2xl font-bold mb-4">My Option Holdings</h2>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="border-b border-night-600">
-                                    <tr>
-                                        <th className="p-3">Symbol</th>
-                                        <th className="p-3">Contracts</th>
-                                        <th className="p-3">Avg. Premium</th>
-                                        <th className="p-3">Current Premium</th>
-                                        <th className="p-3">Total Value</th>
-                                        <th className="p-3">Gain/Loss</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {portfolio.optionHoldings.length === 0 ? (
-                                        <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
-                                    ) : (
-                                        portfolio.optionHoldings.map(o => {
-                                            const totalValue = o.shares * o.currentPrice * 100;
-                                            const gain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
-                                            const gainPercent = (gain / (o.purchasePrice * o.shares * 100)) * 100;
-                                            return (
-                                                <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
-                                                    <td className="p-3 font-bold"><Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link></td>
-                                                    <td className="p-3">{o.shares}</td>
-                                                    <td className="p-3">{formatCurrency(o.purchasePrice)}</td>
-                                                    <td className="p-3">{formatCurrency(o.currentPrice)}</td>
-                                                    <td className="p-3">{formatCurrency(totalValue)}</td>
-                                                    <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                                                        {formatCurrency(gain)} ({formatPercentage(gainPercent)})
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
+                    {/* MODIFIED: Option Holdings Table - now conditional */}
+                    {user ? (
+                        <Card>
+                            <h2 className="text-2xl font-bold mb-4">My Option Holdings</h2>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead className="border-b border-night-600">
+                                        <tr>
+                                            <th className="p-3">Symbol</th>
+                                            <th className="p-3">Contracts</th>
+                                            <th className="p-3">Avg. Premium</th>
+                                            <th className="p-3">Current Premium</th>
+                                            <th className="p-3">Total Value</th>
+                                            <th className="p-3">Gain/Loss</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {portfolio.optionHoldings.length === 0 ? (
+                                            <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
+                                        ) : (
+                                            portfolio.optionHoldings.map(o => {
+                                                const totalValue = o.shares * o.currentPrice * 100;
+                                                const gain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
+                                                const gainPercent = (gain / (o.purchasePrice * o.shares * 100)) * 100;
+                                                return (
+                                                    <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
+                                                        <td className="p-3 font-bold"><Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link></td>
+                                                        <td className="p-3">{o.shares}</td>
+                                                        <td className="p-3">{formatCurrency(o.purchasePrice)}</td>
+                                                        <td className="p-3">{formatCurrency(o.currentPrice)}</td>
+                                                        <td className="p-3">{formatCurrency(totalValue)}</td>
+                                                        <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                            {formatCurrency(gain)} ({formatPercentage(gainPercent)})
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    ) : (
+                         <Card><p className="text-center text-night-500 p-4">Log in to view your Option Holdings.</p></Card>
+                    )}
                 </div>
             </div>
             <div className="mt-8">

@@ -1,7 +1,7 @@
 // App.tsx
-import React from 'react';
-import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './hooks/useAuth';
+import React, { useEffect } from 'react';
+import { HashRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'; // MODIFIED: Added useLocation
+import { AuthProvider, useAuth } from './src/hooks/useAuth.tsx'; 
 import { PortfolioProvider } from './hooks/usePortfolio';
 import { WatchlistProvider } from './hooks/useWatchlist';
 import Dashboard from './components/Dashboard';
@@ -9,8 +9,9 @@ import StockView from './components/StockView';
 import { TrendingUpIcon, BrainCircuitIcon, BriefcaseIcon } from './components/common/Icons';
 import StockPicker from './components/StockPicker';
 import HistoryLedger from './components/HistoryLedger';
-import Login from './components/Login';
-import { getAuth, signOut } from 'firebase/auth';
+import Login from './src/components/Login';
+import { auth } from './src/firebaseConfig';
+import { signOut } from 'firebase/auth';
 
 const App: React.FC = () => {
     return (
@@ -26,14 +27,35 @@ const App: React.FC = () => {
     );
 };
 
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { user, loading } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    useEffect(() => {
+        // MODIFIED: Allow the Dashboard ('/') page to load without a user.
+        const isPublicPath = location.pathname === '/' || location.pathname === '/login' || location.pathname.startsWith('/stock/');
+
+        if (!loading && !user && !isPublicPath) {
+            navigate('/login', { state: { from: location.pathname } });
+        }
+    }, [user, loading, navigate, location.pathname]);
+
+    // MODIFIED: Only render null if loading or if accessing a protected route without a user.
+    if (loading || (!user && !location.pathname.startsWith('/stock/') && location.pathname !== '/login' && location.pathname !== '/')) {
+        return null; 
+    }
+
+    return <>{children}</>;
+};
+
 const MainApp: React.FC = () => {
     const { user } = useAuth();
-    const auth = getAuth();
     const navigate = useNavigate();
 
     const handleSignOut = async () => {
         await signOut(auth);
-        navigate('/');
+        navigate('/login');
     };
 
     return (
@@ -68,11 +90,16 @@ const MainApp: React.FC = () => {
             </header>
             <main className="container mx-auto p-4 md:p-6 lg:p-8">
                 <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/stock/:ticker" element={<StockView />} />
-                    <Route path="/picker" element={<StockPicker />} />
-                    <Route path="/history" element={<HistoryLedger />} />
                     <Route path="/login" element={<Login />} />
+                    <Route path="/stock/:ticker" element={<StockView />} />
+                    
+                    {/* FIX: Move Dashboard out of ProtectedRoute */}
+                    <Route path="/" element={<Dashboard />} /> 
+                    
+                    {/* Protected Routes Wrapper */}
+                    <Route path="/picker" element={<ProtectedRoute><StockPicker /></ProtectedRoute>} />
+                    <Route path="/history" element={<ProtectedRoute><HistoryLedger /></ProtectedRoute>} />
+                    
                 </Routes>
             </main>
             <footer className="text-center p-4 text-night-500 text-xs border-t border-night-800 mt-8">
