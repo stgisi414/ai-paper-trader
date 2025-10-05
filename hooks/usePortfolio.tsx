@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
+import { useAuth } from './src/hooks/useAuth';
 import type { Portfolio, Holding, OptionHolding, Transaction } from '../types';
 import { INITIAL_CASH } from '../constants';
 import * as fmpService from '../services/fmpService';
 import { nanoid } from 'nanoid';
-import { getOptionsChain } from '../services/optionsProxyService'; // Import the options service
+import { getOptionsChain } from '../services/optionsProxyService';
 
 interface PortfolioContextType {
     portfolio: Portfolio;
@@ -18,139 +21,138 @@ interface PortfolioContextType {
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
-const getInitialPortfolio = (): Portfolio => {
-    try {
-        const savedPortfolio = localStorage.getItem('ai-paper-trader-portfolio');
-        if (savedPortfolio) {
-            return JSON.parse(savedPortfolio);
-        }
-    } catch (error) {
-        console.error("Failed to parse portfolio from localStorage", error);
-        localStorage.removeItem('ai-paper-trader-portfolio');
-    }
-    return {
+export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { user } = useAuth();
+    const [portfolio, setPortfolio] = useState<Portfolio>({
         cash: INITIAL_CASH,
         holdings: [],
         optionHoldings: [],
         initialValue: INITIAL_CASH,
-    };
-};
-
-const getInitialTransactions = (): Transaction[] => {
-    try {
-        const savedTransactions = localStorage.getItem('ai-paper-trader-transactions');
-        if (savedTransactions) {
-            return JSON.parse(savedTransactions);
-        }
-    } catch (error) {
-        console.error("Failed to parse transactions from localStorage", error);
-        localStorage.removeItem('ai-paper-trader-transactions');
-    }
-    return [];
-};
-
-export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [portfolio, setPortfolio] = useState<Portfolio>(getInitialPortfolio);
-    const [transactions, setTransactions] = useState<Transaction[]>(getInitialTransactions);
+    });
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    
-    useEffect(() => {
-        try {
-            localStorage.setItem('ai-paper-trader-portfolio', JSON.stringify(portfolio));
-        } catch (error) {
-            console.error("Failed to save portfolio to localStorage", error);
-        }
-    }, [portfolio]);
 
     useEffect(() => {
-        try {
-            localStorage.setItem('ai-paper-trader-transactions', JSON.stringify(transactions));
-        } catch (error) {
-            console.error("Failed to save transactions to localStorage", error);
+        if (!user) {
+            // Reset state for logged-out users and stop loading
+            setPortfolio({
+                cash: INITIAL_CASH,
+                holdings: [],
+                optionHoldings: [],
+                initialValue: INITIAL_CASH,
+            });
+            setTransactions([]);
+            setIsLoading(false);
+            return;
         }
-    }, [transactions]);
 
-    // This useEffect hook is now the single source of truth for all periodic updates.
+        // Set up listeners for real-time updates from Firestore
+        const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
+        const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
+
+        const unsubPortfolio = onSnapshot(portfolioDocRef, (doc) => {
+            if (doc.exists()) {
+                setPortfolio(doc.data() as Portfolio);
+            } else {
+                // If no portfolio exists, create a new one for the user
+                const initialPortfolio = {
+                    cash: INITIAL_CASH,
+                    holdings: [],
+                    optionHoldings: [],
+                    initialValue: INITIAL_CASH,
+                };
+                setDoc(portfolioDocRef, initialPortfolio);
+                setPortfolio(initialPortfolio);
+            }
+            setIsLoading(false);
+        });
+        
+        const unsubTransactions = onSnapshot(transactionsDocRef, (doc) => {
+            if (doc.exists()) {
+                setTransactions(doc.data().transactions || []);
+            } else {
+                // If no transactions doc exists, create one
+                 setDoc(transactionsDocRef, { transactions: [] });
+            }
+        });
+
+        // Cleanup function to unsubscribe from listeners on component unmount
+        return () => {
+            unsubPortfolio();
+            unsubTransactions();
+        };
+    }, [user]);
+
+    // This useEffect hook handles periodic price updates for all holdings
     useEffect(() => {
         const updateAllPrices = async () => {
-            setIsLoading(true);
+             if (!user || (portfolio.holdings.length === 0 && portfolio.optionHoldings.length === 0)) {
+                return; // No user or nothing to update
+            }
+            
             try {
-                // Use functional updates to get the latest state without causing dependency loops
-                setPortfolio(prevPortfolio => {
-                    const stockTickers = prevPortfolio.holdings.map(h => h.ticker);
-                    const optionTickers = [...new Set(prevPortfolio.optionHoldings.map(o => o.underlyingTicker))];
-                    const allTickers = [...new Set([...stockTickers, ...optionTickers])];
+                const stockTickers = portfolio.holdings.map(h => h.ticker);
+                const optionUnderlyingTickers = [...new Set(portfolio.optionHoldings.map(o => o.underlyingTicker))];
+                const allTickers = [...new Set([...stockTickers, ...optionUnderlyingTickers])];
 
-                    if (allTickers.length === 0) {
-                        setIsLoading(false);
-                        return prevPortfolio;
+                if (allTickers.length === 0) return;
+
+                const [quotes, ...optionChains] = await Promise.all([
+                    fmpService.getQuote(allTickers.join(',')),
+                    ...optionUnderlyingTickers.map(ticker => getOptionsChain(ticker))
+                ]);
+                
+                const flatOptionChains = optionChains.flat();
+                
+                const updatedPortfolio = { ...portfolio };
+                let changed = false;
+
+                updatedPortfolio.holdings = updatedPortfolio.holdings.map(holding => {
+                    const quote = quotes.find(q => q.symbol === holding.ticker);
+                    if (quote && quote.price !== holding.currentPrice) {
+                        changed = true;
+                        return { ...holding, currentPrice: quote.price };
                     }
-                    
-                    // Fetch all required data in parallel
-                    Promise.all([
-                        fmpService.getQuote(allTickers.join(',')),
-                        ...optionTickers.map(ticker => getOptionsChain(ticker))
-                    ]).then(([quotes, ...optionChains]) => {
-                        
-                        const flatOptionChains = optionChains.flat();
-
-                        setPortfolio(p => ({
-                            ...p,
-                            holdings: p.holdings.map(holding => {
-                                const quote = quotes.find(q => q.symbol === holding.ticker);
-                                return { ...holding, currentPrice: quote ? quote.price : holding.currentPrice };
-                            }),
-                            optionHoldings: p.optionHoldings.map(option => {
-                                const freshOptionData = flatOptionChains.find(o => o.symbol === option.symbol);
-                                return { ...option, currentPrice: freshOptionData?.close_price ?? option.currentPrice };
-                            })
-                        }));
-
-                    }).catch(error => {
-                        console.error("Failed to update all prices:", error);
-                    }).finally(() => {
-                        setIsLoading(false);
-                    });
-
-                    return prevPortfolio; // Return original state, async update will set it later
+                    return holding;
                 });
+
+                updatedPortfolio.optionHoldings = updatedPortfolio.optionHoldings.map(option => {
+                    const freshOptionData = flatOptionChains.find(o => o.symbol === option.symbol);
+                    if (freshOptionData && freshOptionData.close_price !== null && freshOptionData.close_price !== option.currentPrice) {
+                        changed = true;
+                        return { ...option, currentPrice: freshOptionData.close_price };
+                    }
+                    return option;
+                });
+
+                if (changed) {
+                    const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
+                    await setDoc(portfolioDocRef, updatedPortfolio, { merge: true });
+                }
+
             } catch (error) {
-                console.error("Error in updateAllPrices wrapper:", error);
-                setIsLoading(false);
+                console.error("Failed to update prices in Firestore:", error);
             }
         };
 
-        const handleExpiredOptions = () => {
-            setPortfolio(prevPortfolio => {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                const expiredOptions = prevPortfolio.optionHoldings.filter(o => new Date(o.expirationDate) < today);
-                if (expiredOptions.length === 0) return prevPortfolio;
-
-                // This part of the logic remains largely the same but is now safe inside the updater
-                // (For brevity, not re-pasting the entire expiration logic here, it is included in the final code)
-                
-                // Placeholder for the complex expiration logic you already have
-                // ... After calculating newCash, newHoldings, newTransactions, etc. ...
-                // setTransactions(prevT => [...prevT, ...newTransactions]);
-                // return { ...prevPortfolio, cash: newCash, holdings: newHoldings, optionHoldings: remainingOptionHoldings };
-                 return prevPortfolio; // In a real implementation, you'd return the updated portfolio
-            });
-        };
-
-        updateAllPrices();
-        handleExpiredOptions();
-        
-        const interval = setInterval(() => {
-            updateAllPrices();
-            handleExpiredOptions();
-        }, 60000);
-
+        updateAllPrices(); // Initial update
+        const interval = setInterval(updateAllPrices, 60000); // Update every minute
         return () => clearInterval(interval);
-    }, []); // Empty dependency array ensures this runs only once
 
-    const buyStock = useCallback((ticker: string, name: string, shares: number, price: number) => {
+    }, [user, portfolio.holdings, portfolio.optionHoldings]);
+
+
+    // Centralized function to save data to Firestore
+    const saveData = async (newPortfolio: Portfolio, newTransactions: Transaction[]) => {
+        if (!user) return;
+        const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
+        const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
+        await setDoc(portfolioDocRef, newPortfolio);
+        await setDoc(transactionsDocRef, { transactions: newTransactions });
+    };
+
+    const buyStock = useCallback(async (ticker: string, name: string, shares: number, price: number) => {
+        if (!user) { alert("You must be logged in to trade."); return; }
         const cost = shares * price;
         if (portfolio.cash < cost) {
             alert("Not enough cash to complete purchase.");
@@ -158,151 +160,97 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
 
         const newTransaction: Transaction = {
-            id: nanoid(),
-            type: 'BUY',
-            ticker,
-            shares,
-            price,
-            totalAmount: cost,
-            timestamp: Date.now(),
+            id: nanoid(), type: 'BUY', ticker, shares, price, totalAmount: cost, timestamp: Date.now(),
         };
-        setTransactions(prevT => [...prevT, newTransaction]);
+        const newTransactions = [...transactions, newTransaction];
 
-        setPortfolio(prev => {
-            const existingHoldingIndex = prev.holdings.findIndex(h => h.ticker === ticker);
-            let newHoldings = [...prev.holdings];
+        const newHoldings = [...portfolio.holdings];
+        const existingHoldingIndex = newHoldings.findIndex(h => h.ticker === ticker);
+        if (existingHoldingIndex > -1) {
+            const existing = newHoldings[existingHoldingIndex];
+            const totalShares = existing.shares + shares;
+            const totalCost = (existing.shares * existing.purchasePrice) + cost;
+            newHoldings[existingHoldingIndex] = { ...existing, shares: totalShares, purchasePrice: totalCost / totalShares };
+        } else {
+            newHoldings.push({ ticker, name, shares, purchasePrice: price, currentPrice: price });
+        }
+        
+        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash - cost, holdings: newHoldings };
+        await saveData(newPortfolio, newTransactions);
+    }, [portfolio, transactions, user]);
 
-            if (existingHoldingIndex > -1) {
-                const existing = newHoldings[existingHoldingIndex];
-                const totalShares = existing.shares + shares;
-                const totalCost = (existing.shares * existing.purchasePrice) + cost;
-                newHoldings[existingHoldingIndex] = {
-                    ...existing,
-                    shares: totalShares,
-                    purchasePrice: totalCost / totalShares,
-                };
-            } else {
-                newHoldings.push({ ticker, name, shares, purchasePrice: price, currentPrice: price });
-            }
-            return { ...prev, cash: prev.cash - cost, holdings: newHoldings };
-        });
-    }, [portfolio]);
-
-    const sellStock = useCallback((ticker: string, shares: number, price: number) => {
+    const sellStock = useCallback(async (ticker: string, shares: number, price: number) => {
+        if (!user) { alert("You must be logged in to trade."); return; }
         const existingHolding = portfolio.holdings.find(h => h.ticker === ticker);
-        if (!existingHolding) return;
-        if (existingHolding.shares < shares) {
+        if (!existingHolding || existingHolding.shares < shares) {
             alert("You don't own enough shares to sell.");
             return;
         }
 
         const proceeds = shares * price;
-        const costBasis = shares * existingHolding.purchasePrice;
-        const realizedPnl = proceeds - costBasis;
-        
-        const newTransaction: Transaction = {
-            id: nanoid(),
-            type: 'SELL',
-            ticker,
-            shares,
-            price,
-            totalAmount: proceeds,
-            timestamp: Date.now(),
-            purchasePrice: existingHolding.purchasePrice,
-            realizedPnl: realizedPnl,
-        };
-        setTransactions(prevT => [...prevT, newTransaction]);
+        const realizedPnl = (price - existingHolding.purchasePrice) * shares;
 
-        setPortfolio(prev => {
-            const newHoldings = [...prev.holdings];
+        const newTransaction: Transaction = {
+            id: nanoid(), type: 'SELL', ticker, shares, price, totalAmount: proceeds, timestamp: Date.now(), purchasePrice: existingHolding.purchasePrice, realizedPnl,
+        };
+        const newTransactions = [...transactions, newTransaction];
+
+        let newHoldings = [...portfolio.holdings];
+        if (existingHolding.shares === shares) {
+            newHoldings = newHoldings.filter(h => h.ticker !== ticker);
+        } else {
             const holdingIndex = newHoldings.findIndex(h => h.ticker === ticker);
-            
-            if (newHoldings[holdingIndex].shares === shares) {
-                newHoldings.splice(holdingIndex, 1);
-            } else {
-                newHoldings[holdingIndex] = {
-                    ...newHoldings[holdingIndex],
-                    shares: newHoldings[holdingIndex].shares - shares
-                };
-            }
-            return { ...prev, cash: prev.cash + proceeds, holdings: newHoldings };
-        });
-    }, [portfolio]);
-    
-    const buyOption = useCallback((option: OptionHolding) => {
+            newHoldings[holdingIndex] = { ...existingHolding, shares: existingHolding.shares - shares };
+        }
+
+        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash + proceeds, holdings: newHoldings };
+        await saveData(newPortfolio, newTransactions);
+    }, [portfolio, transactions, user]);
+
+    const buyOption = useCallback(async (option: OptionHolding) => {
+        if (!user) { alert("You must be logged in to trade."); return; }
         const cost = option.shares * option.purchasePrice * 100;
         if (portfolio.cash < cost) {
             alert("Not enough cash to complete option purchase.");
             return;
         }
-        
-        const newTransaction: Transaction = {
-            id: nanoid(),
-            type: 'OPTION_BUY',
-            ticker: option.underlyingTicker,
-            shares: option.shares,
-            price: option.purchasePrice,
-            totalAmount: cost,
-            timestamp: Date.now(),
-            optionSymbol: option.symbol,
-            optionType: option.optionType,
-            strikePrice: option.strikePrice,
-        };
-        setTransactions(prevT => [...prevT, newTransaction]);
-        
-        setPortfolio(prev => {
-            const newOptionHoldings = [...prev.optionHoldings, option];
-            return { ...prev, cash: prev.cash - cost, optionHoldings: newOptionHoldings };
-        });
-    }, [portfolio.cash]);
 
-    const sellOption = useCallback((symbol: string, shares: number, price: number) => {
+        const newTransaction: Transaction = {
+            id: nanoid(), type: 'OPTION_BUY', ticker: option.underlyingTicker, shares: option.shares, price: option.purchasePrice, totalAmount: cost, timestamp: Date.now(), optionSymbol: option.symbol, optionType: option.optionType, strikePrice: option.strikePrice,
+        };
+        const newTransactions = [...transactions, newTransaction];
+        
+        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash - cost, optionHoldings: [...portfolio.optionHoldings, option] };
+        await saveData(newPortfolio, newTransactions);
+    }, [portfolio, transactions, user]);
+
+    const sellOption = useCallback(async (symbol: string, shares: number, price: number) => {
+        if (!user) { alert("You must be logged in to trade."); return; }
         const existingOption = portfolio.optionHoldings.find(o => o.symbol === symbol);
-        if (!existingOption) {
-            alert("You do not own this option contract.");
-            return;
-        }
-        if (existingOption.shares < shares) {
+        if (!existingOption || existingOption.shares < shares) {
             alert("You don't own enough contracts to sell.");
             return;
         }
 
         const proceeds = shares * price * 100;
-        const costBasis = shares * existingOption.purchasePrice * 100;
-        const realizedPnl = proceeds - costBasis;
+        const realizedPnl = (price - existingOption.purchasePrice) * shares * 100;
 
         const newTransaction: Transaction = {
-            id: nanoid(),
-            type: 'OPTION_SELL',
-            ticker: existingOption.underlyingTicker,
-            shares: shares,
-            price: price,
-            totalAmount: proceeds,
-            timestamp: Date.now(),
-            purchasePrice: existingOption.purchasePrice,
-            realizedPnl: realizedPnl,
-            optionSymbol: existingOption.symbol,
-            optionType: existingOption.optionType,
-            strikePrice: existingOption.strikePrice,
+            id: nanoid(), type: 'OPTION_SELL', ticker: existingOption.underlyingTicker, shares, price, totalAmount: proceeds, timestamp: Date.now(), purchasePrice: existingOption.purchasePrice, realizedPnl, optionSymbol: existingOption.symbol, optionType: existingOption.optionType, strikePrice: existingOption.strikePrice,
         };
-        setTransactions(prevT => [...prevT, newTransaction]);
-
-        setPortfolio(prev => {
-            let newOptionHoldings = [...prev.optionHoldings];
+        const newTransactions = [...transactions, newTransaction];
+        
+        let newOptionHoldings = [...portfolio.optionHoldings];
+        if (existingOption.shares === shares) {
+            newOptionHoldings = newOptionHoldings.filter(o => o.symbol !== symbol);
+        } else {
             const optionIndex = newOptionHoldings.findIndex(o => o.symbol === symbol);
+            newOptionHoldings[optionIndex] = { ...existingOption, shares: existingOption.shares - shares };
+        }
 
-            if (newOptionHoldings[optionIndex].shares === shares) {
-                newOptionHoldings.splice(optionIndex, 1);
-            } else {
-                newOptionHoldings[optionIndex] = {
-                    ...newOptionHoldings[optionIndex],
-                    shares: newOptionHoldings[optionIndex].shares - shares,
-                };
-            }
-            return { ...prev, cash: prev.cash + proceeds, optionHoldings: newOptionHoldings };
-        });
-    }, [portfolio]);
-
+        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash + proceeds, optionHoldings: newOptionHoldings };
+        await saveData(newPortfolio, newTransactions);
+    }, [portfolio, transactions, user]);
 
     const totalValue = useMemo(() => {
         const holdingsValue = portfolio.holdings.reduce((acc, h) => acc + (h.shares * h.currentPrice), 0);
