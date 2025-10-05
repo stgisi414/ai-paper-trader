@@ -10,6 +10,8 @@ import {
 	Time,
 } from 'lightweight-charts';
 import { positionsBox } from '../helpers/dimensions/positions';
+import { User } from 'firebase/auth';
+import { loadDrawingsFromDB, saveDrawingsToDB, SavedDrawing } from '../../services/drawingService';
 
 // --- Helper Interfaces and Classes ---
 
@@ -195,6 +197,7 @@ export class RectangleDrawingTool {
     private _resizing: boolean = false;
     private _selectedRectangle: Rectangle | null = null;
     private _ticker: string;
+    private _user: User;
 
     private _isResizingActive: boolean = false;
     private _activeResizeHandle: string | null = null;
@@ -208,11 +211,12 @@ export class RectangleDrawingTool {
     private _moveButton?: HTMLDivElement;
     private _resizeButton?: HTMLDivElement;
 
-	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, toolbarContainer: HTMLDivElement, ticker: string, options: Partial<RectangleDrawingToolOptions>) {
+	constructor(chart: IChartApi, series: ISeriesApi<SeriesType>, toolbarContainer: HTMLDivElement, ticker: string, user: User, options: Partial<RectangleDrawingToolOptions>) {
 		this._chart = chart;
 		this._series = series;
 		this._toolbarContainer = toolbarContainer;
         this._ticker = ticker;
+        this._user = user;
 		this._options = options;
 		this._addToolbar();
         
@@ -584,22 +588,20 @@ export class RectangleDrawingTool {
 	private _addPreviewRectangle(p: Point) { this._previewRectangle = new PreviewRectangle(this._chart, this._series, p, p, { ...this._options }); this._series.attachPrimitive(this._previewRectangle); }
 	private _removePreviewRectangle() { if (this._previewRectangle) { this._series.detachPrimitive(this._previewRectangle); this._previewRectangle = undefined; } }
 
-    private _saveDrawings() {
-        const savedData = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2, angle: rect._angle, color: rect._options.fillColor }));
-        localStorage.setItem(`drawings_${this._ticker}`, JSON.stringify(savedData));
+    private _saveDrawings = () => {
+        const savedData: SavedDrawing[] = this._rectangles.map(rect => ({ p1: rect._p1, p2: rect._p2, angle: rect._angle, color: rect._options.fillColor }));
+        // NEW: Save to Firestore via service
+        saveDrawingsToDB(this._user, this._ticker, savedData);
     }
 
-    private _loadDrawings() {
-        const savedJSON = localStorage.getItem(`drawings_${this._ticker}`);
-        if (savedJSON) {
-            try {
-                const savedData = JSON.parse(savedJSON);
-                savedData.forEach((data: any) => this._addNewRectangle(data.p1, data.p2, data.angle, data.color));
-            } catch (e) {
-                console.error("Failed to load drawings", e);
-            }
-        }
-    }
+    private _loadDrawings = async () => {
+        // NEW: Load from Firestore via service
+        const savedData = await loadDrawingsFromDB(this._user, this._ticker);
+        
+        this._rectangles.forEach(r => this._removeRectangle(r));
+        this._rectangles = [];
+        savedData.forEach(data => this._addNewRectangle(data.p1, data.p2, data.angle, data.color));
+     }
 
     private _hexToRgba(hex: string, alpha: number = 0.25): string {
         const r = parseInt(hex.slice(1, 3), 16);

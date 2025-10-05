@@ -4,6 +4,7 @@ import type { FmpHistoricalData } from '../types';
 import { createChart, ColorType, UTCTimestamp, TimeRange } from 'lightweight-charts';
 import { RectangleDrawingTool } from './primitives/RectangleDrawingTool';
 import { manageChartDataHistory } from '../utils/localStorageManager';
+import { useAuth } from '../src/hooks/useAuth';
 
 interface CandlestickChartProps {
   data: FmpHistoricalData[];
@@ -11,11 +12,13 @@ interface CandlestickChartProps {
 }
 
 const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => {
+  const { user, loading: isAuthLoading } = useAuth();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const toolbarContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current || !toolbarContainerRef.current || data.length === 0) return;
+    if (isAuthLoading) return;
     
     manageChartDataHistory(ticker);
 
@@ -85,13 +88,18 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
     };
     chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleTimeRangeChange);
 
-    const drawingTool = new RectangleDrawingTool(chart, candlestickSeries, toolbarContainerRef.current, ticker, {});
+    let drawingTool: RectangleDrawingTool | null = null;
+    if (user) { // <--- ADDITION: Initialize drawing tool only if user is logged in
+        drawingTool = new RectangleDrawingTool(chart, candlestickSeries, toolbarContainerRef.current, ticker, user, {}); // <--- MODIFICATION: Pass 'user'
+    } else {
+        toolbarContainerRef.current.innerHTML = ''; // Clear toolbar if logged out
+    }
 
     const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
     window.addEventListener('resize', handleResize);
 
     return () => {
-      drawingTool.destroy();
+      drawingTool?.destroy();
       window.removeEventListener('resize', handleResize);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleTimeRangeChange);
       chart.remove();
@@ -99,13 +107,13 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
           toolbarContainerRef.current.innerHTML = '';
       }
     };
-  }, [data, ticker]);
+  }, [data, ticker, user, isAuthLoading]);
 
   return (
     <div className="relative">
       <div 
         ref={toolbarContainerRef} 
-        className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-night-800 p-2 rounded-md shadow-lg"
+        className={`absolute top-4 left-4 z-20 flex items-center gap-2 bg-night-800 p-2 rounded-md shadow-lg ${user ? '' : 'hidden'}`} 
       />
       <div ref={chartContainerRef} />
     </div>
