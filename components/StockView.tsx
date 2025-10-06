@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
@@ -72,8 +72,13 @@ const StockView: React.FC = () => {
     const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
     const [combinedRec, setCombinedRec] = usePersistentState<CombinedRec | null>(`combinedRec-${ticker}`, null);
     const [keyMetricsAnalysis, setKeyMetricsAnalysis] = useState<KeyMetricsAnalysis | null>(null);
+    
+    // START NEW OPTIONS STATE & LOGIC
     const [options, setOptions] = useState<AlpacaOptionContract[]>([]);
     const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
+    const [availableExpirationDates, setAvailableExpirationDates] = useState<string[]>([]);
+    const [selectedExpiry, setSelectedExpiry] = useState<string>('');
+    // END NEW OPTIONS STATE & LOGIC
 
     const [isLoading, setIsLoading] = useState(true);
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -86,13 +91,38 @@ const StockView: React.FC = () => {
     const [hasRunTechnicalAnalysis, setHasRunTechnicalAnalysis] = useState(false);
     const [hasRunAdvancedRecs, setHasRunAdvancedRecs] = useState(false);
 
+    // 1. Memoize availableExpirationDates for the dropdown
+    const expirationDates = useMemo(() => {
+        // Return sorted list of available dates from the API response
+        return availableExpirationDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    }, [availableExpirationDates]);
+
+    // 2. Effect to set the default selected expiry
+    useEffect(() => {
+        if (expirationDates.length > 0 && selectedExpiry === '') {
+            setSelectedExpiry(expirationDates[0]);
+        } else if (selectedExpiry !== '' && !expirationDates.includes(selectedExpiry)) {
+            // Reset if the previously selected expiry is no longer available (e.g., switched ticker)
+            setSelectedExpiry(expirationDates[0]);
+        }
+    }, [expirationDates, selectedExpiry]);
+    
+    // 3. Filter options by type AND selected expiration date
+    const filteredOptions = useMemo(() => {
+        return options.filter(o => 
+            o.type === (tradeTab === 'calls' ? 'call' : 'put') && 
+            o.expiration_date === selectedExpiry
+        );
+    }, [options, tradeTab, selectedExpiry]);
+
 
     useEffect(() => {
         if (!ticker) return;
         const fetchData = async () => {
             setIsLoading(true);
             try {
-                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsData] = await Promise.all([
+                // The new implementation of getOptionsChain returns an object { contracts, availableExpirationDates }
+                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsResult] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
                     fmpService.getHistoricalData(ticker, chartInterval),
@@ -115,7 +145,10 @@ const StockView: React.FC = () => {
                 setBalanceSheet(balanceSheetData[0] || null);
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
-                setOptions(optionsData); 
+                
+                // Update both contracts and the new expiration dates state
+                setOptions(optionsResult.contracts); 
+                setAvailableExpirationDates(optionsResult.availableExpirationDates); 
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
                 alert('Failed to load stock data. Please try again.');
@@ -209,6 +242,11 @@ const StockView: React.FC = () => {
             setIsAiLoading(false);
         }
     }, [profile, historicalData, analystRatings, setCombinedRec]);
+
+    const handleTradeTabChange = (tab: 'stock' | 'calls' | 'puts') => {
+        setTradeTab(tab);
+        setSelectedOption(null); // Clear selected option when switching tabs
+    };
 
     const handleSharesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
@@ -565,11 +603,11 @@ const StockView: React.FC = () => {
                             <h2 className="text-xl font-bold mb-4">Trade</h2>
                             <div className="border-b border-night-700 mb-4">
                                 <nav className="-mb-px flex space-x-4" aria-label="Tabs">
-                                    <button onClick={() => setTradeTab('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
-                                    <button onClick={() => setTradeTab('calls')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                    <button onClick={() => handleTradeTabChange('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
+                                    <button onClick={() => handleTradeTabChange('calls')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
                                         Calls <HelpIconWithTooltip tooltip="Call options give the holder the right, but not the obligation, to buy a stock at a specified price before a certain date." />
                                     </button>
-                                    <button onClick={() => setTradeTab('puts')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                    <button onClick={() => handleTradeTabChange('puts')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
                                         Puts <HelpIconWithTooltip tooltip="Put options give the holder the right, but not the obligation, to sell a stock at a specified price before a certain date." />
                                     </button>
                                 </nav>
@@ -581,6 +619,32 @@ const StockView: React.FC = () => {
                                         <div className="text-sm">Cash Available: <span className="font-bold">{formatCurrency(portfolio.cash)}</span></div>
                                     </>
                                 )}
+                                
+                                {/* ADDITION: Expiration Date Selector for Options */}
+                                {(tradeTab === 'calls' || tradeTab === 'puts') && (
+                                    <div>
+                                        <label htmlFor="expiry-select" className="block text-sm font-medium text-night-100 mb-1">Expiration Date</label>
+                                        <select
+                                            id="expiry-select"
+                                            value={selectedExpiry}
+                                            onChange={(e) => {
+                                                setSelectedExpiry(e.target.value);
+                                                setSelectedOption(null); // Clear selected option on date change
+                                            }}
+                                            className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none"
+                                            disabled={expirationDates.length === 0}
+                                        >
+                                            {expirationDates.length === 0 ? (
+                                                <option>Loading...</option>
+                                            ) : (
+                                                expirationDates.map(date => (
+                                                    <option key={date} value={date}>{date}</option>
+                                                ))
+                                            )}
+                                        </select>
+                                    </div>
+                                )}
+
                                 {(tradeTab === 'calls' || tradeTab === 'puts') && (
                                     <div className="h-48 overflow-auto bg-night-700 p-2 rounded-md">
                                         <table className="text-left text-xs">
@@ -618,29 +682,42 @@ const StockView: React.FC = () => {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {options.filter(o => o.type === (tradeTab === 'calls' ? 'call' : 'put')).map(option => (
-                                                    <tr key={option.symbol} onClick={() => setSelectedOption(option)} className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}>
-                                                        <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
-                                                        <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
-                                                        <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
-                                                        <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
-                                                        <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
-                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
-                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
-                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
-                                                        <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
+                                                {/* MODIFICATION: Use filteredOptions */}
+                                                {filteredOptions.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={10} className="text-center text-night-500 p-3">No {tradeTab} options for this date or loading data.</td>
                                                     </tr>
-                                                ))}
+                                                ) : (
+                                                    filteredOptions.map(option => (
+                                                        <tr 
+                                                            key={option.symbol} 
+                                                            onClick={() => setSelectedOption(option)} 
+                                                            className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}
+                                                        >
+                                                            <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
+                                                            <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
+                                                            <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
+                                                            <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
+                                                            <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
+                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
+                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
+                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
+                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
+                                                        </tr>
+                                                    ))
+                                                )}
                                             </tbody>
                                         </table>
                                     </div>
                                 )}
+                                
                                 {selectedOption && (tradeTab === 'calls' || tradeTab === 'puts') && (
                                      <div className="text-sm bg-night-700 p-2 rounded-md">
                                         Selected: {selectedOption.symbol} <br/>
                                         Contracts Owned: <span className="font-bold">{contractsOwned}</span>
                                     </div>
                                 )}
+                                
                                 <div>
                                     <label htmlFor="shares" className="block text-sm font-medium text-night-100 mb-1">{tradeTab === 'stock' ? 'Shares' : 'Contracts'}</label>
                                     <input
