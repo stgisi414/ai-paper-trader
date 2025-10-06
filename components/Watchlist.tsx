@@ -4,11 +4,11 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { usePortfolio } from '../hooks/usePortfolio';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
-import type { FmpSearchResult, CombinedRec, WatchlistPick } from '../types';
+import type { FmpSearchResult, CombinedRec, WatchlistPick, FmpHistoricalData, TechnicalAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
-import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon } from './common/Icons';
+import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, BrainCircuitIcon } from './common/Icons';
 
 const getSmartRecForTicker = (ticker: string): CombinedRec | null => {
     try {
@@ -27,9 +27,10 @@ const Watchlist: React.FC = () => {
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isRecLoading, setIsRecLoading] = useState(false);
+    const [individualRecLoading, setIndividualRecLoading] = useState<Set<string>>(new Set());
     const [recError, setRecError] = useState<string | null>(null);
     const [recommendations, setRecommendations] = useState<WatchlistPick[]>([]);
-
+    const [localRecsVersion, setLocalRecsVersion] = useState(0);
 
     // Refs for drag and drop
     const dragItem = useRef<number | null>(null);
@@ -88,6 +89,49 @@ const Watchlist: React.FC = () => {
         }
     }, [portfolio.holdings, watchlist]);
 
+    const handleGenerateRec = useCallback(async (ticker: string) => {
+        setIndividualRecLoading(prev => new Set(prev).add(ticker));
+        setRecError(null);
+        
+        try {
+            // 1. Fetch necessary data in parallel
+            const [profileData, ratingsData, historyData] = await Promise.all([
+                fmpService.getProfile(ticker).then(res => res[0] || null),
+                fmpService.getAnalystRatings(ticker).then(res => res || []),
+                fmpService.getHistoricalData(ticker, '1day'),
+            ]);
+
+            const historical = (historyData.historical as FmpHistoricalData[]).reverse();
+            
+            if (!profileData || ratingsData.length === 0 || historical.length === 0) {
+                 throw new Error("Missing required data for analysis.");
+            }
+
+            // 2. Generate Technical Analysis first (required for combined rec)
+            const technicals: TechnicalAnalysis = await geminiService.getTechnicalAnalysis(historical);
+
+            // 3. Get Combined Recommendation
+            const recommendation: CombinedRec = await geminiService.getCombinedRecommendations(
+                profileData, 
+                ratingsData, 
+                technicals
+            );
+
+            // 4. Save the recommendation to localStorage (same mechanism as StockView)
+            localStorage.setItem(`combinedRec-${ticker}`, JSON.stringify(recommendation));
+            setLocalRecsVersion(prev => prev + 1);
+
+        } catch (error) {
+            console.error(`AI Recommendation failed for ${ticker}:`, error);
+            alert(`The AI recommendation for ${ticker} could not be completed.`);
+        } finally {
+            setIndividualRecLoading(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(ticker);
+                return newSet;
+            });
+        }
+    }, []);
 
     return (
         <Card>
@@ -164,6 +208,8 @@ const Watchlist: React.FC = () => {
                                 watchlist.map((item, index) => {
                                     const priceChangeColor = item.change >= 0 ? 'text-brand-green' : 'text-brand-red';
                                     const smartRec = getSmartRecForTicker(item.ticker);
+                                    const isGeneratingRec = individualRecLoading.has(item.ticker); // NEW: Check loading status
+                                    
                                     return (
                                         <tr 
                                             key={item.ticker} 
@@ -185,12 +231,20 @@ const Watchlist: React.FC = () => {
                                                 {formatCurrency(item.change)} ({formatPercentage(item.changesPercentage)})
                                             </td>
                                             <td className="p-3 text-xs">
-                                                {smartRec ? (
+                                                {isGeneratingRec ? ( // NEW: Show spinner if generating
+                                                    <div className="flex justify-start"><Spinner /></div>
+                                                ) : smartRec ? (
                                                     <div className={`font-bold ${smartRec.sentiment === 'BULLISH' ? 'text-brand-green' : smartRec.sentiment === 'BEARISH' ? 'text-brand-red' : ''}`}>
-                                                        {smartRec.sentiment}: <span className="text-yellow-400">{smartRec.strategy}</span>
-                                                    </div>
+                                                        {smartRec.sentiment}: <span className="text-yellow-400">{smartRec.strategy.split('(')[0].trim()}</span>                                                    </div>
                                                 ) : (
-                                                    <span className="text-night-500">N/A</span>
+                                                     <button // MODIFICATION: Replace N/A with button
+                                                        onClick={() => handleGenerateRec(item.ticker)}
+                                                        className="text-brand-blue hover:text-yellow-400 disabled:opacity-50"
+                                                        disabled={isGeneratingRec}
+                                                        title="Generate AI Recommendation"
+                                                    >
+                                                        <BrainCircuitIcon className="h-5 w-5" />
+                                                    </button>
                                                 )}
                                             </td>
                                             <td className="p-3 text-right">

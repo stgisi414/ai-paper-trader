@@ -87,28 +87,43 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // This useEffect hook handles periodic price updates for all holdings
     useEffect(() => {
         const updateAllPrices = async () => {
-          /*
              if (!user || (portfolio.holdings.length === 0 && portfolio.optionHoldings.length === 0)) {
                 return; // No user or nothing to update
             }
             
             try {
+                // Get tickers for all owned stocks
                 const stockTickers = portfolio.holdings.map(h => h.ticker);
-                const optionUnderlyingTickers = [...new Set(portfolio.optionHoldings.map(o => o.underlyingTicker))];
-                const allTickers = [...new Set([...stockTickers, ...optionUnderlyingTickers])];
+                
+                // Get all unique Ticker + Expiration Date pairs for owned options
+                // This is crucial to ensure we fetch the correct option chains
+                const optionFetchPairs = Array.from(new Set(
+                    portfolio.optionHoldings.map(o => `${o.underlyingTicker}_${o.expirationDate}`)
+                )).map(pair => {
+                    const [ticker, date] = pair.split('_');
+                    return { ticker, date };
+                });
+                
+                // Consolidate all unique tickers (from stocks and options) to fetch stock quotes once
+                const allUniqueTickers = [...new Set([...stockTickers, ...optionFetchPairs.map(p => p.ticker)])];
 
-                if (allTickers.length === 0) return;
+                if (allUniqueTickers.length === 0) return;
 
-                const [quotes, ...optionChains] = await Promise.all([
-                    fmpService.getQuote(allTickers.join(',')),
-                    ...optionUnderlyingTickers.map(ticker => getOptionsChain(ticker))
+                // Fetch all data concurrently
+                const [quotes, ...optionChainsResults] = await Promise.all([
+                    // 1. Get latest stock prices for all underlying assets
+                    fmpService.getQuote(allUniqueTickers.join(',')),
+                    // 2. Get option chains for each specific expiration date we own
+                    ...optionFetchPairs.map(pair => getOptionsChain(pair.ticker, pair.date))
                 ]);
                 
-                const flatOptionChains = optionChains.flat();
+                // Combine all fetched option contracts into one array for easier searching
+                const flatOptionChains = optionChainsResults.flatMap(result => result.contracts);
                 
                 const updatedPortfolio = { ...portfolio };
                 let changed = false;
 
+                // Update stock prices (this part was already working correctly)
                 updatedPortfolio.holdings = updatedPortfolio.holdings.map(holding => {
                     const quote = quotes.find(q => q.symbol === holding.ticker);
                     if (quote && quote.price !== holding.currentPrice) {
@@ -118,15 +133,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     return holding;
                 });
 
+                // Update option prices
                 updatedPortfolio.optionHoldings = updatedPortfolio.optionHoldings.map(option => {
+                    // Find the specific option contract from our fetched data
                     const freshOptionData = flatOptionChains.find(o => o.symbol === option.symbol);
                     if (freshOptionData && freshOptionData.close_price !== null && freshOptionData.close_price !== option.currentPrice) {
                         changed = true;
+                        // Update the currentPrice (which is the premium)
                         return { ...option, currentPrice: freshOptionData.close_price };
                     }
                     return option;
                 });
 
+                // If any price changed, save the updated portfolio to Firestore
                 if (changed) {
                     const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
                     await setDoc(portfolioDocRef, updatedPortfolio, { merge: true });
@@ -135,11 +154,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             } catch (error) {
                 console.error("Failed to update prices in Firestore:", error);
             }
-          */
         };
 
-        updateAllPrices(); // Initial update
-        const interval = setInterval(updateAllPrices, 60000); // Update every minute
+        updateAllPrices(); // Run once on load
+        const interval = setInterval(updateAllPrices, 60000); // Then, refresh every minute
         return () => clearInterval(interval);
 
     }, [user, portfolio.holdings, portfolio.optionHoldings]);

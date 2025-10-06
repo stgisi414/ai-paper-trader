@@ -119,20 +119,13 @@ const StockView: React.FC = () => {
                 const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsInitialResult] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
-                    //fmpService.getHistoricalData(ticker, chartInterval),
-                    //fmpService.getNews(ticker, 10),
-                    //fmpService.getAnalystRatings(ticker),
-                    //fmpService.getIncomeStatement(ticker),
-                    //fmpService.getBalanceSheet(ticker),
-                    //fmpService.getCashFlowStatement(ticker),
-                    //fmpService.getInsiderTrading(ticker),
-                    Promise.resolve({ historical: [] }), // Pause historical data
-                    Promise.resolve([]), // Pause news
-                    Promise.resolve([]), // Pause ratings
-                    Promise.resolve([null]), // Pause income statement
-                    Promise.resolve([null]), // Pause balance sheet
-                    Promise.resolve([null]), // Pause cash flow
-                    Promise.resolve([]), // Pause insider trades
+                    fmpService.getHistoricalData(ticker, chartInterval),
+                    fmpService.getNews(ticker, 10),
+                    fmpService.getAnalystRatings(ticker),
+                    fmpService.getIncomeStatement(ticker),
+                    fmpService.getBalanceSheet(ticker),
+                    fmpService.getCashFlowStatement(ticker),
+                    fmpService.getInsiderTrading(ticker),
                     optionsProxyService.getOptionsChain(ticker), // This call gets the dates
                 ]);
                 

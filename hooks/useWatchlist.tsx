@@ -57,7 +57,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Effect to fetch price data when the list of tickers changes
     useEffect(() => {
         const updateWatchlistPrices = async () => {
-            /*
             if (watchlistTickers.length === 0) {
                 setWatchlistData([]);
                 setIsLoading(false);
@@ -87,7 +86,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             } finally {
                 setIsLoading(false);
             }
-            */
         };
 
         updateWatchlistPrices();

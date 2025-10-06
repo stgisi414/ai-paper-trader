@@ -9,8 +9,6 @@ export interface OptionsChainResult {
     availableExpirationDates: string[]; // List of all expiration dates
 }
 
-const OPTIONS_PROXY_URL = 'https://optionsproxy-gqoddifzlq-uc.a.run.app';
-
 interface GreeksResult {
     delta: number | null;
     gamma: number | null;
@@ -152,8 +150,14 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
 
         // Collect all contracts synchronously as the heavy calculation is now local
         optionsExpirationGroups.forEach((optionGroup: any) => {
-            // FIX: The yahoo-finance2 library now uses 'date' for the expiration in each group, not 'expirationDate'.
-            const expirationDateRaw = optionGroup.expirationDate;
+            // FIX: Handle both 'date' and 'expirationDate' properties from the API
+            const expirationDateRaw = optionGroup.date || optionGroup.expirationDate;
+
+            // ADDITION: If for some reason neither exists, skip this group.
+            if (!expirationDateRaw) {
+                console.warn("Skipping option group with no date:", optionGroup);
+                return; 
+            }
 
             const calls = optionGroup.calls.map((c: YahooOptionContract) => processContract(c, 'call', expirationDateRaw)).filter(Boolean) as AlpacaOptionContract[];
             const puts = optionGroup.puts.map((c: YahooOptionContract) => processContract(c, 'put', expirationDateRaw)).filter(Boolean) as AlpacaOptionContract[];

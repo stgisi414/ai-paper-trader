@@ -182,8 +182,9 @@ export const optionsProxy = onRequest(
       }
 
       // The library handles the date filtering internally.
-      const optionsChain = await yfClient.options(symbol.toUpperCase(), yfQueryOptions);
-      
+      const optionsChain = await yfClient.options(symbol.toUpperCase(),
+        yfQueryOptions);
+
       res.status(200).json(optionsChain);
     } catch (error) {
       logger.error("Yahoo Finance API Error (Internal Failure):", error);
