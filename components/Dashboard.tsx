@@ -1,3 +1,4 @@
+// components/Dashboard.tsx
 import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../hooks/usePortfolio';
@@ -251,7 +252,7 @@ const Dashboard: React.FC = () => {
                                             portfolio.optionHoldings.map(o => {
                                                 const totalValue = o.shares * o.currentPrice * 100;
                                                 const gain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
-                                                const gainPercent = (gain / (o.purchasePrice * o.shares * 100)) * 100;
+                                                const gainPercent = o.purchasePrice > 0 ? (gain / (o.purchasePrice * o.shares * 100)) * 100 : 0;
                                                 return (
                                                     <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
                                                         <td className="p-3 font-bold"><Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link></td>
