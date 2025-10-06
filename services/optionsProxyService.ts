@@ -47,13 +47,15 @@ export const getOptionsChain = async (symbol: string): Promise<OptionsChainResul
 
     try {
         const response = await fetch(url);
+        rawJsonText = await response.text();
+        // ADDITION: Log the raw response text to the console for debugging
+        console.log("Raw Options Data from Proxy:", rawJsonText);
+
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Options Proxy failed with status ${response.status}:`, errorText);
-            throw new Error(`Options Proxy failed: ${response.status} ${errorText}`);
+            console.error(`Options Proxy failed with status ${response.status}:`, rawJsonText);
+            throw new Error(`Options Proxy failed: ${response.status} ${rawJsonText}`);
         }
         
-        rawJsonText = await response.text();
         const data = JSON.parse(rawJsonText) as OptionsChainResponse;
 
         const optionsExpirationGroups = data.options;
@@ -63,6 +65,7 @@ export const getOptionsChain = async (symbol: string): Promise<OptionsChainResul
         const allExpirationDatesRaw = (data as any).expirationDates || []; 
         const availableExpirationDates = allExpirationDatesRaw
             .map((dateRaw: string | number) => {
+                // FIX: The raw date is a string, not a number. Pass it directly.
                 const dateObj = new Date(dateRaw);
                 return isNaN(dateObj.getTime()) ? null : dateObj.toISOString().split('T')[0]; 
             })
@@ -78,12 +81,14 @@ export const getOptionsChain = async (symbol: string): Promise<OptionsChainResul
         // FIX: Define processContract inside getOptionsChain to resolve ReferenceError
         const processContract = (c: YahooOptionContract, type: 'call' | 'put', expirationDateRaw: string | number): AlpacaOptionContract | null => {
             
+            // FIX: The raw date is a string, not a number. Pass it directly.
             const dateObj = new Date(expirationDateRaw);
             const expirationDate = isNaN(dateObj.getTime()) 
                                     ? 'N/A' 
                                     : dateObj.toISOString().split('T')[0]; 
             
             if (expirationDate === 'N/A') return null;
+
 
             const impliedVolatility = c.impliedVolatility || null;
 
@@ -127,8 +132,9 @@ export const getOptionsChain = async (symbol: string): Promise<OptionsChainResul
         // End processContract definition
 
         // Collect all contracts synchronously as the heavy calculation is now local
-        optionsExpirationGroups.forEach((optionGroup: any) => { 
-            const expirationDateRaw = optionGroup.expirationDate;
+        optionsExpirationGroups.forEach((optionGroup: any) => {
+            // FIX: The yahoo-finance2 library now uses 'date' for the expiration in each group, not 'expirationDate'.
+            const expirationDateRaw = optionGroup.date;
 
             const calls = optionGroup.calls.map((c: YahooOptionContract) => processContract(c, 'call', expirationDateRaw)).filter(Boolean) as AlpacaOptionContract[];
             const puts = optionGroup.puts.map((c: YahooOptionContract) => processContract(c, 'put', expirationDateRaw)).filter(Boolean) as AlpacaOptionContract[];
