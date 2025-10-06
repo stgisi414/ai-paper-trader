@@ -163,6 +163,8 @@ export const optionsProxy = onRequest(
         return;
       }
       const symbol = req.query.symbol;
+      const date = req.query.date as string | undefined;
+
       if (!symbol || typeof symbol !== "string") {
         logger.warn("Missing or invalid stock symbol in query.");
         res.status(400).json({
@@ -170,7 +172,16 @@ export const optionsProxy = onRequest(
         });
         return;
       }
-      const optionsChain = await yfClient.options(symbol.toUpperCase());
+
+      // FIX: Convert the date string from the query into a proper Date object
+      // for the yahoo-finance2 library.
+      const yfQueryOptions: { date?: Date } = {};
+      if (date) {
+        // new Date('2025-11-21') creates the correct object type
+        yfQueryOptions.date = new Date(`${date}T00:00:00.000Z`);
+      }
+
+      const optionsChain = await yfClient.options(symbol.toUpperCase(), yfQueryOptions);
       res.status(200).json(optionsChain);
     } catch (error) {
       logger.error("Yahoo Finance API Error (Internal Failure):", error);

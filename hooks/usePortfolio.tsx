@@ -87,6 +87,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // This useEffect hook handles periodic price updates for all holdings
     useEffect(() => {
         const updateAllPrices = async () => {
+          /*
              if (!user || (portfolio.holdings.length === 0 && portfolio.optionHoldings.length === 0)) {
                 return; // No user or nothing to update
             }
@@ -134,6 +135,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             } catch (error) {
                 console.error("Failed to update prices in Firestore:", error);
             }
+          */
         };
 
         updateAllPrices(); // Initial update

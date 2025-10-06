@@ -78,6 +78,7 @@ const StockView: React.FC = () => {
     const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
     const [availableExpirationDates, setAvailableExpirationDates] = useState<string[]>([]);
     const [selectedExpiry, setSelectedExpiry] = useState<string>('');
+    const [isOptionsLoading, setIsOptionsLoading] = useState(false);
     // END NEW OPTIONS STATE & LOGIC
 
     const [isLoading, setIsLoading] = useState(true);
@@ -91,50 +92,51 @@ const StockView: React.FC = () => {
     const [hasRunTechnicalAnalysis, setHasRunTechnicalAnalysis] = useState(false);
     const [hasRunAdvancedRecs, setHasRunAdvancedRecs] = useState(false);
 
-    // 1. Memoize availableExpirationDates for the dropdown
     const expirationDates = useMemo(() => {
-        // Return sorted list of available dates from the API response
         return availableExpirationDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     }, [availableExpirationDates]);
 
-    // 2. Effect to set the default selected expiry
-    useEffect(() => {
-        if (expirationDates.length > 0 && selectedExpiry === '') {
-            setSelectedExpiry(expirationDates[0]);
-        } else if (selectedExpiry !== '' && !expirationDates.includes(selectedExpiry)) {
-            // Reset if the previously selected expiry is no longer available (e.g., switched ticker)
-            setSelectedExpiry(expirationDates[0]);
-        }
-    }, [expirationDates, selectedExpiry]);
-    
-    // 3. Filter options by type AND selected expiration date
     const filteredOptions = useMemo(() => {
+        if (!options) return []; // Guard against options being null/undefined
+        
+        // The filter now correctly checks the option's expiration_date against the selected one.
         return options.filter(o => 
-            o.type === (tradeTab === 'calls' ? 'call' : 'put') && 
+            o.type === (tradeTab === 'calls' ? 'call' : 'put') &&
             o.expiration_date === selectedExpiry
         );
     }, [options, tradeTab, selectedExpiry]);
-
 
     useEffect(() => {
         if (!ticker) return;
         const fetchData = async () => {
             setIsLoading(true);
+            // Clear out old data when a new ticker is loaded
+            setAvailableExpirationDates([]);
+            setOptions([]);
+            setSelectedExpiry('');
             try {
-                // The new implementation of getOptionsChain returns an object { contracts, availableExpirationDates }
-                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsResult] = await Promise.all([
+                // The initial call to getOptionsChain here is ONLY to get the list of dates.
+                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsInitialResult] = await Promise.all([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
-                    fmpService.getHistoricalData(ticker, chartInterval),
-                    fmpService.getNews(ticker, 10),
-                    fmpService.getAnalystRatings(ticker),
-                    fmpService.getIncomeStatement(ticker),
-                    fmpService.getBalanceSheet(ticker),
-                    fmpService.getCashFlowStatement(ticker),
-                    fmpService.getInsiderTrading(ticker),
-                    optionsProxyService.getOptionsChain(ticker),
+                    //fmpService.getHistoricalData(ticker, chartInterval),
+                    //fmpService.getNews(ticker, 10),
+                    //fmpService.getAnalystRatings(ticker),
+                    //fmpService.getIncomeStatement(ticker),
+                    //fmpService.getBalanceSheet(ticker),
+                    //fmpService.getCashFlowStatement(ticker),
+                    //fmpService.getInsiderTrading(ticker),
+                    Promise.resolve({ historical: [] }), // Pause historical data
+                    Promise.resolve([]), // Pause news
+                    Promise.resolve([]), // Pause ratings
+                    Promise.resolve([null]), // Pause income statement
+                    Promise.resolve([null]), // Pause balance sheet
+                    Promise.resolve([null]), // Pause cash flow
+                    Promise.resolve([]), // Pause insider trades
+                    optionsProxyService.getOptionsChain(ticker), // This call gets the dates
                 ]);
                 
+                // ... (all the setQuote, setProfile, etc. calls remain the same)
                 setQuote(quoteData[0] || null);
                 setProfile(profileData[0] || null);
                 const historical = historyData.historical ? historyData.historical.reverse() : (historyData as any);
@@ -146,9 +148,12 @@ const StockView: React.FC = () => {
                 setCashFlowStatement(cashFlowData[0] || null);
                 setInsiderTrades(insiderTradingData);
                 
-                // Update both contracts and the new expiration dates state
-                setOptions(optionsResult.contracts); 
-                setAvailableExpirationDates(optionsResult.availableExpirationDates); 
+                if (optionsInitialResult.availableExpirationDates.length > 0) {
+                    const sortedDates = optionsInitialResult.availableExpirationDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+                    setAvailableExpirationDates(sortedDates);
+                    // Set the first date as the selected one, which will trigger the next useEffect
+                    setSelectedExpiry(sortedDates[0]); 
+                }
             } catch (error) {
                 console.error("Failed to fetch stock data:", error);
                 alert('Failed to load stock data. Please try again.');
@@ -158,6 +163,26 @@ const StockView: React.FC = () => {
         };
         fetchData();
     }, [ticker, chartInterval]);
+
+    // ADDITION: New effect to fetch options data when the selected expiry changes
+    useEffect(() => {
+        if (!ticker || !selectedExpiry) return;
+
+        const fetchOptionsForDate = async () => {
+            setIsOptionsLoading(true);
+            setOptions([]); // Clear out old options before fetching new ones
+            try {
+                const optionsResult = await optionsProxyService.getOptionsChain(ticker, selectedExpiry);
+                setOptions(optionsResult.contracts);
+            } catch (error) {
+                console.error(`Failed to fetch options for date ${selectedExpiry}:`, error);
+            } finally {
+                setIsOptionsLoading(false);
+            }
+        };
+
+        fetchOptionsForDate();
+    }, [selectedExpiry, ticker]); // This effect now handles fetching options data
 
     const handleKeyMetricsAnalysis = useCallback(async () => {
         if (!quote || !profile) return;
@@ -682,10 +707,13 @@ const StockView: React.FC = () => {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {/* MODIFICATION: Use filteredOptions */}
-                                                {filteredOptions.length === 0 ? (
+                                                {isOptionsLoading ? (
                                                     <tr>
-                                                        <td colSpan={10} className="text-center text-night-500 p-3">No {tradeTab} options for this date or loading data.</td>
+                                                        <td colSpan={10} className="text-center p-3"><Spinner /></td>
+                                                    </tr>
+                                                ) : filteredOptions.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={10} className="text-center text-night-500 p-3">No {tradeTab} options for this date.</td>
                                                     </tr>
                                                 ) : (
                                                     filteredOptions.map(option => (
