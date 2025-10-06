@@ -5,17 +5,16 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
-      // ADDITION 1: Alias for Firebase modules to prevent resolution issues
       'firebase/auth': 'firebase/auth',
       'firebase/firestore': 'firebase/firestore',
     },
   },
   define: {
-    // ADDITION 2: Polyfill for Buffer needed by some Firebase dependencies
     'global.Buffer': {} 
   },
   server: {
     proxy: {
+      // ALL local dev proxies should target the Firebase Hosting emulator
       '/geminiProxy': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
@@ -28,12 +27,13 @@ export default defineConfig({
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
-      '/userSearch': {
-        // Target the full URL including the project ID, region, and function name
-        target: 'http://127.0.0.1:5001/signatex-trader/us-central1/userSearch',
+      '/optionsProxy': {
+        target: 'http://127.0.0.1:5000',
         changeOrigin: true,
-        // Rewrite: Strip the leading '/userSearch' so only '?query=...' is appended to the target
-        rewrite: (path) => path.replace('/userSearch', ''), 
+      },
+      '/userSearch': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
       },
     },
   },

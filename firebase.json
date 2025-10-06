@@ -19,7 +19,10 @@
         "source": "/alpacaProxy",
         "function": "alpacaProxy"
       },
-      // ADDITION
+      {
+        "source": "/optionsProxy",
+        "function": "optionsProxy"
+      },
       {
         "source": "/userSearch",
         "function": "userSearch"

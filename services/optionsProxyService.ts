@@ -1,9 +1,7 @@
-// stgisi414/ai-paper-trader/ai-paper-trader-fa536df4e34394f0f513b8638ea6ea2daf383914/services/optionsProxyService.ts
-
 import { AlpacaOptionContract } from '../types';
-// IMPORT CLIENT-SIDE CALCULATOR
 import { calculateGreeks } from '../utils/optionsCalculator';
 import type { YahooOptionContract } from '../types';
+import { OPTIONS_PROXY_URL } from '../constants';
 
 
 export interface OptionsChainResult {
@@ -43,11 +41,11 @@ interface OptionsChainResponse {
 export const getOptionsChain = async (symbol: string, date?: string): Promise<OptionsChainResult> => {
     if (!symbol) return { contracts: [], availableExpirationDates: [] };
 
-    // MODIFICATION: Append the date to the URL if it exists
-    let url = `${OPTIONS_PROXY_URL}?symbol=${symbol.toUpperCase()}`;
+    const params = new URLSearchParams({ symbol: symbol.toUpperCase() });
     if (date) {
-        url += `&date=${date}`;
+        params.append('date', date);
     }
+    const url = `${OPTIONS_PROXY_URL}?${params.toString()}`;
 
     let rawJsonText = '';
 
