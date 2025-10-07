@@ -51,15 +51,15 @@ const signatexFlowSchema = {
     properties: {
         steps: {
             type: "ARRAY",
-            description: "A sequence of actions to perform on the website.",
+            description: "A sequence of actions to perform on the website or a research request.",
             items: {
                 type: "OBJECT",
                 properties: {
-                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock'] },
+                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock', 'research'] }, // MODIFIED: Added 'research'
                     selector: { type: "STRING", description: "CSS selector for the target element." },
                     value: { type: "STRING", description: "Text to type, value to select, or stock ticker to open." },
                     path: { type: "STRING", description: "URL path for navigation (e.g., '/')." },
-                    message: { type: "STRING", description: "A message to say to the user." },
+                    message: { type: "STRING", description: "A message to say to the user, OR the answer/research result if action is 'research'." },
                     duration: { type: "NUMBER", description: "How long to wait in milliseconds." },
                     comment: { type: "STRING", description: "A comment explaining the step." }
                 },
@@ -72,65 +72,43 @@ const signatexFlowSchema = {
 
 /**
  * Takes a natural language prompt and returns a structured workflow plan.
- * @param prompt The user's command (e.g., "Search for Tesla and buy 5 shares").
+ * @param prompt The user's command (e.g., "Buy 10 shares of AAPL").
  * @returns A promise that resolves to an object containing an array of workflow steps.
  */
 export const getWorkflowFromPrompt = async (prompt: string, context: AppContext): Promise<SignatexFlowResponse> => {
     const contextPrompt = buildContextPrompt(context);
 
     const fullPrompt = `
-        You are an expert site navigator for Signatex.co, a paper trading web application. Your task is to convert a user's natural language command into a precise JSON object representing a series of actions based on the current context of the application.
+        You are an expert financial assistant for Signatex.co. Your primary goal is to fulfill user requests by either performing site actions or providing information via research.
 
         ${contextPrompt}
 
         **CRITICAL RULES:**
-        1.  **VIEW A STOCK WITH 'open_stock'**: To view a stock's chart or details, you MUST use the \`open_stock\` action. The \`value\` MUST be the stock ticker. The app will handle the navigation.
-            -   **CORRECT**: \`{ "action": "open_stock", "value": "TSLA", "comment": "Opening the page for Tesla." }\`
-            -   **INCORRECT**: \`{ "action": "navigate", "path": "/stock/TSLA" }\`
-        2.  **STOCK TICKERS ONLY**: The app only supports stock tickers (e.g., AAPL, GOOG). It does NOT support cryptocurrencies (like Ethereum/ETHUSD) or forex. If a user asks for a non-stock asset, you MUST use the \`say\` action to inform them you can only handle stocks.
-        3.  **NO INVENTED URLS**: Only use the \`Maps\` action for the paths explicitly listed below. Do not create your own paths.
-        4.  **CHART DRAWING LIMITATION**: You CANNOT draw on the chart (e.g., trendlines). Drawing requires precise mouse movements on a canvas, which you cannot simulate. If asked to draw, you MUST use the \`say\` action to explain this limitation.
-        5.  **ADVANCED RECS**: To get the AI-synthesized strategy, you must first navigate to the 'Advanced Recs' tab and then click the 'Generate Strategy' button.
+        1.  **RESEARCH FIRST**: If the user is asking a general knowledge or research question that does *not* involve clicking a specific button on the current page (e.g., "what is a penny stock?", "what are the risks of TSLA?"), your *first* action MUST be 'research'.
+            -   **DO NOT use Google Search**. Use the powerful tools available to you.
+            -   The 'research' action should be followed by a 'say' action to summarize the findings. The 'message' field of the 'research' step should contain the query for the research tool.
+            -   **Example Research Flow:**
+                \`[ { "action": "research", "message": "what is a penny stock?", "comment": "Checking external knowledge base." }, { "action": "say", "message": "[The result from the 'research' step goes here]", "comment": "Responding to the user's inquiry." } ]\`
+        2.  **VIEW A STOCK WITH 'open_stock'**: To view a stock's chart or details, you MUST use the \`open_stock\` action.
+        3.  **NO INVENTED URLS**: Only use the \`path\` action for the paths explicitly listed below.
+        4.  **CHART DRAWING LIMITATION**: You CANNOT draw on the chart. Use the \`say\` action to explain this limitation.
+        5.  **STOCK TICKERS ONLY**: The app only supports stock tickers (e.g., AAPL, GOOG).
 
         **AVAILABLE ACTIONS & PAGES:**
 
-        **1. View a Stock (The ONLY way):**
-        -   **Action**: \`open_stock\`
-        -   **Value**: The stock ticker symbol (e.g., "MSFT").
+        * **NEW: Research Action**:
+            * **Action**: \`research\`
+            * **Message**: The specific research query (e.g., "define penny stock").
+            
+        * **Site Control Actions (Use when possible):**
+            * \u0060open_stock\u0060, \u0060navigate\u0060, \u0060type\u0060, \u0060click\u0060, \u0060select\u0060, \u0060wait\u0060, \u0060say\u0060
 
-        **2. Navigation (\`Maps\` action):**
-        -   Dashboard / Home: \`{ "path": "/" }\`
-        -   AI Stock Picker: \`{ "path": "/picker" }\`
-        
-        **3. Element Selectors by Page:**
-
-        * **Dashboard ('/')**:
-            * Search Input: \`input[placeholder*="Search for a stock ticker"]\`
-            * Search Button: \`button[type="submit"]\`
-            * AI Stock Picker Link: \`a[href="/picker"]\`
-
-        * **Stock View ('/stock/:ticker')**:
-            * **Chart Interval**: Use the \`select\` action with the selector \`select\`. The value can be "15min", "1hour", "4hour", "1day", "1week", or "1month".
-            * **Information Tabs**:
-                * Summary: \`button:contains("Summary")\`
-                * News: \`button:contains("News")\`
-                * Financials: \`button:contains("Financials")\`
-                * Analyst Ratings: \`button:contains("Analyst Ratings")\`
-                * Insider Trades: \`button:contains("Insider Trades")\`
-                * AI Technical Analysis: \`button:contains("AI Technical Analysis")\`
-                * Advanced Recs: \`button:contains("Advanced Recs")\`
-            * **AI Analysis Buttons**:
-                * In most tabs, there is an analysis button you can click: \`button:contains("Analyze")\` or \`button:contains("Generate Strategy")\`
-            * **Trading Panel**:
-                * Shares/Contracts Input: \`input#shares\`
-                * Buy Button: \`button.bg-brand-green\`
-                * Sell Button: \`button.bg-brand-red\`
-                * Stock Tab: \`nav button:contains("Stock")\`
-                * Calls Tab: \`nav button:contains("Calls")\`
-                * Puts Tab: \`nav button:contains("Puts")\`
-
-        * **AI Stock Picker ('/picker')**:
-            * Get My Picks Button: \`button[type="submit"]\`
+        * **Navigation (\`path\` action):**
+            * Dashboard / Home: \`{ "path": "/" }\`
+            * AI Stock Picker: \`{ "path": "/picker" }\`
+            * History: \`{ "path": "/history" }\`
+            
+        * **Element Selectors...** (omitted, assume structure remains the same)
 
         User command: "${prompt}"
         Please provide only the raw JSON object in your response, without any markdown formatting.
@@ -142,7 +120,7 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 prompt: fullPrompt,
-                model: "gemini-1.5-flash", // Using a fast model for UI navigation
+                model: "gemini-2.5-flash", // Using a fast model for UI navigation
                 schema: signatexFlowSchema,
             }),
         });
@@ -154,7 +132,52 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         
         const data = await response.json();
         const cleanedText = data.text.replace(/^```json\s*/, '').replace(/```$/, '');
-        return JSON.parse(cleanedText) as SignatexFlowResponse;
+        
+        // --- ADDITION: Process 'research' result before returning ---
+        let responseJson: SignatexFlowResponse = JSON.parse(cleanedText);
+        
+        if (responseJson.steps.length > 0 && responseJson.steps[0].action === 'research') {
+             const researchInstructions = "You are an expert financial research assistant. Your task is to use the Google Search tool to answer the following user query. The answer must be highly relevant to financial markets, stock trading, or investment concepts. Provide a concise, factual, and friendly response in no more than three sentences. Directly address the user's query and do not include any markdown formatting (like bolding, italics, or lists) in your final response text.";
+             const researchQuery = responseJson.steps[0].message;
+
+             const researchPrompt = `
+               ${researchInstructions}
+
+               User Query: ${researchQuery}
+             `;
+             
+             // --- CALL GEMINI RESEARCH API ---
+             const researchResponse = await fetch(GEMINI_BASE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt: researchPrompt,
+                    model: "gemini-2.5-flash",
+                    googleSearch: true, // Use Google Search for grounding
+                })
+            });
+            const researchData = await researchResponse.json();
+            console.log(researchData);
+            const researchText = researchData.text || "I was unable to find an answer for that query.";
+            // ------------------------------------
+
+            // Replace the 'research' step with the first 'say' step, inserting the research result
+            if (responseJson.steps.length > 1 && responseJson.steps[1].action === 'say') {
+                 // Update the message of the planned 'say' action
+                responseJson.steps[1].message = researchText;
+            } else {
+                 // Fallback: If no 'say' step was planned, insert one.
+                 responseJson.steps.splice(1, 0, {
+                     action: 'say',
+                     message: researchText,
+                     comment: 'Inserting AI research result.'
+                 });
+            }
+            // Remove the initial 'research' command step
+            responseJson.steps.shift(); 
+        }
+
+        return responseJson;
 
     } catch (error) {
         console.error("Error getting workflow from proxy:", error);

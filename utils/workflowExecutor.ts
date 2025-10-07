@@ -81,6 +81,12 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
         case 'wait':
             await delay(step.duration || 500);
             break;
+
+        case 'research':
+        case 'say':
+             // 'say' action is handled in ChatPanel, no action needed here.
+             // 'research' action is pre-processed in signatexFlowService.ts and should not reach here.
+             break;
         
         default:
             console.warn(`Unknown action type: ${step.action}`);

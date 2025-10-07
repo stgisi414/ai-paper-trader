@@ -413,3 +413,10 @@ export interface User {
   displayName: string;
   photoURL: string;
 }
+
+export interface AiChatMessage {
+    id: string;
+    sender: 'user' | 'bot' | 'system';
+    text: string;
+    timestamp: number;
+}

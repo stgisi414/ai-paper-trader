@@ -8,13 +8,13 @@ import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../src/hooks/useAuth';
 import { subscribeToChat, sendMessage, ChatMessage, clearUnreadMessage } from '../services/chatService';
-import { User } from '../types';
+import { User, AiChatMessage } from '../types';
 import { useNotification } from '../hooks/useNotification';
+import { collection, onSnapshot, query, orderBy, addDoc, limit } from 'firebase/firestore';
+import { db } from '../src/firebaseConfig';
+import { nanoid } from 'nanoid';
 
-interface LocalMessage {
-    sender: 'user' | 'bot' | 'system';
-    text: string;
-}
+const CHAT_PANEL_OPEN_KEY = 'signatexChatOpen';
 
 type ChatMode = 'ai' | 'private';
 
@@ -25,14 +25,21 @@ const ChatPanel: React.FC = () => {
     const params = useParams();
 
     // UI/State Management
-    const [isOpen, setIsOpen] = useState(false);
+    const [isOpen, setIsOpen] = useState(() => {
+        try {
+            const savedState = localStorage.getItem(CHAT_PANEL_OPEN_KEY);
+            return savedState === 'true';
+        } catch {
+            return false;
+        }
+    });
     const [mode, setMode] = useState<ChatMode>('ai');
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isListening, setIsListening] = useState(false);
     
     // Message Arrays
-    const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]); // For AI chat
+    const [localMessages, setLocalMessages] = useState<AiChatMessage[]>([]); // For AI chat
     const [privateChatMessages, setPrivateChatMessages] = useState<ChatMessage[]>([]); // For Private chat (Firestore sync)
     
     // AI Flow State
@@ -49,20 +56,52 @@ const ChatPanel: React.FC = () => {
     const chatBodyRef = useRef<HTMLDivElement>(null);
     const { chatTarget, openChatWith } = useNotification();
 
+    // --- Firestore Operations for AI Chat ---
+
+    const AI_CHAT_COLLECTION = 'aiChatMessages';
+
+    // Function to save a message to AI Chat history
+    const saveAiMessage = async (sender: AiChatMessage['sender'], text: string) => {
+        if (!user) return;
+        const messagesRef = collection(db, 'users', user.uid, AI_CHAT_COLLECTION);
+        try {
+             await addDoc(messagesRef, {
+                id: nanoid(),
+                sender,
+                text,
+                timestamp: Date.now(),
+            });
+        } catch (error) {
+            console.error("Error saving AI chat message:", error);
+        }
+    };
+
     // --- Message Management Helpers ---
 
-    const addLocalMessage = (sender: LocalMessage['sender'], text: string) => {
-        setLocalMessages(prev => [...prev, { sender, text }]);
-    };
-    
-    const currentMessages = mode === 'private' 
-        ? privateChatMessages.map(msg => ({ 
-            sender: msg.senderId === user?.uid ? 'user' : 'bot', // Simplify non-user messages as 'bot'
-            text: msg.text
-        }))
-        : localMessages;
+    // Map Firestore messages to a simple format for rendering
+    const currentMessages = useMemo(() => {
+        if (mode === 'private') {
+             return privateChatMessages.map(msg => ({ 
+                sender: msg.senderId === user?.uid ? 'user' : 'bot', 
+                text: msg.text
+            }));
+        }
+        // AI chat uses AiChatMessage[] directly
+        return localMessages.map(msg => ({ 
+            sender: msg.sender, 
+            text: msg.text 
+        }));
+    }, [mode, privateChatMessages, localMessages, user]);
 
     // --- Effects ---
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(CHAT_PANEL_OPEN_KEY, String(isOpen));
+        } catch (error) {
+            console.error("Failed to save chat panel state to localStorage:", error);
+        }
+    }, [isOpen]);
 
     useEffect(() => {
         if (chatBodyRef.current) {
@@ -71,13 +110,34 @@ const ChatPanel: React.FC = () => {
     }, [localMessages, privateChatMessages]);
 
     useEffect(() => {
-        if (!user && isOpen) {
+        if (!user) {
             setIsOpen(false);
             setLocalMessages([]);
             setPrivateChatMessages([]);
             setPrivateChatTarget(null);
         }
     }, [user, isOpen]);
+
+    // Effect to subscribe to AI Chat messages (loads chat history)
+    useEffect(() => {
+        if (!user || mode !== 'ai') {
+            setLocalMessages([]);
+            return;
+        }
+
+        // Fetch last 50 AI messages ordered by timestamp
+        const messagesRef = collection(db, 'users', user.uid, AI_CHAT_COLLECTION);
+        const q = query(messagesRef, orderBy('timestamp', 'desc'), limit(50));
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const messages = snapshot.docs
+                .map(doc => doc.data() as AiChatMessage)
+                .sort((a, b) => a.timestamp - b.timestamp); // Sort ascending for correct display order
+            setLocalMessages(messages);
+        });
+
+        return () => unsubscribe();
+    }, [user, mode]);
 
     useEffect(() => {
         if (chatTarget && user) {
@@ -108,9 +168,8 @@ const ChatPanel: React.FC = () => {
             }
         );
 
-        // Notify user about new chat
-        addLocalMessage('system', `Chat with ${privateChatTarget.displayName} opened.`);
-
+        // Note: System message about opening chat is now removed to avoid duplication/confusion
+        
         return () => unsubscribe();
     }, [mode, user, privateChatTarget]);
 
@@ -133,7 +192,7 @@ const ChatPanel: React.FC = () => {
 
     const runNextStep = useCallback(async (steps: WorkflowStep[], index: number) => {
         if (index >= steps.length) {
-            addLocalMessage('bot', "I've completed your request. Let me know if there is anything else I can do!");
+            saveAiMessage('bot', "I've completed your request. Let me know if there is anything else I can do!");
             setIsLoading(false);
             cleanupHighlight();
             return;
@@ -143,12 +202,14 @@ const ChatPanel: React.FC = () => {
         setCurrentStepIndex(index);
 
         if (step.action === 'say') {
-            addLocalMessage('bot', step.message || '');
+            saveAiMessage('bot', step.message || '');
         } else {
              try {
+                // If it's a navigational step, first indicate what's happening
+                saveAiMessage('system', step.comment); // Save comment as system message
                 await executeStep(step, navigate);
              } catch(e) {
-                addLocalMessage('bot', `I ran into an issue on that last step. Let's stop here.`);
+                saveAiMessage('bot', `I ran into an issue on that last step. Let's stop here.`);
                 setIsLoading(false);
                 cleanupHighlight();
                 return;
@@ -188,43 +249,45 @@ const ChatPanel: React.FC = () => {
         e.preventDefault();
         if (!inputValue.trim() || isLoading) return;
 
-        // Private chat uses Firestore, AI chat uses local state array
-        if (mode === 'ai') {
-            addLocalMessage('user', inputValue); 
-        }
-
-        setIsLoading(true);
         const userMessage = inputValue;
         setInputValue('');
-        setWorkflow([]);
-        setCurrentStepIndex(0);
-        setIsAwaitingContinue(false);
-
+        
         if (mode === 'ai') {
+             const tempUserMessage: AiChatMessage = {
+                id: nanoid(), // Use nanoid for temporary local ID
+                sender: 'user',
+                text: userMessage,
+                timestamp: Date.now(),
+            };
+            setLocalMessages(prev => [...prev, tempUserMessage]);
+            
+            await saveAiMessage('user', userMessage); // Save user message first
+
+            setIsLoading(true);
+            setWorkflow([]);
+            setCurrentStepIndex(0);
+            setIsAwaitingContinue(false);
+            
             try {
                 const response = await getWorkflowFromPrompt(userMessage, context);
                 setWorkflow(response.steps);
-                addLocalMessage('bot', "Okay, I've got a plan. Let's start!");
-                runNextStep(response.steps, 0);
+                // The next bot message is added inside runNextStep
+                runNextStep(response.steps, 0); 
             } catch (error) {
                 console.error(error);
-                addLocalMessage('bot', "Sorry, I couldn't figure out how to do that. Can you try rephrasing your request?");
+                saveAiMessage('bot', "Sorry, I couldn't figure out how to do that. Can you try rephrasing your request?");
                 setIsLoading(false);
             }
         } else if (mode === 'private' && privateChatTarget && user) {
-            try {
-                // Pass the full privateChatTarget object
+             try {
                 await sendMessage(user, privateChatTarget, userMessage);
             } catch (error) {
                  console.error(error);
-                 addLocalMessage('system', "Failed to send message: Check Firestore rules or network.");
             } finally {
                 setIsLoading(false);
             }
         }
     };
-
-    // ... handleMic logic remains the same ...
 
     const handleMic = () => {
         if (!('webkitSpeechRecognition' in window)) {
@@ -307,7 +370,7 @@ const ChatPanel: React.FC = () => {
                     <span>Chatting with: {privateChatTarget.displayName}</span>
                     <button onClick={() => {
                         setPrivateChatTarget(null);
-                        setPrivateChatMessages([]); // FIX: Clear messages on end chat
+                        setPrivateChatMessages([]); // Clear messages on end chat
                     }} className="text-xs text-night-500 hover:text-night-100">End Chat</button>
                 </h3>
                 <p className="text-xs text-night-500">{privateChatTarget.email}</p>

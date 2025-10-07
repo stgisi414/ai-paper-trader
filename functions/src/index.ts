@@ -328,7 +328,8 @@ export const geminiProxy = onRequest(
     }
 
     try {
-      const {prompt, model: modelName = "gemini-2.5-flash", schema} = req.body;
+      const {prompt, model: modelName = "gemini-2.5-flash",
+        schema, googleSearch} = req.body;
 
       if (!prompt) {
         res.status(400).send("Bad Request: Missing prompt.");
@@ -344,14 +345,17 @@ export const geminiProxy = onRequest(
         } :
         {};
 
-      const geminiResult = await genAI.models.generateContent({
+      const requestPayload = {
         model: modelName,
         contents: [{role: "user", parts: [{text: prompt}]}],
         config: generationConfig,
-      });
+        // Use a spread operator to conditionally add the 'tools' property
+        ...(googleSearch && {tools: [{google_search: {}}]}),
+      };
+
+      const geminiResult = await genAI.models.generateContent(requestPayload);
 
       const text = geminiResult.text;
-
       res.status(200).send({text});
     } catch (error) {
       logger.error("Gemini Proxy Error:", error);
