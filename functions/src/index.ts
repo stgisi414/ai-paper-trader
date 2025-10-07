@@ -173,21 +173,44 @@ export const optionsProxy = onRequest(
         return;
       }
 
-      // This is the only query options object you need.
-      // If `date` is present, yahoo-finance2 will fetch for that specific date.
-      // If `date` is absent, it will fetch the next upcoming expiration.
       const yfQueryOptions: { date?: Date } = {};
       if (date) {
         yfQueryOptions.date = new Date(`${date}T00:00:00.000Z`);
       }
 
-      // The library handles the date filtering internally.
-      const optionsChain = await yfClient.options(symbol.toUpperCase(),
-        yfQueryOptions);
+      let optionsChain;
+
+      try {
+        // Attempt to fetch options data
+        optionsChain = await yfClient.options(symbol.toUpperCase(),
+          yfQueryOptions);
+      } catch (e) {
+        // CRITICAL FIX: Gracefully handle Yahoo Finance failure
+        // (e.g., no data for date)
+        logger.warn(`Yahoo Finance failed to fetch data for
+          ${symbol}/${date || "next"}. Returning empty set.`, e);
+
+        // Construct a minimally valid (empty) response structure
+        optionsChain = {
+          underlyingSymbol: symbol.toUpperCase(),
+          options: [],
+          expirationDates: [],
+          quote: {
+            // Need a price for frontend calculations.
+            // Use null or 0 if truly unavailable.
+            // For now, we can omit it
+            // since the parent try/catch handles the 503.
+            // Since we successfully loaded the client,
+            // this suggests data is missing, not the service itself.
+          },
+        };
+      }
+
 
       res.status(200).json(optionsChain);
     } catch (error) {
-      logger.error("Yahoo Finance API Error (Internal Failure):", error);
+      // Keep the general error handler for true internal proxy/server issues
+      logger.error("Options Proxy Error (Internal Failure):", error);
       res.status(503).json({
         error: "Failed to fetch options data from external API.",
       });

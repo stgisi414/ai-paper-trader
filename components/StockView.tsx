@@ -261,6 +261,18 @@ const StockView: React.FC = () => {
         }
     }, [profile, historicalData, analystRatings, setCombinedRec]);
 
+    // ADDITION: Helper function to calculate the strict minimum intrinsic value
+    const calculateIntrinsicValueFloor = (stockPrice: number, strikePrice: number, optionType: 'call' | 'put'): number => {
+        if (optionType === 'call') {
+            // Intrinsic Value for a Call: max(0, Stock Price - Strike Price)
+            return Math.max(0, stockPrice - strikePrice);
+        } else if (optionType === 'put') {
+            // Intrinsic Value for a Put: max(0, Strike Price - Stock Price)
+            return Math.max(0, strikePrice - stockPrice);
+        }
+        return 0;
+    };
+
     const handleTradeTabChange = (tab: 'stock' | 'calls' | 'puts') => {
         setTradeTab(tab);
         setSelectedOption(null); // Clear selected option when switching tabs
@@ -284,12 +296,46 @@ const StockView: React.FC = () => {
             buyStock(quote.symbol, profile.companyName, shares, quote.price);
             alert(`Successfully bought ${shares} share(s) of ${quote.symbol}`);
         } else if (selectedOption) {
+            
+            // --- ENHANCED ARBITRAGE PREVENTION CHECK ---
+            const currentStockPrice = quote.price;
+            const strikePrice = parseFloat(selectedOption.strike_price);
+            const marketPremium = selectedOption.close_price || 0;
+            const impliedVolatility = selectedOption.impliedVolatility || 0; // Use 0 if null
+            
+            const intrinsicFloor = calculateIntrinsicValueFloor(currentStockPrice, strikePrice, selectedOption.type);
+            
+            // Allow a small numerical tolerance for comparison
+            const epsilon = 0.0001; 
+
+            // Check 1: General Arbitrage (Premium must be > Intrinsic Floor, accounting for tolerance)
+            if (marketPremium < intrinsicFloor - epsilon) {
+                 alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is below the intrinsic floor (\$${intrinsicFloor.toFixed(2)}). This is stale data. Please select another option or try again.`);
+                 return;
+            }
+            
+            // NEW CHECK: Prevent buying if the premium is EXACTLY the floor and the IV is zero (no time value, clearly flawed data)
+            // This blocks the zero-time-value scenario you just experienced.
+            if (Math.abs(marketPremium - intrinsicFloor) < epsilon && impliedVolatility < epsilon) {
+                 alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is equal to the intrinsic floor and has 0.00% Implied Volatility. This indicates critically flawed (stale or static) data and no real time value. Please select another option.`);
+                 return;
+            }
+            
+            // Check 2: Insufficient cash check
+            if (portfolio.cash < shares * marketPremium * 100) {
+                 alert("Not enough cash to complete option purchase.");
+                 return;
+            }
+            // --- END ARBITRAGE PREVENTION CHECK ---
+
             const optionToBuy: OptionHolding = {
                 symbol: selectedOption.symbol,
                 underlyingTicker: selectedOption.underlying_symbol,
                 shares: shares,
-                purchasePrice: selectedOption.close_price || 0,
-                currentPrice: selectedOption.close_price || 0,
+                // The price used here (marketPremium) is guaranteed to be arbitrage-proof 
+                // due to the correction in the optionsProxyService.ts
+                purchasePrice: marketPremium, 
+                currentPrice: marketPremium,
                 optionType: selectedOption.type,
                 strikePrice: parseFloat(selectedOption.strike_price),
                 expirationDate: selectedOption.expiration_date,

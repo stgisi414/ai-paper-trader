@@ -37,7 +37,11 @@ interface OptionsChainResponse {
  * @param symbol The stock ticker symbol.
  */
 export const getOptionsChain = async (symbol: string, date?: string): Promise<OptionsChainResult> => {
-    if (!symbol) return { contracts: [], availableExpirationDates: [] };
+    console.log(`[OPTIONS PROXY STEP 1] Fetching chain for symbol: ${symbol}, date: ${date || 'next available'}`);
+    if (!symbol) {
+        console.log(`[OPTIONS PROXY STEP 1 FAIL] No symbol provided.`);
+        return { contracts: [], availableExpirationDates: [] };
+    }
 
     const params = new URLSearchParams({ symbol: symbol.toUpperCase() });
     if (date) {
@@ -50,10 +54,10 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
     try {
         const response = await fetch(url);
         rawJsonText = await response.text();
-        console.log(`Raw Options Data from Proxy for date: ${date || 'all'}`, rawJsonText);
+        console.log(`[OPTIONS PROXY STEP 2] Raw JSON received (first 200 chars): ${rawJsonText.substring(0, 200)}...`);
 
         if (!response.ok) {
-            console.error(`Options Proxy failed with status ${response.status}:`, rawJsonText);
+            console.error(`[OPTIONS PROXY STEP 2 FAIL] Options Proxy failed with status ${response.status}:`, rawJsonText);
             throw new Error(`Options Proxy failed: ${response.status} ${rawJsonText}`);
         }
         
@@ -61,6 +65,8 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
 
         const optionsExpirationGroups = data.options;
         const currentStockPrice = data.quote?.regularMarketPrice;
+
+        console.log(`[OPTIONS PROXY STEP 3] Extracted Data: Stock Price: ${currentStockPrice}, Groups Found: ${optionsExpirationGroups?.length}`);
 
         // Extract the full list of expiration dates from the top level
         const allExpirationDatesRaw = data.expirationDates || []; // <-- FIX: Use data.expirationDates directly
@@ -82,6 +88,7 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
 
         
         if (!optionsExpirationGroups || optionsExpirationGroups.length === 0 || !currentStockPrice) {
+             console.log(`[OPTIONS PROXY STEP 5] Returning 0 contracts (missing data or stock price).`);
              return { contracts: [], availableExpirationDates };
         }
 
@@ -121,6 +128,28 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
                     impliedVolatility
                 );
             }
+
+            // IMPORTANT: Determine the best 'close price' available.
+            let closePrice = c.lastPrice || c.bid || c.ask || 0;
+            
+            // --- CRITICAL FIX: Ensure ITM price reflects intrinsic value (floor) ---
+            const strike = c.strike;
+            
+            // Calculate Intrinsic Value (IV)
+            let intrinsicValue = 0;
+            if (type === 'call' && currentStockPrice > strike) {
+                intrinsicValue = currentStockPrice - strike;
+            } else if (type === 'put' && currentStockPrice < strike) {
+                intrinsicValue = strike - currentStockPrice;
+            }
+            
+            // Use Intrinsic Value if the reported market price is unrealistically low
+            if (intrinsicValue > closePrice) {
+                console.log(`[OPTIONS PROXY DEBUG] Setting price for ${c.contractSymbol} to Intrinsic Value. Old: ${closePrice}, New (IV): ${intrinsicValue}`);
+                closePrice = intrinsicValue;
+            } else if (closePrice === 0 && (c.lastPrice === 0 || c.bid === 0 || c.ask === 0)) {
+                console.log(`[OPTIONS PROXY DEBUG] Contract ${c.contractSymbol} has zero price. Including it.`);
+            }
             
             return {
                 symbol: c.contractSymbol,
@@ -135,7 +164,7 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
                 expiration_date: expirationDate, 
                 strike_price: String(c.strike),
                 underlying_symbol: symbol.toUpperCase(),
-                close_price: c.lastPrice || c.bid || 0,
+                close_price: closePrice,
                 volume: c.volume || 0,
                 open_interest: c.openInterest || 0,
                 // Use calculated or fetched greeks
@@ -165,14 +194,17 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
             allContracts.push(...calls, ...puts);
         });
 
-        // Filter out contracts with no tradable price
-        const contracts = allContracts.filter(c => c.close_price > 0);
+        // FIX: Only filter out contracts where close_price is explicitly null or undefined,
+        // allowing a valid premium of 0 or a positive value to pass through.
+        const contracts = allContracts.filter(c => c.close_price !== null && c.close_price !== undefined);
+
+        console.log(`[OPTIONS PROXY STEP 6] Total Contracts before filter: ${allContracts.length}, after filter: ${contracts.length}`);
         
         // MODIFICATION: Return contracts AND the full list of dates
         return { contracts, availableExpirationDates };
 
     } catch (error) {
-        console.error("Failed to fetch options chain from proxy:", error);
+        console.error("[OPTIONS PROXY STEP FAIL] Failed to fetch options chain from proxy:", error);
         console.error("Raw response (if available):", rawJsonText);
         throw new Error("Failed to load options data.");
     }

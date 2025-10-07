@@ -1,4 +1,3 @@
-// components/Dashboard.tsx
 import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../hooks/usePortfolio';
@@ -7,7 +6,7 @@ import * as geminiService from '../services/geminiService';
 import type { FmpSearchResult, PortfolioRiskAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
-import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
+import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
 import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
 import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
@@ -16,7 +15,8 @@ import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const Dashboard: React.FC = () => {
     const { user } = useAuth();
-    const { portfolio, totalValue, isLoading: isPortfolioLoading } = usePortfolio();
+    // MODIFIED: Destructure manualSellOption
+    const { portfolio, totalValue, isLoading: isPortfolioLoading, manualSellOption } = usePortfolio();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -38,7 +38,8 @@ const Dashboard: React.FC = () => {
             setSearchResults(results.slice(0, 5));
         } catch (error) {
             console.error("Search failed:", error);
-            alert("Failed to search for stocks.");
+            // Replace alert with console.error or custom modal
+            console.error("Failed to search for stocks.");
             setSearchResults([]);
         } finally {
             setIsSearching(false);
@@ -53,7 +54,8 @@ const Dashboard: React.FC = () => {
             setPortfolioAnalysis(analysis);
         } catch (error) {
             console.error("Portfolio analysis failed:", error);
-            alert("The AI portfolio analysis could not be completed.");
+            // Replace alert with console.error or custom modal
+            console.error("The AI portfolio analysis could not be completed.");
         } finally {
             setIsAnalyzing(false);
         }
@@ -243,25 +245,59 @@ const Dashboard: React.FC = () => {
                                             <th className="p-3">Current Premium</th>
                                             <th className="p-3">Total Value</th>
                                             <th className="p-3">Gain/Loss</th>
+                                            {/* ADDITION: Expiry Date Column */}
+                                            <th className="p-3">Expiry</th>
+                                            {/* MODIFICATION: Action Column */}
+                                            <th className="p-3 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {portfolio.optionHoldings.length === 0 ? (
-                                            <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
+                                            <tr><td colSpan={8} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
                                         ) : (
                                             portfolio.optionHoldings.map(o => {
                                                 const totalValue = o.shares * o.currentPrice * 100;
                                                 const gain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
                                                 const gainPercent = o.purchasePrice > 0 ? (gain / (o.purchasePrice * o.shares * 100)) * 100 : 0;
+                                                
+                                                // EXTENSIVE DEBUG LOGGING - Keep for now
+                                                console.log(`[DASHBOARD RENDER - OPTION ${o.symbol}]`);
+                                                console.log(`  - Contracts: ${o.shares}`);
+                                                console.log(`  - Purchase Price (o.purchasePrice): ${o.purchasePrice}`);
+                                                console.log(`  - Current Price (o.currentPrice): ${o.currentPrice}`);
+                                                console.log(`  - Calculated Gain (Total): ${gain}`);
+                                                console.log(`  - Calculated Gain (%): ${gainPercent}`);
+                                                // END DEBUG LOGGING
+                                                
+                                                const handleSellClick = () => {
+                                                    // Sells ALL contracts for the symbol using the manualSellOption wrapper
+                                                    manualSellOption(o.symbol); 
+                                                };
+
                                                 return (
                                                     <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
-                                                        <td className="p-3 font-bold"><Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link></td>
+                                                        <td className="p-3 font-bold">
+                                                            <Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link>
+                                                            {/* ADDITION: Display the option type and use color coding */}
+                                                            <span className={`ml-2 text-xs font-semibold uppercase ${o.optionType === 'call' ? 'text-brand-green' : 'text-brand-red'}`}>({o.optionType})</span>
+                                                        </td>
                                                         <td className="p-3">{o.shares}</td>
                                                         <td className="p-3">{formatCurrency(o.purchasePrice)}</td>
                                                         <td className="p-3">{formatCurrency(o.currentPrice)}</td>
                                                         <td className="p-3">{formatCurrency(totalValue)}</td>
                                                         <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
                                                             {formatCurrency(gain)} ({formatPercentage(gainPercent)})
+                                                        </td>
+                                                        {/* ADDITION: Expiry Date */}
+                                                        <td className="p-3 text-sm">{o.expirationDate}</td>
+                                                        {/* MODIFICATION: Sell Button */}
+                                                        <td className="p-3 text-right">
+                                                            <button 
+                                                                onClick={handleSellClick}
+                                                                className="text-white bg-brand-red px-3 py-1 rounded-md text-sm hover:bg-red-600 transition-colors"
+                                                            >
+                                                                Sell All
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 );
