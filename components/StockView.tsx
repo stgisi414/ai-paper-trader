@@ -15,6 +15,9 @@ import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import { useAuth } from '../src/hooks/useAuth.tsx';
 
+type OptionsSortKey = 'strike_price' | 'close_price' | 'impliedVolatility' | 'volume' | 'delta' | 'gamma' | 'theta' | 'vega' | null;
+type SortDirection = 'asc' | 'desc';
+
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
     const [state, setState] = useState<T>(() => {
         try {
@@ -92,19 +95,52 @@ const StockView: React.FC = () => {
     const [hasRunTechnicalAnalysis, setHasRunTechnicalAnalysis] = useState(false);
     const [hasRunAdvancedRecs, setHasRunAdvancedRecs] = useState(false);
 
+    const [optionsSort, setOptionsSort] = useState<{ key: OptionsSortKey, direction: SortDirection }>({ key: null, direction: 'asc' });
+
     const expirationDates = useMemo(() => {
         return availableExpirationDates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     }, [availableExpirationDates]);
 
+    // MODIFICATION: Add sorting logic to filteredOptions calculation
     const filteredOptions = useMemo(() => {
-        if (!options) return []; // Guard against options being null/undefined
-        
-        // The filter now correctly checks the option's expiration_date against the selected one.
-        return options.filter(o => 
+        if (!options) return []; 
+
+        let filtered = options.filter(o => 
             o.type === (tradeTab === 'calls' ? 'call' : 'put') &&
             o.expiration_date === selectedExpiry
         );
-    }, [options, tradeTab, selectedExpiry]);
+        
+        // ADDITION: Apply Sorting
+        if (optionsSort.key) {
+            const { key, direction } = optionsSort;
+            
+            filtered = filtered.sort((a, b) => {
+                let aVal: number = 0;
+                let bVal: number = 0;
+
+                if (key === 'volume') {
+                    // Combine Open Interest (open_interest) and Volume for a weighted sort if key is 'volume'
+                    // Fall back to 0 if either is null
+                    aVal = (a.volume || 0) + (a.open_interest || 0);
+                    bVal = (b.volume || 0) + (b.open_interest || 0);
+                } else if (key === 'strike_price') {
+                    // Strike price is a string, parse it to float
+                    aVal = parseFloat(a[key]);
+                    bVal = parseFloat(b[key]);
+                } else {
+                    // For all other numeric keys (close_price, IV, Greeks)
+                    aVal = (a[key] as number) || 0;
+                    bVal = (b[key] as number) || 0;
+                }
+
+                if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        return filtered;
+    }, [options, tradeTab, selectedExpiry, optionsSort]);
 
     useEffect(() => {
         if (!ticker) return;
@@ -176,6 +212,31 @@ const StockView: React.FC = () => {
 
         fetchOptionsForDate();
     }, [selectedExpiry, ticker]); // This effect now handles fetching options data
+
+    // ADDITION: Handler to update sort state when a header is clicked
+    const handleSort = (key: OptionsSortKey) => {
+        setOptionsSort(prev => {
+            if (prev.key === key) {
+                // If clicking the same column, toggle direction
+                return { 
+                    key, 
+                    direction: prev.direction === 'asc' ? 'desc' : 'asc' 
+                };
+            }
+            // If clicking a new column, set ascending sort
+            return { key, direction: 'asc' };
+        });
+    };
+    
+    // ADDITION: Helper function to render the sort arrow icon
+    const renderSortIcon = (key: OptionsSortKey) => {
+        if (optionsSort.key !== key) return null;
+        return (
+            <span className="ml-1 text-xs">
+                {optionsSort.direction === 'asc' ? '▲' : '▼'}
+            </span>
+        );
+    };
 
     const handleKeyMetricsAnalysis = useCallback(async () => {
         if (!quote || !profile) return;
@@ -714,33 +775,41 @@ const StockView: React.FC = () => {
                                         <table className="text-left text-xs">
                                             <thead>
                                                 <tr>
-                                                    <th className="p-2 whitespace-nowrap">Strike</th>
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('strike_price')}>
+                                                        Strike {renderSortIcon('strike_price')}
+                                                    </th>
                                                     <th className="p-2 whitespace-nowrap">Expiry</th>
-                                                    <th className="p-2 whitespace-nowrap">Price</th>
-                                                    <th className="p-2 whitespace-nowrap">
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('close_price')}>
+                                                        Price {renderSortIcon('close_price')}
+                                                    </th>
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('impliedVolatility')}>
                                                         <div className="flex items-center gap-1">
-                                                            IV <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
+                                                            IV {renderSortIcon('impliedVolatility')} <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
                                                         </div>
                                                     </th>
-                                                    <th className="p-2 whitespace-nowrap">OI/Vol</th>
-                                                    <th className="p-2 whitespace-nowrap">
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('volume')}>
                                                         <div className="flex items-center gap-1">
-                                                            Δ <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
+                                                            OI/Vol {renderSortIcon('volume')}
                                                         </div>
                                                     </th>
-                                                    <th className="p-2 whitespace-nowrap">
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('delta')}>
                                                         <div className="flex items-center gap-1">
-                                                            Γ <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
+                                                            &Delta; {renderSortIcon('delta')} <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
                                                         </div>
                                                     </th>
-                                                    <th className="p-2 whitespace-nowrap">
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('gamma')}>
                                                         <div className="flex items-center gap-1">
-                                                            Θ <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
+                                                            &Gamma; {renderSortIcon('gamma')} <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
                                                         </div>
                                                     </th>
-                                                    <th className="p-2 whitespace-nowrap">
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('theta')}>
                                                         <div className="flex items-center gap-1">
-                                                            ν <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
+                                                            &Theta; {renderSortIcon('theta')} <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
+                                                        </div>
+                                                    </th>
+                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('vega')}>
+                                                        <div className="flex items-center gap-1">
+                                                            &nu; {renderSortIcon('vega')} <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
                                                         </div>
                                                     </th>
                                                 </tr>
