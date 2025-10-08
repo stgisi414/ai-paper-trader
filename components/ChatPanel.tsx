@@ -171,6 +171,9 @@ const ChatPanel: React.FC = () => {
                 } as RecentChat;
             });
             setRecentChats(chats);
+            
+            // ADDITION: Debug logging to list chat history
+            console.log("DEBUG: Fetched Recent Chat History:", chats);
         });
 
         return () => unsubscribe();
