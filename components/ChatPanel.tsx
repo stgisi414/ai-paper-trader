@@ -382,6 +382,50 @@ const ChatPanel: React.FC = () => {
 
         // Private Chat Mode
         if (!privateChatTarget) {
+            let middleContent;
+            const isSearching = searchUserQuery.trim().length > 0;
+
+            if (isSearching) {
+                if (userSearchResults.length > 0) {
+                     middleContent = (
+                        <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
+                            {userSearchResults.map((userResult) => (
+                                <li key={userResult.uid} onClick={() => {
+                                    setPrivateChatTarget(userResult);
+                                    setUserSearchResults([]);
+                                    setSearchUserQuery('');
+                                }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
+                                    <span className="font-bold">{userResult.displayName}</span>
+                                    <span className="text-xs text-night-500 block">{userResult.email}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    );
+                } else {
+                     middleContent = <div className="mt-2 text-center text-sm text-night-500">No users found matching "{searchUserQuery}".</div>;
+                }
+            } else {
+                if (recentChats.length > 0) {
+                     middleContent = (
+                        <div className="mt-2">
+                            <h4 className="text-xs text-night-500 mb-1 px-2 font-bold uppercase tracking-wider">Recent Chats</h4>
+                            <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
+                                {recentChats.map((chat) => (
+                                    <li key={chat.uid} onClick={() => {
+                                        setPrivateChatTarget(chat);
+                                    }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
+                                        <span className="font-bold">{chat.displayName}</span>
+                                        <p className="text-xs text-night-500 truncate italic">"{chat.lastMessage}"</p>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    );
+                } else {
+                     middleContent = <div className="mt-2 text-center text-sm text-night-500">No recent chats. Search for a user to start one!</div>;
+                }
+            }
+
             return (
                 <div className="space-y-3">
                     <h3 className="text-lg font-bold text-brand-blue flex items-center gap-2"><UsersIcon className="w-6 h-6"/> Private Chat</h3>
@@ -395,46 +439,7 @@ const ChatPanel: React.FC = () => {
                             className="flex-1 bg-night-700 border border-night-600 rounded-md py-1 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none text-sm"
                         />
                     </form>
-                    {searchUserQuery.trim().length > 0 ? (
-                        // Case 1: Search query is present. Show search results OR "No users found" message.
-                        userSearchResults.length > 0 ? (
-                            <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
-                                {userSearchResults.map((userResult) => (
-                                    <li key={userResult.uid} onClick={() => {
-                                        setPrivateChatTarget(userResult);
-                                        setUserSearchResults([]);
-                                        setSearchUserQuery('');
-                                    }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
-                                        <span className="font-bold">{userResult.displayName}</span>
-                                        <span className="text-xs text-night-500 block">{userResult.email}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                             // Fallback when searching but no results are found
-                             <div className="mt-2 text-center text-sm text-night-500">No users found matching "{searchUserQuery}".</div>
-                        )
-                    ) : (
-                        // Case 2: Search query is empty. Show recent chats OR "No recent chats" message.
-                        recentChats.length > 0 ? (
-                            <div className="mt-2">
-                                <h4 className="text-xs text-night-500 mb-1 px-2 font-bold uppercase tracking-wider">Recent Chats</h4>
-                                <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
-                                    {recentChats.map((chat) => (
-                                        <li key={chat.uid} onClick={() => {
-                                            setPrivateChatTarget(chat);
-                                        }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
-                                            <span className="font-bold">{chat.displayName}</span>
-                                            <p className="text-xs text-night-500 truncate italic">"{chat.lastMessage}"</p>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ) : (
-                            // Fallback when search is empty AND no recent chats exist
-                             <div className="mt-2 text-center text-sm text-night-500">No recent chats. Search for a user to start one!</div>
-                        )
-                    )}
+                    {middleContent}
                 </div>
             );
         }
@@ -451,7 +456,6 @@ const ChatPanel: React.FC = () => {
                 <p className="text-xs text-night-500">{privateChatTarget.email}</p>
             </div>
         );
-
     };
 
 
