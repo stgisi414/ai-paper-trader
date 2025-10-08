@@ -148,7 +148,8 @@ const ChatPanel: React.FC = () => {
     // Effect to subscribe to recent chats history
     useEffect(() => {
         if (!user || mode !== 'private') {
-            if (recentChats.length > 0) setRecentChats([]);
+            // Only clear if we switch away from private mode, otherwise keep it around
+            if (mode === 'ai' && recentChats.length > 0) setRecentChats([]); 
             return;
         }
 
@@ -159,18 +160,21 @@ const ChatPanel: React.FC = () => {
             const chats = snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
-                    uid: doc.id,
+                    // The UID of the other user is the document ID of the chatHistory entry
+                    uid: doc.id, 
                     displayName: data.displayName,
                     email: data.email,
                     photoURL: data.photoURL,
                     lastMessage: data.lastMessage,
-                    timestamp: data.timestamp,
+                    // ADDITION: Convert Firestore Timestamp object to millisecond number (if necessary)
+                    timestamp: data.timestamp?.toMillis() || Date.now(), 
                 } as RecentChat;
             });
             setRecentChats(chats);
         });
 
         return () => unsubscribe();
+    // MODIFICATION: No change to dependencies needed, they are correct.
     }, [user, mode]);
 
     useEffect(() => {
@@ -263,18 +267,29 @@ const ChatPanel: React.FC = () => {
     
     const handleUserSearch = async (query: string) => {
         setSearchUserQuery(query);
-        if (!query.trim()) {
+        // If query is empty, clear results immediately and return
+        if (!query.trim()) { 
             setUserSearchResults([]);
             return;
         }
+        
+        // This is a proxy call to the Firebase Function
         try {
-            const response = await fetch(`/userSearch?query=${query}`);
+            // FIX: Ensure the proxy call uses the correct format and handles the array response
+            const response = await fetch(`/userSearch?query=${encodeURIComponent(query.trim())}`);
+            
             if (response.ok) {
                 const users: User[] = await response.json();
-                setUserSearchResults(users);
+                // We should filter out the current user just in case the backend missed it
+                const filteredUsers = users.filter(u => u.uid !== user?.uid); 
+                setUserSearchResults(filteredUsers);
+            } else {
+                console.error("User Search API failed:", response.status, await response.text());
+                setUserSearchResults([]);
             }
         } catch (error) {
             console.error("Error searching for users:", error);
+            setUserSearchResults([]);
         }
     };
 
@@ -381,7 +396,8 @@ const ChatPanel: React.FC = () => {
                         />
                     </form>
                     {searchUserQuery.trim().length > 0 ? (
-                        userSearchResults.length > 0 && (
+                        // Case 1: Search query is present. Show search results OR "No users found" message.
+                        userSearchResults.length > 0 ? (
                             <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
                                 {userSearchResults.map((userResult) => (
                                     <li key={userResult.uid} onClick={() => {
@@ -394,9 +410,13 @@ const ChatPanel: React.FC = () => {
                                     </li>
                                 ))}
                             </ul>
+                        ) : (
+                             // Fallback when searching but no results are found
+                             <div className="mt-2 text-center text-sm text-night-500">No users found matching "{searchUserQuery}".</div>
                         )
                     ) : (
-                        recentChats.length > 0 && (
+                        // Case 2: Search query is empty. Show recent chats OR "No recent chats" message.
+                        recentChats.length > 0 ? (
                             <div className="mt-2">
                                 <h4 className="text-xs text-night-500 mb-1 px-2 font-bold uppercase tracking-wider">Recent Chats</h4>
                                 <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
@@ -410,6 +430,9 @@ const ChatPanel: React.FC = () => {
                                     ))}
                                 </ul>
                             </div>
+                        ) : (
+                            // Fallback when search is empty AND no recent chats exist
+                             <div className="mt-2 text-center text-sm text-night-500">No recent chats. Search for a user to start one!</div>
                         )
                     )}
                 </div>
