@@ -44,12 +44,13 @@ export const sendMessage = async (
 
     const chatRoomId = getChatRoomId(sender.uid, targetUser.uid);
     const messagesRef = collection(db, 'chats', chatRoomId, 'messages');
+    const messageTimestamp = Timestamp.now();
 
     // 1. Add the message to the chat room
     await addDoc(messagesRef, {
         senderId: sender.uid,
         text: text,
-        timestamp: Timestamp.now(),
+        timestamp: messageTimestamp,
         senderDisplayName: sender.displayName,
         senderPhotoURL: sender.photoURL,
     });
@@ -58,7 +59,7 @@ export const sendMessage = async (
     const notificationRef = doc(db, 'users', targetUser.uid, 'unreadMessages', sender.uid);
     await setDoc(notificationRef, {
         text: text,
-        timestamp: Timestamp.now(),
+        timestamp: messageTimestamp,
         sender: {
             uid: sender.uid,
             displayName: sender.displayName,
@@ -66,6 +67,29 @@ export const sendMessage = async (
             photoURL: sender.photoURL,
         }
     });
+
+    // 3. Update chat history for both users to enable recent chats list
+    const senderHistoryRef = doc(db, 'users', sender.uid, 'chatHistory', targetUser.uid);
+    await setDoc(senderHistoryRef, {
+        // These fields are about the other user (the recipient)
+        displayName: targetUser.displayName,
+        email: targetUser.email,
+        photoURL: targetUser.photoURL,
+        // These fields are about the interaction
+        lastMessage: text,
+        timestamp: messageTimestamp,
+    }, { merge: true });
+
+    const targetHistoryRef = doc(db, 'users', targetUser.uid, 'chatHistory', sender.uid);
+    await setDoc(targetHistoryRef, {
+        // These fields are about the other user (the sender)
+        displayName: sender.displayName,
+        email: sender.email,
+        photoURL: sender.photoURL,
+        // These fields are about the interaction
+        lastMessage: text,
+        timestamp: messageTimestamp,
+    }, { merge: true });
 };
 
 export const clearUnreadMessage = async (currentUserId: string, senderId: string): Promise<void> => {

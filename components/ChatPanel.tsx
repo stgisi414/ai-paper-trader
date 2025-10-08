@@ -18,6 +18,11 @@ const CHAT_PANEL_OPEN_KEY = 'signatexChatOpen';
 
 type ChatMode = 'ai' | 'private';
 
+interface RecentChat extends User {
+    lastMessage: string;
+    timestamp: any; // Firestore timestamp
+}
+
 const ChatPanel: React.FC = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -51,6 +56,7 @@ const ChatPanel: React.FC = () => {
     const [searchUserQuery, setSearchUserQuery] = useState('');
     const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
     const [privateChatTarget, setPrivateChatTarget] = useState<User | null>(null);
+    const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
 
     const recognitionRef = useRef<any>(null);
     const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -134,6 +140,34 @@ const ChatPanel: React.FC = () => {
                 .map(doc => doc.data() as AiChatMessage)
                 .sort((a, b) => a.timestamp - b.timestamp); // Sort ascending for correct display order
             setLocalMessages(messages);
+        });
+
+        return () => unsubscribe();
+    }, [user, mode]);
+    
+    // Effect to subscribe to recent chats history
+    useEffect(() => {
+        if (!user || mode !== 'private') {
+            if (recentChats.length > 0) setRecentChats([]);
+            return;
+        }
+
+        const historyRef = collection(db, 'users', user.uid, 'chatHistory');
+        const q = query(historyRef, orderBy('timestamp', 'desc'), limit(15)); // limit to 15 recent chats
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const chats = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    uid: doc.id,
+                    displayName: data.displayName,
+                    email: data.email,
+                    photoURL: data.photoURL,
+                    lastMessage: data.lastMessage,
+                    timestamp: data.timestamp,
+                } as RecentChat;
+            });
+            setRecentChats(chats);
         });
 
         return () => unsubscribe();
@@ -346,19 +380,37 @@ const ChatPanel: React.FC = () => {
                             className="flex-1 bg-night-700 border border-night-600 rounded-md py-1 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none text-sm"
                         />
                     </form>
-                    {userSearchResults.length > 0 && (
-                        <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
-                            {userSearchResults.map((userResult) => (
-                                <li key={userResult.uid} onClick={() => {
-                                    setPrivateChatTarget(userResult);
-                                    setUserSearchResults([]);
-                                    setSearchUserQuery('');
-                                }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
-                                    <span className="font-bold">{userResult.displayName}</span>
-                                    <span className="text-xs text-night-500 block">{userResult.email}</span>
-                                </li>
-                            ))}
-                        </ul>
+                    {searchUserQuery.trim().length > 0 ? (
+                        userSearchResults.length > 0 && (
+                            <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
+                                {userSearchResults.map((userResult) => (
+                                    <li key={userResult.uid} onClick={() => {
+                                        setPrivateChatTarget(userResult);
+                                        setUserSearchResults([]);
+                                        setSearchUserQuery('');
+                                    }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
+                                        <span className="font-bold">{userResult.displayName}</span>
+                                        <span className="text-xs text-night-500 block">{userResult.email}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )
+                    ) : (
+                        recentChats.length > 0 && (
+                            <div className="mt-2">
+                                <h4 className="text-xs text-night-500 mb-1 px-2 font-bold uppercase tracking-wider">Recent Chats</h4>
+                                <ul className="bg-night-700 rounded-md max-h-32 overflow-y-auto">
+                                    {recentChats.map((chat) => (
+                                        <li key={chat.uid} onClick={() => {
+                                            setPrivateChatTarget(chat);
+                                        }} className="p-2 hover:bg-night-600 cursor-pointer text-sm">
+                                            <span className="font-bold">{chat.displayName}</span>
+                                            <p className="text-xs text-night-500 truncate italic">"{chat.lastMessage}"</p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )
                     )}
                 </div>
             );
