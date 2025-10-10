@@ -2,12 +2,12 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { getWorkflowFromPrompt, WorkflowStep, AppContext } from '../services/signatexFlowService';
 import { executeStep, cleanupHighlight } from '../utils/workflowExecutor';
-import { MessageSquareIcon, BrainCircuitIcon, UsersIcon, MicrophoneIcon, SendIcon, SearchIcon } from './common/Icons';
+import { MessageSquareIcon, BrainCircuitIcon, UsersIcon, MicrophoneIcon, SendIcon, SearchIcon, TrashIcon } from './common/Icons';
 import Spinner from './common/Spinner';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../src/hooks/useAuth';
-import { subscribeToChat, sendMessage, ChatMessage, clearUnreadMessage } from '../services/chatService';
+import { subscribeToChat, sendMessage, ChatMessage, clearUnreadMessage, clearAiChatHistory } from '../services/chatService';
 import { User, AiChatMessage } from '../types';
 import { useNotification } from '../hooks/useNotification';
 import { collection, onSnapshot, query, orderBy, addDoc, limit } from 'firebase/firestore';
@@ -372,14 +372,47 @@ const ChatPanel: React.FC = () => {
         recognition.start();
     };
 
+    const handleClearChat = useCallback(async () => {
+        if (!user || mode !== 'ai' || isLoading) return;
+        
+        // 1. Clear chat from DB
+        setIsLoading(true);
+        // The service function handles deleting all messages
+        await clearAiChatHistory(user.uid);
+        
+        // 2. Clear local state and stop loading
+        // The Firestore listener will eventually empty localMessages, 
+        // but a slight delay may occur. We just ensure state is ready 
+        // and set a system message for confirmation.
+        setLocalMessages(prev => [...prev, {
+             id: nanoid(),
+             sender: 'system',
+             text: "AI chat history cleared from the database.",
+             timestamp: Date.now(),
+        }]); 
+        setIsLoading(false);
+    }, [user, mode, isLoading]);
 
     const renderHeaderContent = () => {
         if (mode === 'ai') {
             return (
-                <>
-                    <h3 className="text-lg font-bold text-yellow-400 flex items-center gap-2"><BrainCircuitIcon className="w-6 h-6"/> AI Trading Assistant</h3>
+                <div className="space-y-1"> 
+                    <div className="flex justify-between items-center"> {/* NEW ROW to hold header and button */}
+                        <h3 className="text-lg font-bold text-yellow-400 flex items-center gap-2">
+                            <BrainCircuitIcon className="w-6 h-6"/> AI Trading Assistant
+                        </h3>
+                        {/* ADDITION: Clear Chat Button */}
+                        <button 
+                            onClick={handleClearChat} 
+                            disabled={isLoading}
+                            className="text-night-500 hover:text-brand-red disabled:opacity-50"
+                            title="Clear AI Chat History"
+                        >
+                            <TrashIcon className="w-5 h-5"/>
+                        </button>
+                    </div>
                     <p className="text-xs text-night-500">Tell me what you want to do (e.g., "Buy 10 shares of AAPL").</p>
-                </>
+                </div>
             );
         }
 
@@ -460,7 +493,6 @@ const ChatPanel: React.FC = () => {
             </div>
         );
     };
-
 
     return (
         <>

@@ -1,4 +1,4 @@
-import { collection, onSnapshot, query, orderBy, Timestamp, addDoc, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, Timestamp, addDoc, doc, setDoc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig';
 import { User as FirebaseAuthUser } from 'firebase/auth';
 import { User } from '../types';
@@ -99,6 +99,33 @@ export const clearUnreadMessage = async (currentUserId: string, senderId: string
         await deleteDoc(notificationRef);
     } catch (error) {
         console.error("Error clearing unread message:", error);
+    }
+};
+
+const AI_CHAT_COLLECTION = 'aiChatMessages'; 
+
+export const clearAiChatHistory = async (userId: string): Promise<void> => {
+    if (!userId) return;
+    try {
+        const messagesRef = collection(db, 'users', userId, AI_CHAT_COLLECTION);
+        const q = query(messagesRef);
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            return;
+        }
+        
+        // Use a batch to delete all documents efficiently
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((d) => {
+            batch.delete(d.ref);
+        });
+
+        await batch.commit();
+
+    } catch (error) {
+        console.error("Error clearing AI chat history:", error);
+        throw new Error("Failed to clear AI chat history.");
     }
 };
 
