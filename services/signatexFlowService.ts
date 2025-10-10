@@ -136,7 +136,7 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         if (responseJson.steps.length > 0 && responseJson.steps[0].action === 'research') {
              const researchQuery = responseJson.steps[0].message;
 
-             const researchResponse = await fetch('/aiProxy', {
+             const researchResponse = await fetch('/geminiProxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

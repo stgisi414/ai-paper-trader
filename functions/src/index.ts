@@ -400,6 +400,7 @@ export const geminiProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
+    timeoutSeconds: 120,
   },
   async (req: Request, res: Response): Promise<void> => {
     logger.info("GEMINI_PROXY: Function triggered.");
@@ -474,15 +475,16 @@ export const geminiProxy = onRequest(
         const finalRequestPayload: any = {
           contents: history,
           model: modelName,
+          generationConfig,
         };
         logger.info("GEMINI_PROXY: Sending final request to Gemini with tool response:", finalRequestPayload);
         const finalResult = await genAI.models.generateContent(finalRequestPayload);
-        rawResponseText = finalResult.text || "";
+        rawResponseText = finalResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
         logger.info("GEMINI_PROXY: Received final response from Gemini:", JSON.stringify(finalResult, null, 2));
-
-      } else {
+       } else {
         logger.info("GEMINI_PROXY: No tool call detected or required. Sending direct response.");
-        rawResponseText = geminiResult.text || "";
+        // This is the line that matters for our test case. It needs to be correct.
+        rawResponseText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
       }
 
       // Handle structured or conversational output consistently

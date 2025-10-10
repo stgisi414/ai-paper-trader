@@ -18,7 +18,7 @@ const callGeminiProxy = async (prompt: string, model: string, schema: object): P
         return JSON.parse(data.text);
     } catch (error) {
         console.error("Error calling Gemini proxy:", error);
-        throw new Error("Failed to get AI analysis from proxy.");
+        throw error;
     }
 };
 
@@ -152,47 +152,65 @@ const watchlistRecsSchema = {
 // --- Exported Functions ---
 
 export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[]): Promise<AiAnalysis> => {
-    const prompt = `Based on the news for ${companyName}, provide a market sentiment analysis. Headlines: ${news.map(n => n.title).join('\n')}`;
+    const prompt = `Based on the news for ${companyName}, provide a market sentiment analysis. Headlines: ${news.map(n => n.title).join('\n')}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-flash", sentimentAnalysisSchema);
 };
 
 export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{stocks: StockPick[]}> => {
-    const prompt = `Recommend stocks based on these preferences: ${JSON.stringify(answers)}`;
+    const prompt = `Recommend stocks based on these preferences: ${JSON.stringify(answers)}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-flash", stockPickingSchema);
 };
 
 export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeStatement, balanceSheet: FmpBalanceSheet, cashFlow: FmpCashFlowStatement): Promise<FinancialStatementAnalysis> => {
-    const prompt = `Analyze these financial statements: Income=${JSON.stringify(incomeStatement)}, BalanceSheet=${JSON.stringify(balanceSheet)}, CashFlow=${JSON.stringify(cashFlow)}`;
+    const prompt = `Analyze these financial statements: Income=${JSON.stringify(incomeStatement)}, BalanceSheet=${JSON.stringify(balanceSheet)}, CashFlow=${JSON.stringify(cashFlow)}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-pro", financialStatementAnalysisSchema);
 };
 
 export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[]): Promise<TechnicalAnalysis> => {
-    const prompt = `Provide a technical analysis on this historical data: ${JSON.stringify(historicalData.slice(-90))}`; // Send last 90 days
+    const prompt = `Provide a technical analysis on this historical data: ${JSON.stringify(historicalData.slice(-90))}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-flash", technicalAnalysisSchema);
 };
 
 export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<PortfolioRiskAnalysis> => {
-    const prompt = `Provide a risk analysis for this portfolio: ${JSON.stringify(portfolio)}`;
+    const prompt = `Analyze the following portfolio and provide a risk analysis. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema. Do not include any conversational text or markdown formatting. Portfolio data: ${JSON.stringify(portfolio)}`;
     return callGeminiProxy(prompt, "gemini-2.5-pro", portfolioRiskAnalysisSchema);
 };
 
 export const getCombinedRecommendations = async (profile: FmpProfile, ratings: FmpAnalystRating[], technicals: TechnicalAnalysis): Promise<CombinedRec> => {
-    const prompt = `Generate a trading recommendation for ${profile.companyName} using this data: Profile=${JSON.stringify(profile)}, Ratings=${JSON.stringify(ratings[0])}, Technicals=${JSON.stringify(technicals)}`;
+    const prompt = `Generate a trading recommendation for ${profile.companyName} using this data: Profile=${JSON.stringify(profile)}, Ratings=${JSON.stringify(ratings[0])}, Technicals=${JSON.stringify(technicals)}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-pro", combinedRecSchema);
 };
 
 export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile): Promise<KeyMetricsAnalysis> => {
-    const prompt = `Provide a friendly, multi-faceted summary for ${profile.companyName} based on these key metrics: ${JSON.stringify(quote)}`;
+    const prompt = `Provide a friendly, multi-faceted summary for ${profile.companyName} based on these key metrics: ${JSON.stringify(quote)}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-flash", keyMetricsAnalysisSchema);
 };
 
 export const getMarketScreenerPicks = async (userPrompt: string): Promise<AiScreener> => {
     const tickerUniverse = "AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, BRK.B, V, JPM, JNJ, WMT, UNH, PG, MA, HD, XOM, CVX, LLY, MRK";
-    const prompt = `From the universe of ${tickerUniverse}, find 5 stocks that match this request: "${userPrompt}"`;
+    const prompt = `From the universe of ${tickerUniverse}, find 5 stocks that match this request: "${userPrompt}". YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-pro", marketScreenerSchema);
 };
 
 export const getWatchlistPicks = async (holdings: { ticker: string, shares: number }[], watchlist: string[], news: string): Promise<AiWatchlistRecs> => {
-    const prompt = `Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}`;
+    const prompt = `Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}. YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.`;
     return callGeminiProxy(prompt, "gemini-2.5-pro", watchlistRecsSchema);
+};
+
+// --- Test Function with Forceful Prompt ---
+export const testGeminiProxy = async (): Promise<{ status: string; message: string }> => {
+    const prompt = `
+        Define what a stock is in a single, simple sentence. 
+        YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.
+        For the 'status' field, use 'success'. For the 'message' field, use your single-sentence explanation.
+    `;
+    const schema = {
+        type: "OBJECT",
+        properties: {
+            status: { type: "STRING" },
+            message: { type: "STRING" }
+        },
+        required: ["status", "message"]
+    };
+    return callGeminiProxy(prompt, "gemini-2.5-flash", schema);
 };

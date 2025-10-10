@@ -168,7 +168,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     // This useEffect hook handles periodic price updates for all holdings
     useEffect(() => {
-        const updateAllPrices = async () => {
+        /* const updateAllPrices = async () => {
              if (!user || (portfolio.holdings.length === 0 && portfolio.optionHoldings.length === 0)) {
                 console.log(`[UPDATE ALL PRICES] Skip: No user or no holdings.`);
                 return; // No user or nothing to update
@@ -306,7 +306,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         updateAllPrices(); // Run once on load
         const interval = setInterval(updateAllPrices, 60000); // Then, refresh every minute
-        return () => clearInterval(interval);
+        return () => clearInterval(interval); */
 
     }, [user, portfolio.holdings, portfolio.optionHoldings, transactions]); // Added transactions dependency to ensure fresh transaction array in the loop
 
