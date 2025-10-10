@@ -115,65 +115,47 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
     `;
 
     try {
-        const response = await fetch(GEMINI_BASE_URL, {
+        const response = await fetch('/geminiProxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 prompt: fullPrompt,
-                model: "gemini-2.5-flash", // Using a fast model for UI navigation
-                schema: signatexFlowSchema,
             }),
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new Error(`Gemini proxy failed: ${errorText}`);
+            throw new Error(`AI proxy failed: ${errorText}`);
         }
         
         const data = await response.json();
         const cleanedText = data.text.replace(/^```json\s*/, '').replace(/```$/, '');
         
-        // --- ADDITION: Process 'research' result before returning ---
         let responseJson: SignatexFlowResponse = JSON.parse(cleanedText);
         
         if (responseJson.steps.length > 0 && responseJson.steps[0].action === 'research') {
-             const researchInstructions = "You are an expert financial research assistant. Your task is to use the Google Search tool to answer the following user query. The answer must be highly relevant to financial markets, stock trading, or investment concepts. Provide a concise, factual, and friendly response in no more than three sentences. Directly address the user's query and do not include any markdown formatting (like bolding, italics, or lists) in your final response text.";
              const researchQuery = responseJson.steps[0].message;
 
-             const researchPrompt = `
-               ${researchInstructions}
-
-               User Query: ${researchQuery}
-             `;
-             
-             // --- CALL GEMINI RESEARCH API ---
-             const researchResponse = await fetch(GEMINI_BASE_URL, {
+             const researchResponse = await fetch('/aiProxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    prompt: researchPrompt,
-                    model: "gemini-2.5-flash",
-                    googleSearch: true, // Use Google Search for grounding
+                    prompt: researchQuery,
                 })
             });
             const researchData = await researchResponse.json();
             console.log(researchData);
             const researchText = researchData.text || "I was unable to find an answer for that query.";
-            // ------------------------------------
 
-            // Replace the 'research' step with the first 'say' step, inserting the research result
             if (responseJson.steps.length > 1 && responseJson.steps[1].action === 'say') {
-                 // Update the message of the planned 'say' action
                 responseJson.steps[1].message = researchText;
             } else {
-                 // Fallback: If no 'say' step was planned, insert one.
                  responseJson.steps.splice(1, 0, {
                      action: 'say',
                      message: researchText,
                      comment: 'Inserting AI research result.'
                  });
             }
-            // Remove the initial 'research' command step
             responseJson.steps.shift(); 
         }
 
