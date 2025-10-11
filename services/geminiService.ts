@@ -197,30 +197,42 @@ const watchlistRecsSchema = {
 const optionsStrategySchema = {
     type: "OBJECT",
     properties: {
-        ticker: { type: "STRING", description: "The underlying stock ticker symbol." },
-        targetPrice: { type: "NUMBER", description: "The forecast price target for the strategy, or null." },
-        targetDate: { type: "STRING", description: "The forecast expiration date in YYYY-MM-DD format, or null." },
-        strategyName: { type: "STRING", enum: ['Long Call', 'Long Put', 'Covered Call', 'Cash Secured Put', 'Bull Call Spread', 'Bear Put Spread', 'Iron Condor', 'Uncertain'] },
-        strategySummary: { type: "STRING", description: "A concise, detailed summary of the strategy's goal and outlook." },
+        strategyName: { type: "STRING", description: "The common name of the options strategy (e.g., 'Covered Call', 'Bull Put Spread')." },
+        description: { type: "STRING", description: "A detailed explanation of the strategy, its purpose, and market outlook." },
+        marketOutlook: { type: "STRING", enum: ["Bullish", "Bearish", "Neutral", "Moderately Bullish", "Moderately Bearish", "High Volatility", "Low Volatility"] },
+        timeframe: { type: "STRING", description: "The ideal timeframe for this strategy (e.g., '30-45 Days')." },
+        riskProfile: { type: "STRING", enum: ["Defined Risk", "Undefined Risk"] },
+        profitProfile: { type: "STRING", enum: ["Defined Profit", "Undefined Profit"] },
+        keyMetrics: {
+            type: "OBJECT",
+            properties: {
+                underlyingSymbol: { type: "STRING" },
+                underlyingPrice: { type: "NUMBER" },
+                maxProfit: { type: "NUMBER", description: "Maximum potential profit per 100 shares." },
+                maxLoss: { type: "NUMBER", description: "Maximum potential loss per 100 shares." },
+                breakevenPrice: { type: "NUMBER" },
+                netCredit: { type: "NUMBER", description: "Net credit received for entering the position (for credit spreads)." },
+            },
+            required: ["underlyingSymbol", "underlyingPrice", "maxProfit", "maxLoss", "breakevenPrice"]
+        },
         suggestedContracts: {
             type: "ARRAY",
             items: {
                 type: "OBJECT",
                 properties: {
-                    type: { type: "STRING", enum: ['call', 'put'] },
-                    action: { type: "STRING", enum: ['BUY', 'SELL'] },
-                    strike: { type: "NUMBER" },
-                    expiry: { type: "STRING", description: "YYYY-MM-DD" },
-                    premium: { type: "NUMBER", description: "Estimated premium price (per share) or current close price." },
-                    rationale: { type: "STRING" }
+                    type: { type: "STRING", enum: ['Call', 'Put'] },
+                    action: { type: "STRING", enum: ['Buy', 'Sell'] },
+                    strikePrice: { type: "NUMBER" },
+                    expirationDate: { type: "STRING", description: "YYYY-MM-DD" },
+                    premium: { type: "NUMBER", description: "Estimated premium per share." },
+                    rationale: { type: "STRING", description: "A brief justification for choosing this specific contract." }
                 },
-                required: ["type", "action", "strike", "expiry", "premium", "rationale"]
+                required: ["type", "action", "strikePrice", "expirationDate", "premium", "rationale"]
             }
         },
-        riskProfile: { type: "STRING", enum: ['High', 'Medium', 'Low'] },
-        maxRisk: { type: "NUMBER", description: "The maximum amount of money risked (per contract multiplier, e.g., per 100 shares), or null." }
+        commentary: { type: "STRING", description: "Overall commentary on the suitability of this strategy for the given stock and market conditions." }
     },
-    required: ["ticker", "strategyName", "strategySummary", "suggestedContracts", "riskProfile"]
+    required: ["strategyName", "description", "marketOutlook", "keyMetrics", "suggestedContracts", "commentary"]
 };
 
 // --- Exported Functions ---

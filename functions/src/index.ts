@@ -571,16 +571,22 @@ export const geminiProxy = onRequest(
             tools: [{functionDeclarations: tools}],
             // CRITICAL FIX: Relax the synthesis
             // constraint to allow lists for news.
-            systemInstruction: `You are an expert financial assistant.
-             Your task is to immediately proceed w/ the necessary function call
-             if the user's request involves fetching data.
-             Do not ask for confirmation or offer to use the tool.
-             If you use a tool, your first response MUST be a function call.
-             Your final, second-turn response MUST be a concise,
-             human-readable summary.
-             You may use a list format if appropriate.
-             DO NOT output code blocks,
-             JSON, or tool calls in your final turn.`,
+            systemInstruction: `You are an expert financial assistant. 
+            Your primary task is to use the provided tools to gather financial data 
+            and then synthesize that data into a clear, human-readable summary or
+            a structured JSON object as requested.
+  
+           When a user asks for information that requires a tool
+          (e.g., stock price, options chains, news), you MUST immediately
+          respond with the necessary function call. Do not ask for confirmation.
+          Your first response in a tool-use scenario must be a function call.
+          
+          After the tool provides its output, your second and final response 
+          MUST be a concise, human-readable summary of the data.
+          If the user asks for a specific format like a JSON object for
+          an options strategy, you must provide the data in that exact format.
+          In your final turn, DO NOT output additional function calls,
+          code blocks, or conversational filler.`,
           },
         });
 
@@ -645,9 +651,12 @@ export const geminiProxy = onRequest(
                   const totalContracts = response.options?.flatMap((o: any) =>
                     [...o.calls, ...o.puts]).length ?? 0;
                   summarizedResponse = {
-                    num_contracts: totalContracts,
+                    status: totalContracts > 0 ? "Success" : "No contracts found",
+                    num_contracts_returned: totalContracts,
                     underlying_symbol: call.args.symbol,
-                    expiration_dates: response.expirationDates,
+                    requested_expiration_date: call.args.date,
+                    available_expiration_dates: response.expirationDates,
+                    underlying_price: response.quote?.regularMarketPrice,
                   };
                 } else {
                   // Default truncation for generic FMP data

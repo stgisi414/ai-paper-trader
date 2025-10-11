@@ -1,6 +1,7 @@
 import { GEMINI_BASE_URL } from '../constants';
 import { NavigateFunction } from 'react-router-dom';
 import * as fmpService from './fmpService';
+import { formatCurrency } from '../utils/formatters';
 
 // Defines the structure of a single step in the workflow
 export interface WorkflowStep {
@@ -228,31 +229,47 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                 }
 
                 const { getOptionsStrategy } = await import('./geminiService');
-                // The JSON response from the proxy is the raw data needed for formatting
-                const strategyRec: any = await getOptionsStrategy(planOptionsStrategyStep.message, stockTicker);
+                const strategyRecResponse: any = await getOptionsStrategy(planOptionsStrategyStep.message, stockTicker);
 
-                // MODIFICATION: Robustly format the structured recommendation into a human-readable message
-                let strategyText = `**Strategy: ${strategyRec.strategyName || 'N/A'} for ${strategyRec.ticker || 'N/A'}**\n`;
-                strategyText += `Outlook: ${strategyRec.strategySummary || 'N/A'} (Risk: ${strategyRec.riskProfile || 'N/A'})\n`;
-                
-                // Defensive check before calling toFixed
-                if (strategyRec.maxRisk !== null && typeof strategyRec.maxRisk === 'number') {
-                    strategyText += `Max Risk: $${strategyRec.maxRisk.toFixed(2)} (per 100 shares)\n`;
+                // MODIFICATION: Parse the JSON string from the 'text' property
+                const strategyRec = JSON.parse(strategyRecResponse.text.replace(/^```json\s*|\s*```$/g, ''));
+
+                // MODIFICATION: More robustly format the structured recommendation into a human-readable message, checking for all new fields.
+                let strategyText = `**Strategy: ${strategyRec.strategyName || 'N/A'} for ${stockTicker}**\n\n`;
+                strategyText += `**Market Outlook:** ${strategyRec.marketOutlook || 'N/A'}\n`;
+                strategyText += `**Risk/Profit:** ${strategyRec.riskProfile || 'N/A'} / ${strategyRec.profitProfile || 'N/A'}\n\n`;
+                strategyText += `**Description:** ${strategyRec.description || 'N/A'}\n\n`;
+
+                if (strategyRec.keyMetrics) {
+                    const metrics = strategyRec.keyMetrics;
+                    strategyText += `**Key Metrics:**\n`;
+                    strategyText += `- Underlying Price: ${formatCurrency(metrics.underlyingPrice)}\n`;
+                    strategyText += `- Max Profit: ${formatCurrency(metrics.maxProfit)}\n`;
+                    strategyText += `- Max Loss: ${formatCurrency(metrics.maxLoss)}\n`;
+                    strategyText += `- Breakeven: ${formatCurrency(metrics.breakevenPrice)}\n\n`;
                 }
 
-                strategyText += "Contracts:\n";
+                strategyText += "**Suggested Contracts:**\n";
                 
-                strategyRec.suggestedContracts.forEach((c: any) => {
-                    // FIX: Use c.strikePrice if c.strike is undefined (to match AI output variance)
-                    // FIX: Safely check for premium/strike being a number before calling toFixed
-                    const strikePrice = typeof c.strike === 'number' ? c.strike : c.strikePrice;
-                    const premium = c.premium;
+                if (strategyRec.suggestedContracts && strategyRec.suggestedContracts.length > 0) {
+                    strategyRec.suggestedContracts.forEach((c: any) => {
+                        const strikePrice = c.strikePrice || c.strike;
+                        const premium = c.premium;
+                        const expiration = c.expirationDate || c.expiry;
 
-                    const formattedStrike = typeof strikePrice === 'number' ? `$${strikePrice.toFixed(2)}` : 'N/A';
-                    const formattedPremium = typeof premium === 'number' ? `$${premium.toFixed(2)}` : 'N/A (Illustrative)';
-                    
-                    strategyText += `- **${c.action || 'N/A'}** ${c.type ? c.type.toUpperCase() : 'N/A'} @ Strike ${formattedStrike} (Exp: ${c.expiry || 'N/A'}) - Premium: ${formattedPremium} - Rationale: ${c.rationale || 'N/A'}\n`;
-                });
+                        const formattedStrike = typeof strikePrice === 'number' ? formatCurrency(strikePrice) : 'N/A';
+                        const formattedPremium = typeof premium === 'number' ? formatCurrency(premium) : 'N/A';
+                        
+                        strategyText += `- **${c.action.toUpperCase()} ${c.type.toUpperCase()}** @ ${formattedStrike} (Exp: ${expiration})\n`;
+                        strategyText += `  - Premium: ${formattedPremium}\n`;
+                        strategyText += `  - Rationale: *${c.rationale}*\n`;
+                    });
+                } else {
+                    strategyText += `- No specific contracts were suggested.\n`;
+                }
+
+                strategyText += `\n**Commentary:** ${strategyRec.commentary || 'N/A'}`;
+
 
                 // Replace the plan_options_strategy step with a 'say' step.
                 return {
@@ -270,7 +287,7 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                 return { steps: [{ action: 'say', message: `Sorry, I failed to plan the options strategy: ${errorMessage}`, comment: 'Options planning failed.' }] };
             }
         }
-        
+
         // If no research was needed, return the original workflow.
         return workflow;
 
