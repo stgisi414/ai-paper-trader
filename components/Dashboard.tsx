@@ -23,38 +23,21 @@ const Dashboard: React.FC = () => {
     const [searchAttempted, setSearchAttempted] = useState(false);
     const [portfolioAnalysis, setPortfolioAnalysis] = useState<PortfolioRiskAnalysis | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [testResult, setTestResult] = useState<string>('');
+    const [testResult, setTestResult] = useState<{ name: string, result: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
-    const [toolTestResult, setToolTestResult] = useState<string>('');
-    const [isTestingTools, setIsTestingTools] = useState(false);
 
-    const handleProxyTest = useCallback(async () => {
+    const handleToolTest = useCallback(async (testName: string, prompt: string) => {
         setIsTesting(true);
-        setTestResult('');
+        setTestResult(null);
         try {
-            const result = await geminiService.testGeminiProxy();
-            console.log("Gemini Proxy Test successful:", result);
-            setTestResult(`Success: ${result.message}`);
+            const result = await geminiService.runToolCallingTest(testName, prompt);
+            console.log(`Gemini Tool Test [${testName}] successful:`, result);
+            setTestResult({ name: testName, result: result.text });
         } catch (error) {
-            console.error("Gemini Proxy Test failed:", error);
-            setTestResult(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error(`Gemini Tool Test [${testName}] failed:`, error);
+            setTestResult({ name: testName, result: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}` });
         } finally {
             setIsTesting(false);
-        }
-    }, []);
-
-    const handleToolTest = useCallback(async () => {
-        setIsTestingTools(true);
-        setToolTestResult('');
-        try {
-            const result = await geminiService.testToolCalling();
-            console.log("Gemini Tool Test successful:", result);
-            setToolTestResult(`Success: ${result.text}`);
-        } catch (error) {
-            console.error("Gemini Tool Test failed:", error);
-            setToolTestResult(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        } finally {
-            setIsTestingTools(false);
         }
     }, []);
 
@@ -152,38 +135,32 @@ const Dashboard: React.FC = () => {
                     </Card>
 
                     {import.meta.env.DEV && (
-                        <>
-                            <Card>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold">Gemini Proxy Test</h2>
-                                    <button onClick={handleProxyTest} disabled={isTesting} className="bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600">
-                                        {isTesting ? 'Testing...' : 'Run Test'}
-                                    </button>
-                                </div>
-                                {isTesting && <Spinner />}
-                                {testResult && (
-                                    <div className={`mt-4 p-2 rounded-md ${testResult.startsWith('Failed') ? 'bg-red-900' : 'bg-green-900'}`}>
-                                        <pre className="text-xs whitespace-pre-wrap">{testResult}</pre>
+                        <Card>
+                            <h2 className="text-2xl font-bold mb-4">Gemini Tool Calling Tests</h2>
+                            <p className="text-sm text-night-500 mb-4">
+                                These buttons test the AI's ability to use tools. Check the browser console and Firebase Function logs for detailed output.
+                            </p>
+                            <div className="flex flex-wrap gap-4">
+                                <button onClick={() => handleToolTest('FMP Quote', 'Get the current stock price for GOOGL using the get_fmp_data tool.')} disabled={isTesting} className="bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600">
+                                    {isTesting ? 'Testing...' : 'Test FMP Tool'}
+                                </button>
+                                <button onClick={() => handleToolTest('Options Chain', 'Get the options chain for GOOGL using the get_options_chain tool.')} disabled={isTesting} className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-night-600">
+                                    {isTesting ? 'Testing...' : 'Test Options Tool'}
+                                </button>
+                                 <button onClick={() => handleToolTest('Combined', 'What is the latest price for GOOGL and what are its next available options?')} disabled={isTesting} className="bg-orange-600 text-white font-bold py-2 px-4 rounded-md hover:bg-orange-700 transition-colors disabled:bg-night-600">
+                                    {isTesting ? 'Testing...' : 'Test Combined Tools'}
+                                </button>
+                            </div>
+                             {isTesting && <Spinner />}
+                             {testResult && (
+                                <div className="mt-4">
+                                    <h3 className="font-bold text-lg">Test Result: {testResult.name}</h3>
+                                    <div className={`mt-2 p-3 rounded-md text-sm whitespace-pre-wrap ${testResult.result.startsWith('Failed') ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`}>
+                                        {testResult.result}
                                     </div>
-                                )}
-                            </Card>
-
-                            <Card>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-2xl font-bold">Gemini Tool Calling Test</h2>
-                                    <button onClick={handleToolTest} disabled={isTestingTools} className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-night-600">
-                                        {isTestingTools ? 'Testing...' : 'Run Tool Test'}
-                                    </button>
                                 </div>
-                                <p className="text-sm text-night-500 mb-2">This button specifically tests the AI's ability to use the `get_fmp_data` tool to fetch a stock quote.</p>
-                                {isTestingTools && <Spinner />}
-                                {toolTestResult && (
-                                    <div className={`mt-4 p-2 rounded-md ${toolTestResult.startsWith('Failed') ? 'bg-red-900' : 'bg-green-900'}`}>
-                                        <pre className="text-xs whitespace-pre-wrap">{toolTestResult}</pre>
-                                    </div>
-                                )}
-                            </Card>
-                        </>
+                            )}
+                        </Card>
                     )}
 
                     {/* MODIFIED: Portfolio Risk Analysis - now conditional */}

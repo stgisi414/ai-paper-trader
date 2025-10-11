@@ -1,3 +1,4 @@
+// functions/src/index.ts
 import {onRequest} from "firebase-functions/v2/https";
 import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
@@ -341,107 +342,110 @@ export const alpacaProxy = onRequest(
 );
 
 export const geminiProxy = onRequest(
-  {
-    invoker: "public",
-    cors: true,
-    region: "us-central1",
-    timeoutSeconds: 120,
-  },
-  async (req: Request, res: Response): Promise<void> => {
-    logger.info("GEMINI_PROXY: Function triggered.");
-    if (req.method !== "POST") {
-      res.status(405).send("Method Not Allowed");
-      return;
-    }
-
-    try {
-      const {
-        prompt,
-        model: modelName = "gemini-2.5-flash",
-        enableTools = false,
-      } = req.body;
-
-      if (!prompt) {
-        res.status(400).send("Bad Request: Missing prompt.");
-        return;
-      }
-
-      const genAI = new GoogleGenAI({apiKey: geminiApiKey.value()});
-      const history: Content[] = [{ role: "user", parts: [{ text: prompt }] }];
-      let finalResponseText = "";
-
-      if (enableTools) {
-        // ACTOR MODE: Use tools to get a final text answer.
-        logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
-        
-        const config = {
-          tools: [{ functionDeclarations: tools }],
-        };
-
-        const firstResult = await genAI.models.generateContent({
-          model: modelName,
-          contents: history,
-          ...config,
-        });
-        
-        const firstCandidate = firstResult.candidates?.[0];
-        
-        // Safely check for a function call.
-        const functionCalls = firstCandidate?.content?.parts
-            ?.map((p) => p.functionCall)
-            .filter(Boolean);
-
-        if (functionCalls && functionCalls.length > 0) {
-          logger.info(`GEMINI_PROXY: Received ${functionCalls.length} tool call(s).`);
-
-          const toolPromises = functionCalls.map(async (call: any) => {
-            if (call.name in availableTools) {
-              logger.info(`Executing tool: ${call.name}`, { args: call.args });
-              const response = await availableTools[call.name](call.args);
-              return { functionResponse: { name: call.name, response } };
-            }
-            return { functionResponse: { name: call.name, response: { error: `Tool ${call.name} not found.` } } };
-          });
-
-          const toolResponses = await Promise.all(toolPromises);
-
-          const historyWithToolResults: Content[] = [...history];
-          // This check is now safe.
-          if (firstCandidate.content) {
-            historyWithToolResults.push(firstCandidate.content);
-          }
-          historyWithToolResults.push({ role: "function", parts: toolResponses });
-          
-          const secondResult = await genAI.models.generateContent({
-            model: modelName,
-            contents: historyWithToolResults,
-            ...config,
-          });
-
-          finalResponseText = secondResult.text ?? "Tool executed, but the AI did not provide a final text response.";
-        } else {
-          // No tool call was suggested, use the initial text response.
-          finalResponseText = firstResult.text ?? "No function call was needed, but no text response was returned.";
+    {
+        invoker: "public",
+        cors: true,
+        region: "us-central1",
+        timeoutSeconds: 120,
+    },
+    async (req: Request, res: Response): Promise<void> => {
+        logger.info("GEMINI_PROXY: Function triggered.");
+        if (req.method !== "POST") {
+            res.status(405).send("Method Not Allowed");
+            return;
         }
-        
-      } else {
-        // PLANNER MODE: Generate a JSON workflow without tools.
-        logger.info("GEMINI_PROXY: Running in PLANNER (no-tools) mode.");
-        const result = await genAI.models.generateContent({
-          model: modelName,
-          contents: history,
-          // Correctly removed generationConfig
-        });
-        finalResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      }
 
-      logger.info("GEMINI_PROXY: Sending final response to client.", { text: finalResponseText });
-      res.status(200).send({ text: finalResponseText });
+        try {
+            const {
+                prompt,
+                model: modelName = "gemini-2.5-flash",
+                enableTools = false,
+            } = req.body;
 
-    } catch (error) {
-      logger.error("GEMINI_PROXY: A critical error occurred:", error);
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-      res.status(500).json({ error: `Gemini Proxy Error: ${errorMessage}` });
-    }
-  },
+            if (!prompt) {
+                res.status(400).send("Bad Request: Missing prompt.");
+                return;
+            }
+
+            const genAI = new GoogleGenAI({apiKey: geminiApiKey.value()});
+            const history: Content[] = [{ role: "user", parts: [{ text: prompt }] }];
+            let finalResponseText = "";
+
+            if (enableTools) {
+                logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
+                const config = {
+                    tools: [{ functionDeclarations: tools }],
+                };
+
+                const firstResult = await genAI.models.generateContent({
+                    model: modelName,
+                    contents: history,
+                    ...config,
+                });
+
+                const firstCandidate = firstResult.candidates?.[0];
+
+                if (firstCandidate) {
+                    const functionCalls = firstCandidate.content?.parts
+                        ?.map((p) => p.functionCall)
+                        .filter(Boolean);
+
+                    if (functionCalls && functionCalls.length > 0) {
+                        logger.info(`GEMINI_PROXY: Received ${functionCalls.length} tool call(s).`);
+
+                        const toolPromises = functionCalls.map(async (call: any) => {
+                            if (call.name in availableTools) {
+                                logger.info(`Executing tool: ${call.name}`, { args: call.args });
+                                const response = await availableTools[call.name](call.args);
+                                return { functionResponse: { name: call.name, response } };
+                            }
+                            return { functionResponse: { name: call.name, response: { error: `Tool ${call.name} not found.` } } };
+                        });
+
+                        const toolResponses = await Promise.all(toolPromises);
+
+                        // **FIX:** This is the corrected history construction.
+                        const historyWithToolResults: Content[] = [...history];
+                        if (firstCandidate.content) {
+                            historyWithToolResults.push(firstCandidate.content);
+                        }
+                        historyWithToolResults.push({
+                            role: "function",
+                            parts: toolResponses.map(r => ({ functionResponse: r.functionResponse })),
+                        });
+
+
+                        const secondResult = await genAI.models.generateContent({
+                            model: modelName,
+                            contents: historyWithToolResults,
+                            ...config,
+                        });
+
+                        finalResponseText = secondResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "Tool executed, but the AI did not provide a final text response.";
+                    } else {
+                        finalResponseText = firstCandidate?.content?.parts?.[0]?.text ?? "No function call was needed, but no text response was returned.";
+                    }
+                } else {
+                    finalResponseText = "No response candidate found from the model.";
+                }
+
+            } else {
+                // PLANNER MODE: Generate a JSON workflow without tools.
+                logger.info("GEMINI_PROXY: Running in PLANNER (no-tools) mode.");
+                const result = await genAI.models.generateContent({
+                    model: modelName,
+                    contents: history,
+                });
+                finalResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+            }
+
+            logger.info("GEMINI_PROXY: Sending final response to client.", { text: finalResponseText });
+            res.status(200).send({ text: finalResponseText });
+
+        } catch (error) {
+            logger.error("GEMINI_PROXY: A critical error occurred:", error);
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            res.status(500).json({ error: `Gemini Proxy Error: ${errorMessage}` });
+        }
+    },
 );

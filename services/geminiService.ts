@@ -2,37 +2,42 @@ import { GEMINI_BASE_URL } from '../constants';
 import * as fmpService from './fmpService';
 import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating } from '../types';
 
-const callGeminiProxy = async (prompt: string, model: string, schema: object): Promise<any> => {
+const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean): Promise<any> => {
     try {
+        console.log(`[GEMINI_SERVICE] Calling Gemini Proxy. Tools enabled: ${enableTools}`);
         const response = await fetch(GEMINI_BASE_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, model, schema }),
+            body: JSON.stringify({ prompt, model, enableTools }),
         });
 
         if (!response.ok) {
             const errorText = await response.text();
+            console.error(`[GEMINI_SERVICE] Proxy call failed with status ${response.status}:`, errorText);
             throw new Error(`Gemini proxy failed with status ${response.status}: ${errorText}`);
         }
 
         const data = await response.json();
+        console.log("[GEMINI_SERVICE] Raw response from proxy:", data);
         
-        // Aggressive client-side cleaning (remains for consistency)
-        const cleanedText = data.text
-            .replace(/^```json\s*|\s*```$/g, '')
-            .trim(); 
-
-        // CRITICAL FIX: Wrap JSON.parse in a try/catch to prevent component crash.
-        try {
-            return JSON.parse(cleanedText);
-        } catch (parseError) {
-             console.error("Failed to parse AI response as JSON:", cleanedText, parseError);
-             // Throw a caught error instead of an uncaught synchronous exception
-             throw new Error("AI response was corrupted and could not be parsed. Please try again.");
+        // For planner mode, we expect JSON. For actor mode, we expect text.
+        if (!enableTools) {
+            const cleanedText = data.text
+                .replace(/^```json\s*|\s*```$/g, '')
+                .trim();
+            try {
+                return JSON.parse(cleanedText);
+            } catch (parseError) {
+                 console.error("[GEMINI_SERVICE] Failed to parse AI JSON response:", cleanedText, parseError);
+                 throw new Error("AI response was corrupted and could not be parsed.");
+            }
         }
         
+        // For actor mode, just return the data object which should contain the text
+        return data;
+        
     } catch (error) {
-        console.error("Error calling Gemini proxy:", error);
+        console.error("[GEMINI_SERVICE] Error in callGeminiProxy:", error);
         throw error;
     }
 };
@@ -310,45 +315,14 @@ export const getWatchlistPicks = async (holdings: { ticker: string, shares: numb
 };
 
 // --- Test Function with Forceful Prompt ---
-export const testGeminiProxy = async (): Promise<{ status: string; message: string }> => {
-    const prompt = `
-        Define what a stock is in a single, simple sentence. 
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms to the provided schema.
-        For the 'status' field, use 'success'. For the 'message' field, use your single-sentence explanation.
-    `;
-    const schema = {
-        type: "OBJECT",
-        properties: {
-            status: { type: "STRING" },
-            message: { type: "STRING" }
-        },
-        required: ["status", "message"]
-    };
-    return callGeminiProxy(prompt, "gemini-2.5-flash", schema);
-};
-
-export const testToolCalling = async (): Promise<{ text: string }> => {
-    const prompt = `
-        Your only task is to use the provided tools to answer the following request.
-        Respond with only the final, summarized, human-readable answer as plain text.
-        Request: "Get the current stock price for Google (GOOGL)."
-    `;
+export const runToolCallingTest = async (testName: string, prompt: string): Promise<{ text: string }> => {
+    console.log(`[GEMINI_SERVICE] Starting tool calling test: "${testName}"`);
     try {
-        const response = await fetch('/geminiProxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                prompt: prompt,
-                enableTools: true,
-            }),
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            return { text: `Tool Test Failed: ${errorText}` };
-        }
-        return await response.json();
+        const result = await callGeminiProxy(prompt, "gemini-2.5-flash", true);
+        console.log(`[GEMINI_SERVICE] Test "${testName}" successful. Raw result:`, result);
+        return { text: `Success: ${result.text}` };
     } catch (error) {
-        console.error("Error during tool test:", error);
-        return { text: `Tool Test Failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        console.error(`[GEMINI_SERVICE] Test "${testName}" failed:`, error);
+        return { text: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
     }
 };
