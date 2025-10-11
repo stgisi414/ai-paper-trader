@@ -326,3 +326,29 @@ export const testGeminiProxy = async (): Promise<{ status: string; message: stri
     };
     return callGeminiProxy(prompt, "gemini-2.5-flash", schema);
 };
+
+export const testToolCalling = async (): Promise<{ text: string }> => {
+    const prompt = `
+        Your only task is to use the provided tools to answer the following request.
+        Respond with only the final, summarized, human-readable answer as plain text.
+        Request: "Get the current stock price for Google (GOOGL)."
+    `;
+    try {
+        const response = await fetch('/geminiProxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt: prompt,
+                enableTools: true,
+            }),
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { text: `Tool Test Failed: ${errorText}` };
+        }
+        return await response.json();
+    } catch (error) {
+        console.error("Error during tool test:", error);
+        return { text: `Tool Test Failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+};

@@ -25,6 +25,8 @@ const Dashboard: React.FC = () => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [testResult, setTestResult] = useState<string>('');
     const [isTesting, setIsTesting] = useState(false);
+    const [toolTestResult, setToolTestResult] = useState<string>('');
+    const [isTestingTools, setIsTestingTools] = useState(false);
 
     const handleProxyTest = useCallback(async () => {
         setIsTesting(true);
@@ -38,6 +40,21 @@ const Dashboard: React.FC = () => {
             setTestResult(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
             setIsTesting(false);
+        }
+    }, []);
+
+    const handleToolTest = useCallback(async () => {
+        setIsTestingTools(true);
+        setToolTestResult('');
+        try {
+            const result = await geminiService.testToolCalling();
+            console.log("Gemini Tool Test successful:", result);
+            setToolTestResult(`Success: ${result.text}`);
+        } catch (error) {
+            console.error("Gemini Tool Test failed:", error);
+            setToolTestResult(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setIsTestingTools(false);
         }
     }, []);
 
@@ -134,21 +151,39 @@ const Dashboard: React.FC = () => {
                         )}
                     </Card>
 
-                    {user && (
-                        <Card>
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-2xl font-bold">Gemini Proxy Test</h2>
-                                <button onClick={handleProxyTest} disabled={isTesting} className="bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600">
-                                    {isTesting ? 'Testing...' : 'Run Test'}
-                                </button>
-                            </div>
-                            {isTesting && <Spinner />}
-                            {testResult && (
-                                <div className={`mt-4 p-2 rounded-md ${testResult.startsWith('Failed') ? 'bg-red-900' : 'bg-green-900'}`}>
-                                    <pre className="text-xs whitespace-pre-wrap">{testResult}</pre>
+                    {import.meta.env.DEV && (
+                        <>
+                            <Card>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold">Gemini Proxy Test</h2>
+                                    <button onClick={handleProxyTest} disabled={isTesting} className="bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600">
+                                        {isTesting ? 'Testing...' : 'Run Test'}
+                                    </button>
                                 </div>
-                            )}
-                        </Card>
+                                {isTesting && <Spinner />}
+                                {testResult && (
+                                    <div className={`mt-4 p-2 rounded-md ${testResult.startsWith('Failed') ? 'bg-red-900' : 'bg-green-900'}`}>
+                                        <pre className="text-xs whitespace-pre-wrap">{testResult}</pre>
+                                    </div>
+                                )}
+                            </Card>
+
+                            <Card>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold">Gemini Tool Calling Test</h2>
+                                    <button onClick={handleToolTest} disabled={isTestingTools} className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-night-600">
+                                        {isTestingTools ? 'Testing...' : 'Run Tool Test'}
+                                    </button>
+                                </div>
+                                <p className="text-sm text-night-500 mb-2">This button specifically tests the AI's ability to use the `get_fmp_data` tool to fetch a stock quote.</p>
+                                {isTestingTools && <Spinner />}
+                                {toolTestResult && (
+                                    <div className={`mt-4 p-2 rounded-md ${toolTestResult.startsWith('Failed') ? 'bg-red-900' : 'bg-green-900'}`}>
+                                        <pre className="text-xs whitespace-pre-wrap">{toolTestResult}</pre>
+                                    </div>
+                                )}
+                            </Card>
+                        </>
                     )}
 
                     {/* MODIFIED: Portfolio Risk Analysis - now conditional */}

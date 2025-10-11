@@ -6,7 +6,6 @@ import {getFirestore} from "firebase-admin/firestore";
 import {defineString} from "firebase-functions/params";
 import {
   GoogleGenAI,
-  GenerationConfig,
   FunctionDeclaration,
   Content,
   Type,
@@ -29,6 +28,30 @@ const geminiApiKey = defineString("GEMINI_API_KEY");
 
 // --- START: AI TOOLS ---
 
+const fetchFmpApi = async (endpoint: string) => {
+  const apiKey = fmpApiKey.value();
+  if (!apiKey) {
+    logger.error("FMP_API_KEY is not configured.");
+    return { error: "FMP API Key is missing.", status: 500 };
+  }
+  const queryDelimiter = endpoint.includes("?") ? "&" : "?";
+  const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${apiKey}`;
+  logger.info(`Fetching FMP URL: ${url.replace(apiKey, "REDACTED")}`);
+  try {
+    const apiResponse = await fetch(url);
+    const responseText = await apiResponse.text();
+    if (!apiResponse.ok) {
+      logger.error(`FMP API Error ${apiResponse.status}:`, responseText);
+      return { error: `FMP API Error: ${responseText}`, status: apiResponse.status };
+    }
+    // Return the parsed data directly on success
+    return { data: JSON.parse(responseText), status: 200 };
+  } catch (error) {
+    logger.error("FMP Fetch Error:", error);
+    return { error: "Failed to connect to FMP API.", status: 500 };
+  }
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let yfClient: any = null;
 const loadYahooFinanceClient = async () => {
@@ -43,41 +66,46 @@ const loadYahooFinanceClient = async () => {
   }
 };
 
-const getOptionsChain = async ({symbol, date}: {symbol: string, date?: string}) => {
+const fetchOptionsApi = async (symbol: string, date?: string) => {
   await loadYahooFinanceClient();
-  logger.info(`Fetching options for ${symbol} on date ${date}`);
+  logger.info(`Fetching options for ${symbol} on date ${date || "next available"}`);
   try {
     const yfQueryOptions: { date?: Date } = {};
     if (date) {
+      // Ensure date is parsed correctly as UTC midnight
       yfQueryOptions.date = new Date(`${date}T00:00:00.000Z`);
     }
+
     const optionsChain = await yfClient.options(symbol.toUpperCase(), yfQueryOptions);
-    return optionsChain || {error: `No options found for ${symbol}`};
+    if (!optionsChain) {
+      const errorMsg = `No options found for ${symbol}`;
+      logger.warn(errorMsg);
+      return { error: errorMsg, status: 404 };
+    }
+    return { data: optionsChain, status: 200 };
   } catch (e) {
-    logger.warn(`Failed to fetch options for ${symbol}/${date || "next"}.`, e);
-    return {error: `Failed to fetch options for ${symbol}`};
+    const errorMsg = `Failed to fetch options for ${symbol}`;
+    logger.error(errorMsg, e);
+    return { error: errorMsg, status: 500 };
   }
 };
 
+const getOptionsChain = async ({symbol, date}: {symbol: string, date?: string}) => {
+  logger.info(`AI Tool: Calling getOptionsChain for ${symbol}`);
+  const { data, error } = await fetchOptionsApi(symbol, date);
+  if (error) {
+    return { error };
+  }
+  return data;
+};
+
 const getFmpData = async ({endpoint}: {endpoint: string}) => {
-  logger.info(`Fetching FMP data for endpoint: ${endpoint}`);
-  const apiKey = fmpApiKey.value();
-  if (!apiKey) {
-    return {error: "FMP API Key is missing."};
+  logger.info(`AI Tool: Calling getFmpData with endpoint: ${endpoint}`);
+  const { data, error } = await fetchFmpApi(endpoint);
+  if (error) {
+    return { error };
   }
-  const queryDelimiter = endpoint.includes("?") ? "&" : "?";
-  const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${apiKey}`;
-  try {
-    const apiResponse = await fetch(url);
-    const responseText = await apiResponse.text();
-    if (!apiResponse.ok) {
-      return {error: `FMP API Error: ${apiResponse.status} ${responseText}`};
-    }
-    return JSON.parse(responseText);
-  } catch (error) {
-    logger.error("FMP Proxy Network/Connection Error:", error);
-    return {error: "Proxy failed to connect to FMP."};
-  }
+  return data;
 };
 
 const tools: FunctionDeclaration[] = [
@@ -234,69 +262,25 @@ export const optionsProxy = onRequest(
     region: "us-central1",
   },
   async (req: Request, res: Response): Promise<void> => {
-    await loadYahooFinanceClient();
-    try {
-      if (req.method !== "GET") {
-        logger.warn(`Method Not Allowed: ${req.method}`);
-        res.status(405).send("Method Not Allowed");
-        return;
-      }
-      const symbol = req.query.symbol;
-      const date = req.query.date as string | undefined;
+    const symbol = req.query.symbol;
+    const date = req.query.date as string | undefined;
 
-      if (!symbol || typeof symbol !== "string") {
-        logger.warn("Missing or invalid stock symbol in query.");
-        res.status(400).json({
-          error: "Missing or invalid stock symbol.",
-        });
-        return;
-      }
-
-      const yfQueryOptions: { date?: Date } = {};
-      if (date) {
-        yfQueryOptions.date = new Date(`${date}T00:00:00.000Z`);
-      }
-
-      let optionsChain;
-
-      try {
-        // Attempt to fetch options data
-        optionsChain = await yfClient.options(symbol.toUpperCase(),
-          yfQueryOptions);
-      } catch (e) {
-        // CRITICAL FIX: Gracefully handle Yahoo Finance failure
-        // (e.g., no data for date)
-        logger.warn(`Yahoo Finance failed to fetch data for
-          ${symbol}/${date || "next"}. Returning empty set.`, e);
-
-        // Construct a minimally valid (empty) response structure
-        optionsChain = {
-          underlyingSymbol: symbol.toUpperCase(),
-          options: [],
-          expirationDates: [],
-          quote: {
-            // Need a price for frontend calculations.
-            // Use null or 0 if truly unavailable.
-            // For now, we can omit it
-            // since the parent try/catch handles the 503.
-            // Since we successfully loaded the client,
-            // this suggests data is missing, not the service itself.
-          },
-        };
-      }
-
-
-      res.status(200).json(optionsChain);
-    } catch (error) {
-      // Keep the general error handler for true internal proxy/server issues
-      logger.error("Options Proxy Error (Internal Failure):", error);
-      res.status(503).json({
-        error: "Failed to fetch options data from external API.",
-      });
+    if (!symbol || typeof symbol !== "string") {
+      logger.warn("Missing or invalid stock symbol in query.");
+      res.status(400).json({ error: "Missing or invalid stock symbol." });
+      return;
     }
+
+    const { data, error, status } = await fetchOptionsApi(symbol, date);
+
+    if (error) {
+      res.status(status).json({ error });
+      return;
+    }
+
+    res.status(status).json(data);
   },
 );
-
 
 export const fmpProxy = onRequest(
   {
@@ -311,53 +295,14 @@ export const fmpProxy = onRequest(
       return;
     }
 
-    const apiKey = fmpApiKey.value();
-    if (!apiKey) {
-      logger.error("FMP_API_KEY is not configured in Firebase Functions");
-      res.status(500).json({error: "FMP API Key is missing."});
+    const { data, error, status } = await fetchFmpApi(endpoint);
+
+    if (error) {
+      res.status(status).json({ error });
       return;
     }
 
-    const queryDelimiter = endpoint.includes("?") ? "&" : "?";
-    const url = `https://financialmodelingprep.com/api${endpoint}${queryDelimiter}apikey=${apiKey}`;
-
-    logger.info(`FMP Proxy fetching URL: ${url.replace(apiKey, "REDACTED")}`);
-
-    try {
-      const apiResponse = await fetch(url);
-      const responseText = await apiResponse.text();
-
-      if (!apiResponse.ok) {
-        logger.error(`FMP API status ${apiResponse.status}:`, responseText);
-        let errorDetails;
-        try {
-          errorDetails = JSON.parse(responseText);
-        } catch {
-          errorDetails = {
-            message:
-              responseText.slice(0, 200) ||
-              `Request failed with status ${apiResponse.status}`,
-          };
-        }
-        res.status(apiResponse.status).json({
-          error: "FMP API Error",
-          status: apiResponse.status,
-          details: errorDetails,
-        });
-        return;
-      }
-
-      try {
-        const data = JSON.parse(responseText);
-        res.status(200).json(data);
-      } catch (e) {
-        logger.error("Failed to parse successful response as JSON.", e);
-        res.status(500).json({error: "FMP returned unparsable on success."});
-      }
-    } catch (error) {
-      logger.error("FMP Proxy Network/Connection Error:", error);
-      res.status(500).json({error: "Proxy failed to connect to FMP."});
-    }
+    res.status(status).json(data);
   },
 );
 
@@ -405,118 +350,80 @@ export const geminiProxy = onRequest(
   async (req: Request, res: Response): Promise<void> => {
     logger.info("GEMINI_PROXY: Function triggered.");
     if (req.method !== "POST") {
-      logger.warn("GEMINI_PROXY: Method Not Allowed:", { method: req.method });
       res.status(405).send("Method Not Allowed");
       return;
     }
 
     try {
-      logger.info("GEMINI_PROXY: Request body:", req.body);
       const {
         prompt,
         model: modelName = "gemini-2.5-flash",
-        schema,
-        googleSearch,
-        enableTools,
+        enableTools = false,
       } = req.body;
 
       if (!prompt) {
-        logger.warn("GEMINI_PROXY: Bad Request - Missing prompt.");
         res.status(400).send("Bad Request: Missing prompt.");
         return;
       }
 
-      logger.info("GEMINI_PROXY: Initializing GoogleGenAI...");
       const genAI = new GoogleGenAI({ apiKey: geminiApiKey.value() });
-      logger.info("GEMINI_PROXY: GoogleGenAI initialized successfully.");
-
-      const generationConfig: GenerationConfig = schema ? {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-      } : {};
-
-      const requestPayload: any = {
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig,
-      };
+      const history: Content[] = [{ role: "user", parts: [{ text: prompt }] }];
+      let finalResponseText = "";
 
       if (enableTools) {
-        requestPayload.tools = [{ functionDeclarations: tools }];
-      } else if (googleSearch) {
-        requestPayload.tools = [{ google_search: {} }];
-      }
-      logger.info("GEMINI_PROXY: Constructed request payload:", requestPayload);
+        // ACTOR MODE: Use tools to get a final text answer.
+        logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
+        for (let i = 0; i < 5; i++) {
+          const requestPayload: any = {
+            contents: history,
+            tools: [{ functionDeclarations: tools }],
+          };
 
-      logger.info("GEMINI_PROXY: Sending initial request to Gemini...");
-      const geminiResult = await genAI.models.generateContent({
-        model: modelName,
-        ...requestPayload,
-      });
-      logger.info("GEMINI_PROXY: Received initial response from Gemini:", JSON.stringify(geminiResult, null, 2));
+          const result = await genAI.models.generateContent({ model: modelName, ...requestPayload });
+          const candidate = result.candidates?.[0];
 
-      const functionCall = geminiResult.candidates?.[0]?.content?.parts?.[0]?.functionCall;
-      logger.info("GEMINI_PROXY: Extracted functionCall:", functionCall);
+          if (!candidate || !candidate.content) {
+            logger.error("GEMINI_PROXY (Actor): Candidate missing content. Finish Reason:", candidate?.finishReason);
+            finalResponseText = "An API error occurred while using tools.";
+            break;
+          }
 
-      let rawResponseText = "";
-      if (enableTools && functionCall && typeof functionCall.name === "string" && functionCall.name in availableTools) {
-        logger.info(`GEMINI_PROXY: Entering tool-calling flow for function: ${functionCall.name}`);
-        const apiResult = await availableTools[functionCall.name](functionCall.args);
-        logger.info("GEMINI_PROXY: Tool execution result:", apiResult);
+          const modelResponse = candidate.content;
+          history.push(modelResponse);
+          const functionCall = modelResponse.parts?.find((p) => p.functionCall)?.functionCall;
 
-        const history: Content[] = [
-          ...requestPayload.contents,
-          geminiResult.candidates![0].content,
-          {
+          if (!functionCall || !functionCall.name || !(functionCall.name in availableTools)) {
+            finalResponseText = modelResponse.parts?.map((p) => p.text).join("") ?? "No result found.";
+            break;
+          }
+          
+          logger.info(`GEMINI_PROXY: Iteration ${i + 1} - Executing tool: ${functionCall.name}`);
+          const apiResult = await availableTools[functionCall.name](functionCall.args);
+          logger.info(`GEMINI_PROXY: Iteration ${i + 1} - Tool result received.`);
+          history.push({
             role: "function",
             parts: [{ functionResponse: { name: functionCall.name, response: apiResult } }],
-          },
-        ];
-
-        const finalRequestPayload: any = {
-          contents: history,
-          model: modelName,
-          generationConfig,
-        };
-        logger.info("GEMINI_PROXY: Sending final request to Gemini with tool response:", finalRequestPayload);
-        const finalResult = await genAI.models.generateContent(finalRequestPayload);
-        rawResponseText = finalResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-        logger.info("GEMINI_PROXY: Received final response from Gemini:", JSON.stringify(finalResult, null, 2));
-       } else {
-        logger.info("GEMINI_PROXY: No tool call detected or required. Sending direct response.");
-        // This is the line that matters for our test case. It needs to be correct.
-        rawResponseText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      }
-
-      // Handle structured or conversational output consistently
-      let responseForFrontend = rawResponseText;
-      if (schema) {
-        try {
-          // FIX: Replace faulty index-based slicing with robust regex stripping and trimming.
-          // This removes "```json" from the start, "```" from the end, and trims whitespace.
-          const cleanedText = rawResponseText.replace(/^```json\s*|\s*```$/g, '').trim();
-
-          // Attempt to parse the cleaned text to confirm validity before sending.
-          JSON.parse(cleanedText);
-
-          responseForFrontend = cleanedText;
-          logger.info("GEMINI_PROXY: Successfully extracted and validated JSON.");
-        } catch (jsonError) {
-          logger.error("GEMINI_PROXY: Error processing JSON from AI. Sending raw text as fallback:", jsonError);
-          // If parsing fails, use the original raw text as a fallback.
-          responseForFrontend = rawResponseText; 
+          });
         }
+      } else {
+        // PLANNER MODE: Generate a JSON workflow without tools.
+        logger.info("GEMINI_PROXY: Running in PLANNER (no-tools) mode.");
+        // *** CRITICAL FIX: Re-added generationConfig to force clean JSON output ***
+        const result = await genAI.models.generateContent({
+          model: modelName,
+          contents: history,
+          generationConfig: { responseMimeType: "application/json" },
+        });
+        finalResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
       }
-      
-      // Send the cleaned-up string back to the frontend inside a `text` field
-      res.status(200).send({ text: responseForFrontend });
+
+      logger.info("GEMINI_PROXY: Sending final response to client.", { text: finalResponseText });
+      res.status(200).send({ text: finalResponseText });
 
     } catch (error) {
-      logger.error("GEMINI_PROXY: An error occurred in the proxy:", error);
-      const errorMessage =
-        error instanceof Error ?
-          `Error generating content from Gemini API: ${error.message}` :
-          "Error generating content from Gemini API.";
-      res.status(500).json({ error: errorMessage });
+      logger.error("GEMINI_PROXY: A critical error occurred:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      res.status(500).json({ error: `Gemini Proxy Error: ${errorMessage}` });
     }
   },
 );

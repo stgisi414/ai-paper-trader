@@ -78,114 +78,78 @@ const signatexFlowSchema = {
 export const getWorkflowFromPrompt = async (prompt: string, context: AppContext): Promise<SignatexFlowResponse> => {
     const contextPrompt = buildContextPrompt(context);
 
-    const fullPrompt = `
-        You are an expert financial assistant for Signatex.co. Your primary goal is to fulfill user requests by either performing site actions or providing information via research.
+    // Prompt for the "Planner" AI. Its only job is to create a JSON workflow.
+    const plannerPrompt = `
+        You are an expert financial assistant for Signatex.co. Your ONLY goal is to fulfill the user's request by generating a JSON object that defines a series of actions.
 
         ${contextPrompt}
 
         **CRITICAL RULES:**
-        1.  **TOOL-POWERED DATA RETRIEVAL**: If the user asks for financial data (e.g., 'price', 'news', 'options') for any ticker, your *first* action MUST be 'research'.
-            -   The 'message' field of the 'research' step MUST be a single, direct command to the underlying tool-calling model.
-            -   // MODIFICATION TO CRITICAL RULE EXAMPLE
-            -   **Example Research Query for Options**: \`Get current quote and next available call options chain for NNE.\`
-            -   **Example Research Query for Profile**: \`Get company profile for GOOG.\`
-            -   The 'research' action should be followed by a 'say' action to summarize the findings. The 'message' field of the 'say' step should be \`[The result from the 'research' step goes here]\`.
-        2.  **VIEW A STOCK WITH 'open_stock'**: To view a stock's chart or details, you MUST use the \`open_stock\` action.
-        3.  **NO INVENTED URLS**: Only use the \`path\` action for the paths explicitly listed below.
-        4.  **CHART DRAWING LIMITATION**: You CANNOT draw on the chart. Use the \`say\` action to explain this limitation.
-        5.  **STOCK TICKERS ONLY**: The app only supports stock tickers (e.g., AAPL, GOOG).
-        6.  **JSON FORMAT**: You MUST wrap the array of steps in an object with the key "steps".
+        1.  If the user asks for information (like price, news, or options), your first and ONLY step MUST be \`"action": "research"\`.
+        2.  The \`message\` for the "research" step must be a clear, direct command for another AI that has tool access. Example: "Get the current stock price and the next available options chain for MSFT."
+        3.  If the user wants to navigate or interact (e.g., "buy 10 shares"), generate the appropriate workflow steps (\`open_stock\`, \`click\`, etc.).
+        4.  You MUST ONLY output a raw JSON object with a "steps" array. Do not add any other text.
 
-        **AVAILABLE ACTIONS & PAGES:**
-
-        * **NEW: Research Action**:
-            * **Action**: \`research\`
-            * **Message**: The specific research query for the tool. This query will be executed by an advanced model with access to tools like \`get_fmp_data\` and \`get_options_chain\`.
-
-        * **Site Control Actions (Use when possible):**
-            * \u0060open_stock\u0060, \u0060navigate\u0060, \u0060type\u0060, \u0060click\u0060, \u0060select\u0060, \u0060wait\u0060, \u0060say\u0060
-
-        * **Navigation (\`path\` action):**
-            * Dashboard / Home: \`{ "path": "/" }\`
-            * AI Stock Picker: \`{ "path": "/picker" }\`
-            * History: \`{ "path": "/history" }\`
-            
-        * **Element Selectors...** (omitted, assume structure remains the same)
-
-        User command: "${prompt}"
-        Please provide only the raw JSON object in your response, without any markdown formatting.
+        **User command: "${prompt}"**
     `;
 
     try {
-        const response = await fetch('/geminiProxy', {
+        // --- Step 1: Get the plan from the Planner AI ---
+        const plannerResponse = await fetch('/geminiProxy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                prompt: fullPrompt,
-                // CRITICAL FIX #1: Enable tools for flow requests
-                enableTools: true, 
+                prompt: plannerPrompt,
+                enableTools: false, // The planner does not need tools.
             }),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`AI proxy failed: ${errorText}`);
-        }
+        if (!plannerResponse.ok) throw new Error(`Planner AI failed: ${await plannerResponse.text()}`);
         
-        const data = await response.json();
-        // The API returns the raw text, which we clean up.
-        const cleanedText = data.text.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+        const planData = await plannerResponse.json();
+        const workflow = JSON.parse(planData.text) as SignatexFlowResponse;
 
-        let responseJson: SignatexFlowResponse | WorkflowStep[] | WorkflowStep = JSON.parse(cleanedText);
-        
-        // CRITICAL FIX #1: Handle raw array OR single object returned instead of { steps: [...] }
-        if (Array.isArray(responseJson)) {
-            responseJson = { steps: responseJson } as SignatexFlowResponse;
-        } else if (typeof responseJson === 'object' && responseJson !== null && 'action' in responseJson) {
-            responseJson = { steps: [responseJson] } as SignatexFlowResponse;
-        }
-        
-        // Ensure 'steps' property exists after the check
-        if (!responseJson.steps) {
-            console.error("AI returned valid JSON but missing 'steps' array:", responseJson);
-            throw new Error("AI response was corrupted and missing the mandatory 'steps' array.");
-        }
+        // --- Step 2: Check if the plan requires research ---
+        const researchStep = workflow.steps.find(step => step.action === 'research');
+        if (researchStep && researchStep.message) {
+            console.log("Research step found. Executing with actor AI...");
 
-        let finalResponse = responseJson as SignatexFlowResponse;
-        
-        if (finalResponse.steps.length > 0 && finalResponse.steps[0].action === 'research') {
-             const researchQuery = finalResponse.steps[0].message;
-
-             const researchResponse = await fetch('/geminiProxy', {
+            // Prompt for the "Actor" AI. Its only job is to use tools to answer a question.
+            const actorPrompt = `
+                Your only task is to answer the following user request by calling one or more of the provided tools ('get_fmp_data', 'get_options_chain').
+                Chain tools if necessary. Respond with only the final, summarized, human-readable answer as plain text. Do not add conversational filler.
+                Request: "${researchStep.message}"
+            `;
+            
+            const actorResponse = await fetch('/geminiProxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    // CRITICAL FIX: Direct the inner model to ONLY use tools or clearly state failure.
-                    // We feed the researchQuery directly back, but with a forceful instruction.
-                    prompt: `I have access to the following tools: 'get_fmp_data' (for financial/quote data) and 'get_options_chain' (for options data). Respond to this request ONLY by using one or more of these tools and chaining them if necessary, or by providing a factual text response if the data cannot be found or the request is not fully addressed by the tools. The user request is: "${researchQuery}"`,
-                    enableTools: true,
-                })
+                    prompt: actorPrompt,
+                    enableTools: true, // The actor MUST have tools enabled.
+                }),
             });
-            const researchData = await researchResponse.json();
-            console.log(researchData);
-            const researchText = researchData.text || "I was unable to find an answer for that query.";
 
-            if (responseJson.steps.length > 1 && responseJson.steps[1].action === 'say') {
-                responseJson.steps[1].message = researchText;
-            } else {
-                 responseJson.steps.splice(1, 0, {
-                     action: 'say',
-                     message: researchText,
-                     comment: 'Inserting AI research result.'
-                 });
-            }
-            responseJson.steps.shift(); 
+            if (!actorResponse.ok) throw new Error(`Actor AI failed: ${await actorResponse.text()}`);
+            
+            const actorData = await actorResponse.json();
+            const researchResultText = actorData.text;
+
+            // Replace the research step with a 'say' step containing the result.
+            return {
+                steps: [{
+                    action: 'say',
+                    message: researchResultText,
+                    comment: 'Result from AI research.'
+                }]
+            };
         }
 
-        return responseJson;
+        // If no research was needed, return the original workflow.
+        return workflow;
 
     } catch (error) {
-        console.error("Error getting workflow from proxy:", error);
-        throw new Error("Failed to generate AI workflow.");
+        console.error("Error in getWorkflowFromPrompt:", error);
+        return { steps: [{ action: 'say', message: 'Sorry, I ran into a critical error.', comment: 'Workflow generation failed.' }] };
     }
 };
