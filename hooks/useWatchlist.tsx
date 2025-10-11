@@ -30,6 +30,7 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Effect 1: Manages fetching the LIST of tickers and the primary loading state.
     useEffect(() => {
         if (!user) {
             setWatchlistTickers([]);
@@ -42,34 +43,41 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlist');
         
         const unsubscribe = onSnapshot(watchlistDocRef, (doc) => {
-            if (doc.exists()) {
-                setWatchlistTickers(doc.data().tickers || []);
-            } else {
-                setDoc(watchlistDocRef, { tickers: [] });
-            }
+            const tickers = doc.exists() ? doc.data().tickers || [] : [];
+            setWatchlistTickers(tickers);
+            // The list of tickers has been loaded, so we can set loading to false.
+            setIsLoading(false); 
+        }, (error) => {
+            console.error("Error fetching watchlist tickers:", error);
+            setIsLoading(false); // Also stop loading on error
         });
 
         return () => unsubscribe();
     }, [user]);
 
+    // Effect 2: Manages fetching the PRICES for the tickers whenever the list changes.
     useEffect(() => {
+        // Do not run this effect until the initial ticker list has been loaded.
+        if (isLoading) return;
+
         const updateWatchlistPrices = async () => {
             if (watchlistTickers.length === 0) {
-                setWatchlistData([]);
-                setIsLoading(false);
+                setWatchlistData([]); // Clear data if watchlist is empty
                 return;
             }
             
-            setIsLoading(true);
             try {
                 const tickers = watchlistTickers.join(',');
                 const quotes = await fmpService.getQuote(tickers);
                 
+                const quoteMap = new Map<string, FmpQuote>();
+                quotes.forEach(q => quoteMap.set(q.symbol, q));
+
                 const updatedWatchlist = watchlistTickers.map(ticker => {
-                    const quote = quotes.find(q => q.symbol === ticker);
+                    const quote = quoteMap.get(ticker);
                     return {
                         ticker: ticker,
-                        name: quote?.name || 'N/A',
+                        name: quote?.name || 'Loading...',
                         price: quote?.price || 0,
                         change: quote?.change || 0,
                         changesPercentage: quote?.changesPercentage || 0,
@@ -79,15 +87,14 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 setWatchlistData(updatedWatchlist);
             } catch (error) {
                 console.error("Failed to update watchlist prices:", error);
-            } finally {
-                setIsLoading(false);
             }
         };
 
         updateWatchlistPrices();
-        const interval = setInterval(updateWatchlistPrices, 300000); // Refresh every 5 minutes
+        const interval = setInterval(updateWatchlistPrices, 300000);
         return () => clearInterval(interval);
-    }, [watchlistTickers]);
+    // This effect now correctly depends on both the tickers list and the initial loading state.
+    }, [watchlistTickers, isLoading]);
 
 
     const updateWatchlistInDb = async (tickers: string[]) => {
@@ -125,7 +132,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return watchlistTickers.includes(ticker);
     }, [watchlistTickers]);
 
-    // This useMemo is the critical change that prevents the loop
     const value = useMemo(() => ({
         watchlist: watchlistData,
         addToWatchlist,

@@ -9,6 +9,7 @@ import { nanoid } from 'nanoid';
 import { getOptionsChain } from '../services/optionsProxyService';
 import { loadDrawingsFromDB, SavedDrawing } from '../services/drawingService';
 import { useNotification } from './useNotification';
+import { formatCurrency } from '../utils/formatters';
 
 interface PortfolioContextType {
     portfolio: Portfolio;
@@ -36,7 +37,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Create refs to hold the latest state for use in the interval callback
     const portfolioRef = useRef(portfolio);
     useEffect(() => {
         portfolioRef.current = portfolio;
@@ -60,6 +60,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return;
         }
 
+        // Set loading to true when user changes
+        setIsLoading(true);
         const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
         const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
 
@@ -76,6 +78,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 setDoc(portfolioDocRef, initialPortfolio);
                 setPortfolio(initialPortfolio);
             }
+            // Set loading to false only after the first data snapshot
             setIsLoading(false);
         });
         
@@ -93,13 +96,14 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
     }, [user]);
 
-    const saveData = async (newPortfolio: Portfolio, newTransactions: Transaction[]) => {
+    const saveData = useCallback(async (newPortfolio: Portfolio, newTransactions: Transaction[]) => {
         if (!user) return;
         const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
         const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
         await setDoc(portfolioDocRef, newPortfolio);
         await setDoc(transactionsDocRef, { transactions: newTransactions });
-    };
+    }, [user]);
+
 
     const settleExpiredOptions = (
         currentPortfolio: Portfolio, 
@@ -167,24 +171,26 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     // This useEffect hook handles periodic price updates for all holdings.
-    // It is now safe from re-rendering loops.
     useEffect(() => {
+        // FIX: Do not start the update process until the initial portfolio has loaded.
+        if (isLoading) {
+            return;
+        }
+
         const updateAllPrices = async () => {
-             // Use the refs to get the LATEST state without adding them as dependencies.
              const currentPortfolio = portfolioRef.current;
              const currentTransactions = transactionsRef.current;
 
              if (!user || (currentPortfolio.holdings.length === 0 && currentPortfolio.optionHoldings.length === 0)) {
-                console.log(`[UPDATE ALL PRICES] Skip: No user or no holdings.`);
                 return; 
             }
-            
-            console.log(`[UPDATE ALL PRICES] Starting price refresh...`);
             
             try {
                 const stockTickers = currentPortfolio.holdings.map(h => h.ticker);
                 const optionTickers = currentPortfolio.optionHoldings.map(o => o.underlyingTicker);
                 const allRelevantTickers = [...new Set([...stockTickers, ...optionTickers])];
+                
+                if (allRelevantTickers.length === 0) return;
 
                 const quotePromise = fmpService.getQuote(allRelevantTickers.join(','));
                 const drawingsPromises = Promise.all(allRelevantTickers.map(ticker => loadDrawingsFromDB(user, ticker)));
@@ -223,7 +229,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                                 sender: { uid: 'system', displayName: 'System Alert', email: '', photoURL: '' },
                                 text: `Price Alert! ${ticker} just entered the range of a saved rectangle (Price: ${formatCurrency(price)}, Range: ${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)})`
                             });
-                            console.log(`[ALERT TRIGGER] Ticker: ${ticker}, Price: ${price}, Range: ${minPrice}-${maxPrice}`);
                         }
                     });
                 });
@@ -295,25 +300,44 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
                 if (changed) {
                     await saveData(tempPortfolio, newTransactions);
-                } else {
-                    console.log(`[UPDATE ALL PRICES] No material changes detected. Skipping Firestore save.`);
                 }
 
             } catch (error) {
                 console.error("[UPDATE ALL PRICES - FAIL] Failed to update prices or run alerts:", error);
             }
         };
+        
+        if (document.visibilityState === 'visible') {
+            updateAllPrices();
+        }
 
-        updateAllPrices(); // Run once on load
-        const interval = setInterval(updateAllPrices, 300000); // Refresh every 5 minutes
-        return () => clearInterval(interval);
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                updateAllPrices();
+            }
+        }, 300000);
 
-    }, [user]);
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                updateAllPrices();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    // FIX: Add isLoading to dependency array to re-trigger this effect after initial load.
+    }, [user, isLoading, showNotification, saveData]); 
+
 
     const buyStock = useCallback(async (ticker: string, name: string, shares: number, price: number) => {
         if (!user) { alert("You must be logged in to trade."); return; }
+        const currentPortfolio = portfolioRef.current;
         const cost = shares * price;
-        if (portfolio.cash < cost) {
+        if (currentPortfolio.cash < cost) {
             alert("Not enough cash to complete purchase.");
             return;
         }
@@ -321,26 +345,27 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const newTransaction: Transaction = {
             id: nanoid(), type: 'BUY', ticker, shares, price, totalAmount: cost, timestamp: Date.now(),
         };
-        const newTransactions = [...transactions, newTransaction];
+        const newTransactions = [...transactionsRef.current, newTransaction];
 
-        const newHoldings = [...portfolio.holdings];
+        const newHoldings = [...currentPortfolio.holdings];
         const existingHoldingIndex = newHoldings.findIndex(h => h.ticker === ticker);
         if (existingHoldingIndex > -1) {
             const existing = newHoldings[existingHoldingIndex];
             const totalShares = existing.shares + shares;
             const totalCost = (existing.shares * existing.purchasePrice) + cost;
-            newHoldings[existingHoldingIndex] = { ...existing, shares: totalShares, purchasePrice: totalCost / totalShares };
+            newHoldings[existingHoldingIndex] = { ...existing, shares: totalShares, purchasePrice: totalCost / totalShares, currentPrice: price };
         } else {
             newHoldings.push({ ticker, name, shares, purchasePrice: price, currentPrice: price });
         }
         
-        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash - cost, holdings: newHoldings };
+        const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash - cost, holdings: newHoldings };
         await saveData(newPortfolio, newTransactions);
-    }, [portfolio, transactions, user]);
+    }, [user, saveData]);
 
     const sellStock = useCallback(async (ticker: string, shares: number, price: number) => {
         if (!user) { alert("You must be logged in to trade."); return; }
-        const existingHolding = portfolio.holdings.find(h => h.ticker === ticker);
+        const currentPortfolio = portfolioRef.current;
+        const existingHolding = currentPortfolio.holdings.find(h => h.ticker === ticker);
         if (!existingHolding || existingHolding.shares < shares) {
             alert("You don't own enough shares to sell.");
             return;
@@ -352,9 +377,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const newTransaction: Transaction = {
             id: nanoid(), type: 'SELL', ticker, shares, price, totalAmount: proceeds, timestamp: Date.now(), purchasePrice: existingHolding.purchasePrice, realizedPnl,
         };
-        const newTransactions = [...transactions, newTransaction];
+        const newTransactions = [...transactionsRef.current, newTransaction];
 
-        let newHoldings = [...portfolio.holdings];
+        let newHoldings = [...currentPortfolio.holdings];
         if (existingHolding.shares === shares) {
             newHoldings = newHoldings.filter(h => h.ticker !== ticker);
         } else {
@@ -362,13 +387,14 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             newHoldings[holdingIndex] = { ...existingHolding, shares: existingHolding.shares - shares };
         }
 
-        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash + proceeds, holdings: newHoldings };
+        const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash + proceeds, holdings: newHoldings };
         await saveData(newPortfolio, newTransactions);
-    }, [portfolio, transactions, user]);
+    }, [user, saveData]);
 
     const sellOption = useCallback(async (symbol: string, shares: number, price: number) => {
         if (!user) { alert("You must be logged in to trade."); return; }
-        const existingOption = portfolio.optionHoldings.find(o => o.symbol === symbol);
+        const currentPortfolio = portfolioRef.current;
+        const existingOption = currentPortfolio.optionHoldings.find(o => o.symbol === symbol);
         if (!existingOption || existingOption.shares < shares) {
             alert("You don't own enough contracts to sell.");
             return;
@@ -380,9 +406,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const newTransaction: Transaction = {
             id: nanoid(), type: 'OPTION_SELL', ticker: existingOption.underlyingTicker, shares, price, totalAmount: proceeds, timestamp: Date.now(), purchasePrice: existingOption.purchasePrice, realizedPnl, optionSymbol: existingOption.symbol, optionType: existingOption.optionType, strikePrice: existingOption.strikePrice,
         };
-        const newTransactions = [...transactions, newTransaction];
+        const newTransactions = [...transactionsRef.current, newTransaction];
         
-        let newOptionHoldings = [...portfolio.optionHoldings];
+        let newOptionHoldings = [...currentPortfolio.optionHoldings];
         if (existingOption.shares === shares) {
             newOptionHoldings = newOptionHoldings.filter(o => o.symbol !== symbol);
         } else {
@@ -390,35 +416,37 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             newOptionHoldings[optionIndex] = { ...existingOption, shares: existingOption.shares - shares };
         }
 
-        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash + proceeds, optionHoldings: newOptionHoldings };
+        const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash + proceeds, optionHoldings: newOptionHoldings };
         await saveData(newPortfolio, newTransactions);
-    }, [portfolio, transactions, user]);
+    }, [user, saveData]);
 
     const buyOption = useCallback(async (option: OptionHolding) => {
         if (!user) { alert("You must be logged in to trade."); return; }
+        const currentPortfolio = portfolioRef.current;
         const cost = option.shares * option.purchasePrice * 100;
+        
+        if (currentPortfolio.cash < cost) {
+            alert("Not enough cash to buy option contract(s).");
+            return;
+        }
         
         const newTransaction: Transaction = {
             id: nanoid(), type: 'OPTION_BUY', ticker: option.underlyingTicker, shares: option.shares, price: option.purchasePrice, totalAmount: cost, timestamp: Date.now(), optionSymbol: option.symbol, optionType: option.optionType, strikePrice: option.strikePrice,
         };
-        const newTransactions = [...transactions, newTransaction];
+        const newTransactions = [...transactionsRef.current, newTransaction];
         
-        const newPortfolio: Portfolio = { ...portfolio, cash: portfolio.cash - cost, optionHoldings: [...portfolio.optionHoldings, option] };
+        const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash - cost, optionHoldings: [...currentPortfolio.optionHoldings, option] };
         await saveData(newPortfolio, newTransactions);
-    }, [portfolio, transactions, user]);
+    }, [user, saveData]);
 
     const manualSellOption = useCallback(async (symbol: string) => {
-        if (!user) { alert("You must be logged in to trade."); return; }
-        const existingOption = portfolio.optionHoldings.find(o => o.symbol === symbol);
+        const existingOption = portfolioRef.current.optionHoldings.find(o => o.symbol === symbol);
         if (!existingOption) {
             alert("Option contract not found in portfolio.");
             return;
         }
-        
-        const salePrice = existingOption.currentPrice; 
-        
-        await sellOption(symbol, existingOption.shares, salePrice);
-    }, [portfolio.optionHoldings, sellOption, user]);
+        await sellOption(symbol, existingOption.shares, existingOption.currentPrice);
+    }, [sellOption]);
 
 
     const totalValue = useMemo(() => {
@@ -427,7 +455,28 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return portfolio.cash + holdingsValue + optionsValue;
     }, [portfolio]);
 
-    const value = { portfolio, transactions, buyStock, sellStock, buyOption, sellOption, manualSellOption, totalValue, isLoading };
+    // OPTIMIZATION: Memoize the context value to prevent unnecessary re-renders of child components.
+    const value = useMemo(() => ({ 
+        portfolio, 
+        transactions, 
+        buyStock, 
+        sellStock, 
+        buyOption, 
+        sellOption, 
+        manualSellOption, 
+        totalValue, 
+        isLoading 
+    }), [
+        portfolio, 
+        transactions, 
+        buyStock, 
+        sellStock, 
+        buyOption, 
+        sellOption, 
+        manualSellOption, 
+        totalValue, 
+        isLoading
+    ]);
 
     return (
         <PortfolioContext.Provider value={value}>

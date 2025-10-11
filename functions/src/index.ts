@@ -1,4 +1,3 @@
-// stgisi414/ai-paper-trader/ai-paper-trader-d2d2e0f80e438f5c7314fdf1920a489f26caa81c/functions/src/index.ts
 import {onRequest} from "firebase-functions/v2/https";
 import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
@@ -472,32 +471,25 @@ export const fmpProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
-    // FIX: Add 120s timeout here for other potential long FMP calls
     timeoutSeconds: 120,
   },
   async (req: Request, res: Response): Promise<void> => {
-    // 🔥 CRITICAL KILL SWITCH: Temporarily disable to stop API costs
-    res.status(503).json({
-        error: "FMP Proxy is temporarily disabled due to excessive API usage investigation.",
-    });
-    return;
-    // 🔥 END KILL SWITCH
-
     const endpoint = req.query.endpoint;
     if (typeof endpoint !== "string") {
       res.status(400).json({error: "Missing endpoint query parameter."});
       return;
     }
 
-    // This code is now unreachable, avoiding the original API call and TypeScript error.
     const {data, error, status} = await fetchFmpApi(endpoint);
 
     if (error) {
-      res.status(status).json({error});
+      const responseStatus = typeof status === "number" &&
+       status >= 100 && status < 600 ? status : 500;
+      res.status(responseStatus).json({error});
       return;
     }
 
-    res.status(status).json(data);
+    res.status(200).json(data);
   },
 );
 
