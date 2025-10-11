@@ -150,9 +150,21 @@ const StockView: React.FC = () => {
             setAvailableExpirationDates([]);
             setOptions([]);
             setSelectedExpiry('');
+
+            // ADDITION: Helper function to safely extract fulfilled promise values (for Promise.allSettled)
+            const extractValue = <T,>(result: PromiseSettledResult<T>, defaultValue: T): T => {
+                if (result.status === 'fulfilled' && result.value) {
+                    return result.value;
+                }
+                if (result.status === 'rejected') {
+                    console.warn('Data fetch failed (StockView):', result.reason);
+                }
+                return defaultValue;
+            };
+
             try {
-                // The initial call to getOptionsChain here is ONLY to get the list of dates.
-                const [quoteData, profileData, historyData, newsData, ratingsData, incomeData, balanceSheetData, cashFlowData, insiderTradingData, optionsInitialResult] = await Promise.all([
+                // FIX: Use Promise.allSettled to prevent a single network error from blocking the whole component load
+                const results = await Promise.allSettled([
                     fmpService.getQuote(ticker),
                     fmpService.getProfile(ticker),
                     fmpService.getHistoricalData(ticker, chartInterval),
@@ -165,10 +177,23 @@ const StockView: React.FC = () => {
                     optionsProxyService.getOptionsChain(ticker), // This call gets the dates
                 ]);
                 
-                // ... (all the setQuote, setProfile, etc. calls remain the same)
+                // MODIFICATION: Safely extract and assign data, providing default values if a fetch failed
+                const quoteData = extractValue(results[0] as PromiseSettledResult<FmpQuote[]>, []);
+                const profileData = extractValue(results[1] as PromiseSettledResult<FmpProfile[]>, []);
+                const historyData = extractValue(results[2] as PromiseSettledResult<{ historical: FmpHistoricalData[] }>, { historical: [] });
+                const newsData = extractValue(results[3] as PromiseSettledResult<FmpNews[]>, []);
+                const ratingsData = extractValue(results[4] as PromiseSettledResult<FmpAnalystRating[]>, []);
+                const incomeData = extractValue(results[5] as PromiseSettledResult<FmpIncomeStatement[]>, []);
+                const balanceSheetData = extractValue(results[6] as PromiseSettledResult<FmpBalanceSheet[]>, []);
+                const cashFlowData = extractValue(results[7] as PromiseSettledResult<FmpCashFlowStatement[]>, []);
+                const insiderTradingData = extractValue(results[8] as PromiseSettledResult<FmpInsiderTrading[]>, []);
+                const optionsInitialResult = extractValue(results[9] as PromiseSettledResult<optionsProxyService.OptionsChainResult>, { contracts: [], availableExpirationDates: [] });
+
+                
                 setQuote(quoteData[0] || null);
                 setProfile(profileData[0] || null);
-                const historical = historyData.historical ? historyData.historical.reverse() : (historyData as any);
+                // Ensure historical is an array for safety
+                const historical = historyData.historical ? historyData.historical.reverse() : [];
                 setHistoricalData(historical);
                 setNews(newsData);
                 setAnalystRatings(ratingsData);
@@ -184,8 +209,9 @@ const StockView: React.FC = () => {
                     setSelectedExpiry(sortedDates[0]); 
                 }
             } catch (error) {
-                console.error("Failed to fetch stock data:", error);
-                alert('Failed to load stock data. Please try again.');
+                // This catch block will now only handle genuine critical errors with Promise.allSettled itself
+                console.error("Failed to fetch stock data (critical error in Promise.allSettled):", error);
+                alert('A critical error occurred during initial data loading.');
             } finally {
                 setIsLoading(false);
             }
@@ -730,11 +756,11 @@ const StockView: React.FC = () => {
                             <h2 className="text-xl font-bold mb-4">Trade</h2>
                             <div className="border-b border-night-700 mb-4">
                                 <nav className="-mb-px flex space-x-4" aria-label="Tabs">
-                                    <button onClick={() => handleTradeTabChange('stock')} className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
-                                    <button onClick={() => handleTradeTabChange('calls')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                    <button onClick={() => handleTradeTabChange('stock')} data-cy="trade-tab-stock" className={`whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'stock' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Stock</button>
+                                    <button onClick={() => handleTradeTabChange('calls')} data-cy="trade-tab-calls" className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'calls' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
                                         Calls <HelpIconWithTooltip tooltip="Call options give the holder the right, but not the obligation, to buy a stock at a specified price before a certain date." />
                                     </button>
-                                    <button onClick={() => handleTradeTabChange('puts')} className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
+                                    <button onClick={() => handleTradeTabChange('puts')} data-cy="trade-tab-puts" className={`flex items-center gap-1 whitespace-nowrap pb-2 px-1 border-b-2 font-medium text-sm ${tradeTab === 'puts' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>
                                         Puts <HelpIconWithTooltip tooltip="Put options give the holder the right, but not the obligation, to sell a stock at a specified price before a certain date." />
                                     </button>
                                 </nav>

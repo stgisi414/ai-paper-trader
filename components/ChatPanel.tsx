@@ -382,16 +382,8 @@ const ChatPanel: React.FC = () => {
         // The service function handles deleting all messages
         await clearAiChatHistory(user.uid);
         
-        // 2. Clear local state and stop loading
-        // The Firestore listener will eventually empty localMessages, 
-        // but a slight delay may occur. We just ensure state is ready 
-        // and set a system message for confirmation.
-        setLocalMessages(prev => [...prev, {
-             id: nanoid(),
-             sender: 'system',
-             text: "AI chat history cleared from the database.",
-             timestamp: Date.now(),
-        }]); 
+        // 2. The Firestore listener will update localMessages to empty.
+        // The welcome message will then be rendered because localMessages is empty.
         setIsLoading(false);
     }, [user, mode, isLoading]);
 
@@ -531,6 +523,14 @@ const ChatPanel: React.FC = () => {
                     </div>
 
                     <div ref={chatBodyRef} className="flex-1 p-4 overflow-y-auto space-y-4">
+                       {/* ADDITION: Friendly Welcome Message for AI Mode when chat is empty */}
+                       {currentMessages.length === 0 && mode === 'ai' && !isLoading && (
+                            <div className="flex justify-start">
+                                <div className="rounded-lg px-3 py-2 max-w-xs text-sm bg-night-700 text-night-100">
+                                    Hello! I'm your AI Trading Assistant. I can help you research stocks, manage your watchlist, analyze your portfolio, and execute trades. Try asking: "Buy 5 shares of MSFT" or "What's the latest news on GOOGL?"
+                                </div>
+                            </div>
+                        )}
                        {currentMessages.map((msg, index) => (
                            <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                                <div className={`rounded-lg px-3 py-2 max-w-xs text-sm ${

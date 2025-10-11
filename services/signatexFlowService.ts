@@ -91,6 +91,14 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         4.  You MUST output a raw JSON object with a "steps" array. **Every step MUST include a descriptive 'comment' field.** Do not add any other text.
 
         **User command: "${prompt}"**
+        
+        // ADDITIONAL INSTRUCTION FOR TRADE ACTIONS:
+        // If the user requests to buy/sell a specific quantity of shares for a stock:
+        // 1. If not on the correct page, use 'open_stock' with the ticker/value.
+        // 2. Immediately follow with:
+        //    a. An action: 'click', selector: 'button[data-cy="trade-tab-stock"]', comment: 'Select the Stock trade tab.'
+        //    b. An action: 'type', selector: '#shares', value: <NUMBER>, comment: 'Input the desired number of shares.'
+        // 3. For any remaining ambiguity (like clicking the final Buy button), just use 'say' or leave it to the user.
     `;
 
     try {
