@@ -257,9 +257,15 @@ export interface FmpInsiderTrading {
     link: string;
 }
 
+export interface ScreenerStrengthWeakness {
+    point: string;
+    description: string;
+    metrics: string[];
+}
+
 export interface FinancialStatementAnalysis {
-    strengths: string[];
-    weaknesses: string[];
+    strengths: ScreenerStrengthWeakness[];
+    weaknesses: ScreenerStrengthWeakness[];
     summary: string;
 }
 

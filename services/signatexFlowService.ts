@@ -84,22 +84,24 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         ${contextPrompt}
 
         **CRITICAL RULES:**
-        1.  **RESEARCH FIRST**: If the user is asking a general knowledge or research question that does *not* involve clicking a specific button on the current page (e.g., "what is a penny stock?", "what are the risks of TSLA?"), your *first* action MUST be 'research'.
-            -   **DO NOT use Google Search**. Use the powerful tools available to you.
-            -   The 'research' action should be followed by a 'say' action to summarize the findings. The 'message' field of the 'research' step should contain the query for the research tool.
-            -   **Example Research Flow:**
-                \`[ { "action": "research", "message": "what is a penny stock?", "comment": "Checking external knowledge base." }, { "action": "say", "message": "[The result from the 'research' step goes here]", "comment": "Responding to the user's inquiry." } ]\`
+        1.  **TOOL-POWERED DATA RETRIEVAL**: If the user asks for financial data (e.g., 'price', 'news', 'options') for any ticker, your *first* action MUST be 'research'.
+            -   The 'message' field of the 'research' step MUST be a single, direct command to the underlying tool-calling model.
+            -   // MODIFICATION TO CRITICAL RULE EXAMPLE
+            -   **Example Research Query for Options**: \`Get current quote and next available call options chain for NNE.\`
+            -   **Example Research Query for Profile**: \`Get company profile for GOOG.\`
+            -   The 'research' action should be followed by a 'say' action to summarize the findings. The 'message' field of the 'say' step should be \`[The result from the 'research' step goes here]\`.
         2.  **VIEW A STOCK WITH 'open_stock'**: To view a stock's chart or details, you MUST use the \`open_stock\` action.
         3.  **NO INVENTED URLS**: Only use the \`path\` action for the paths explicitly listed below.
         4.  **CHART DRAWING LIMITATION**: You CANNOT draw on the chart. Use the \`say\` action to explain this limitation.
         5.  **STOCK TICKERS ONLY**: The app only supports stock tickers (e.g., AAPL, GOOG).
+        6.  **JSON FORMAT**: You MUST wrap the array of steps in an object with the key "steps".
 
         **AVAILABLE ACTIONS & PAGES:**
 
         * **NEW: Research Action**:
             * **Action**: \`research\`
-            * **Message**: The specific research query (e.g., "define penny stock").
-            
+            * **Message**: The specific research query for the tool. This query will be executed by an advanced model with access to tools like \`get_fmp_data\` and \`get_options_chain\`.
+
         * **Site Control Actions (Use when possible):**
             * \u0060open_stock\u0060, \u0060navigate\u0060, \u0060type\u0060, \u0060click\u0060, \u0060select\u0060, \u0060wait\u0060, \u0060say\u0060
 
@@ -120,6 +122,8 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 prompt: fullPrompt,
+                // CRITICAL FIX #1: Enable tools for flow requests
+                enableTools: true, 
             }),
         });
 
@@ -129,18 +133,37 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         }
         
         const data = await response.json();
-        const cleanedText = data.text.replace(/^```json\s*/, '').replace(/```$/, '');
+        // The API returns the raw text, which we clean up.
+        const cleanedText = data.text.replace(/^```json\s*/, '').replace(/```$/, '').trim();
+
+        let responseJson: SignatexFlowResponse | WorkflowStep[] | WorkflowStep = JSON.parse(cleanedText);
         
-        let responseJson: SignatexFlowResponse = JSON.parse(cleanedText);
+        // CRITICAL FIX #1: Handle raw array OR single object returned instead of { steps: [...] }
+        if (Array.isArray(responseJson)) {
+            responseJson = { steps: responseJson } as SignatexFlowResponse;
+        } else if (typeof responseJson === 'object' && responseJson !== null && 'action' in responseJson) {
+            responseJson = { steps: [responseJson] } as SignatexFlowResponse;
+        }
         
-        if (responseJson.steps.length > 0 && responseJson.steps[0].action === 'research') {
-             const researchQuery = responseJson.steps[0].message;
+        // Ensure 'steps' property exists after the check
+        if (!responseJson.steps) {
+            console.error("AI returned valid JSON but missing 'steps' array:", responseJson);
+            throw new Error("AI response was corrupted and missing the mandatory 'steps' array.");
+        }
+
+        let finalResponse = responseJson as SignatexFlowResponse;
+        
+        if (finalResponse.steps.length > 0 && finalResponse.steps[0].action === 'research') {
+             const researchQuery = finalResponse.steps[0].message;
 
              const researchResponse = await fetch('/geminiProxy', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    prompt: researchQuery,
+                    // CRITICAL FIX: Direct the inner model to ONLY use tools or clearly state failure.
+                    // We feed the researchQuery directly back, but with a forceful instruction.
+                    prompt: `I have access to the following tools: 'get_fmp_data' (for financial/quote data) and 'get_options_chain' (for options data). Respond to this request ONLY by using one or more of these tools and chaining them if necessary, or by providing a factual text response if the data cannot be found or the request is not fully addressed by the tools. The user request is: "${researchQuery}"`,
+                    enableTools: true,
                 })
             });
             const researchData = await researchResponse.json();

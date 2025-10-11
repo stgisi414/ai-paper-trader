@@ -560,11 +560,13 @@ const StockView: React.FC = () => {
                             <div className="bg-night-700 p-4 rounded-lg">
                                 <h3 className="text-lg font-bold">Strengths</h3>
                                 <ul className="list-disc list-inside text-brand-green">
-                                    {financialStatementAnalysis.strengths.map((item, index) => <li key={index}>{item}</li>)}
+                                    {/* FIX: Access the 'point' property of the object */}
+                                    {financialStatementAnalysis.strengths.map((item, index) => <li key={index}>{item.point}</li>)}
                                 </ul>
                                 <h3 className="text-lg font-bold mt-4">Weaknesses</h3>
                                 <ul className="list-disc list-inside text-brand-red">
-                                    {financialStatementAnalysis.weaknesses.map((item, index) => <li key={index}>{item}</li>)}
+                                    {/* FIX: Access the 'point' property of the object */}
+                                    {financialStatementAnalysis.weaknesses.map((item, index) => <li key={index}>{item.point}</li>)}
                                 </ul>
                                 <p className="mt-4 text-night-100">{financialStatementAnalysis.summary}</p>
                             </div>

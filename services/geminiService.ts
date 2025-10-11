@@ -70,8 +70,32 @@ const stockPickingSchema = {
 const financialStatementAnalysisSchema = {
     type: "OBJECT",
     properties: {
-        strengths: { type: "ARRAY", items: { type: "STRING" } },
-        weaknesses: { type: "ARRAY", items: { type: "STRING" } },
+        strengths: {
+            type: "ARRAY",
+            items: {
+                // MODIFICATION: Define the actual object structure returned by the AI
+                type: "OBJECT",
+                properties: {
+                    point: { type: "STRING" },
+                    description: { type: "STRING" },
+                    metrics: { type: "ARRAY", items: { type: "STRING" } },
+                },
+                required: ["point", "description", "metrics"]
+            }
+        },
+        weaknesses: {
+            type: "ARRAY",
+            items: {
+                // MODIFICATION: Define the actual object structure returned by the AI
+                type: "OBJECT",
+                properties: {
+                    point: { type: "STRING" },
+                    description: { type: "STRING" },
+                    metrics: { type: "ARRAY", items: { type: "STRING" } },
+                },
+                required: ["point", "description", "metrics"]
+            }
+        },
         summary: { type: "STRING" }
     },
     required: ["strengths", "weaknesses", "summary"]
