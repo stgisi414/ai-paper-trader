@@ -17,15 +17,16 @@ import NotificationPopup from './components/common/NotificationPopup';
 const App: React.FC = () => {
     return (
         <AuthProvider>
-            <PortfolioProvider>
-                <WatchlistProvider>
-                    <NotificationProvider>
+            {/* FIX: Move NotificationProvider up */}
+            <NotificationProvider> 
+                <PortfolioProvider>
+                    <WatchlistProvider>
                         <HashRouter>
                             <MainApp />
                         </HashRouter>
-                    </NotificationProvider>
-                </WatchlistProvider>
-            </PortfolioProvider>
+                    </WatchlistProvider>
+                </PortfolioProvider>
+            </NotificationProvider>
         </AuthProvider>
     );
 };

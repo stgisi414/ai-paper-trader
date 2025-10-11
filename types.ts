@@ -314,6 +314,14 @@ export interface OptionsStrategyRec {
     maxRisk: number | null;
 }
 
+export interface PortfolioRec {
+    recommendationType: 'Buy Stock' | 'Sell Stock' | 'Hold' | 'Rebalance' | 'New Idea';
+    targetTicker: string | null;
+    actionJustification: string;
+    suggestedQuantity: number | null;
+    currentExposurePercent: number | null; // e.g., 5.5 (5.5%)
+}
+
 export interface AlpacaOptionContract {
     symbol: string;
     name: string;

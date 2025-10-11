@@ -2,7 +2,7 @@
 
 import { GEMINI_BASE_URL } from '../constants';
 import * as fmpService from './fmpService';
-import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating, OptionsStrategyRec } from '../types';
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating, OptionsStrategyRec, PortfolioRec } from '../types';
 
 const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any): Promise<any> => {
     try {
@@ -235,6 +235,18 @@ const optionsStrategySchema = {
     required: ["strategyName", "description", "marketOutlook", "keyMetrics", "suggestedContracts", "commentary"]
 };
 
+const portfolioRecSchema = {
+    type: "OBJECT",
+    properties: {
+        recommendationType: { type: "STRING", enum: ['Buy Stock', 'Sell Stock', 'Hold', 'Rebalance', 'New Idea'], description: "The type of action recommended." },
+        targetTicker: { type: "STRING", description: "The ticker symbol the recommendation applies to (or the recommended new ticker)." },
+        actionJustification: { type: "STRING", description: "The detailed rationale for the recommendation, focusing on portfolio context and query intent." },
+        suggestedQuantity: { type: "NUMBER", description: "A suggested quantity of shares (e.g., 50 or 100). Null if not a Buy/Sell recommendation." },
+        currentExposurePercent: { type: "NUMBER", description: "The estimated percentage exposure of the target ticker's sector in the current portfolio. Null if not calculable." },
+    },
+    required: ["recommendationType", "targetTicker", "actionJustification"]
+};
+
 // --- Exported Functions ---
 
 // Helper function to call proxy with schema for Planner Mode
@@ -386,4 +398,37 @@ export const getOptionsStrategy = async (userPrompt: string, stockTicker: string
     `;
     // We use gemini-2.5-pro for its better reasoning and tool-use
     return callGeminiProxy(prompt, "gemini-2.5-pro", true, optionsStrategySchema); 
+};
+
+export const getPortfolioRecommendation = async (userPrompt: string, portfolio: Portfolio, currentTicker?: string): Promise<PortfolioRec> => {
+    
+    let currentTickerProfile: FmpProfile | null = null;
+    if (currentTicker) {
+        try {
+            // Fetch profile for context (sector, industry)
+            const profiles = await fmpService.getProfile(currentTicker);
+            currentTickerProfile = profiles[0] || null;
+        } catch (e) {
+            console.error(`Failed to fetch profile for ${currentTicker}:`, e);
+        }
+    }
+    
+    const prompt = `
+        You are an expert portfolio manager. Your task is to provide a single, actionable investment recommendation based on the user's explicit request and their current portfolio risk context.
+
+        **User Request:** "${userPrompt}"
+        
+        **Current Portfolio Summary:** ${JSON.stringify({
+            cash: portfolio.cash,
+            // Keep holdings simple to reduce prompt size
+            holdings: portfolio.holdings.map(h => ({ ticker: h.ticker, shares: h.shares, value: h.shares * h.currentPrice })),
+            optionHoldings: portfolio.optionHoldings.map(o => ({ symbol: o.symbol, underlying: o.underlyingTicker })),
+        })}
+        
+        ${currentTickerProfile ? `**Current Stock Context (${currentTicker}):** ${JSON.stringify({ sector: currentTickerProfile.sector, industry: currentTickerProfile.industry, description: currentTickerProfile.description.substring(0, 100) + '...' })}` : ''}
+
+        CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. Analyze the portfolio for over/under-exposure and suggest a definitive action (Buy, Sell, Hold, Rebalance, or New Idea).
+    `;
+    // Use gemini-2.5-pro for complex reasoning. Set enableTools to false as the data is provided in the prompt.
+    return callGeminiProxy(prompt, "gemini-2.5-pro", false, portfolioRecSchema); 
 };

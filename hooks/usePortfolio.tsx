@@ -7,6 +7,8 @@ import { INITIAL_CASH } from '../constants';
 import * as fmpService from '../services/fmpService';
 import { nanoid } from 'nanoid';
 import { getOptionsChain } from '../services/optionsProxyService';
+import { loadDrawingsFromDB, SavedDrawing } from '../services/drawingService';
+import { useNotification } from './useNotification';
 
 interface PortfolioContextType {
     portfolio: Portfolio;
@@ -25,6 +27,7 @@ const PortfolioContext = createContext<PortfolioContextType | undefined>(undefin
 
 export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user } = useAuth();
+    const { showNotification } = useNotification();
     const [portfolio, setPortfolio] = useState<Portfolio>({
         cash: INITIAL_CASH,
         holdings: [],
@@ -169,19 +172,72 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // This useEffect hook handles periodic price updates for all holdings
     useEffect(() => {
         const updateAllPrices = async () => {
+             // Prevent execution if user is not logged in or there's nothing to track
              if (!user || (portfolio.holdings.length === 0 && portfolio.optionHoldings.length === 0)) {
                 console.log(`[UPDATE ALL PRICES] Skip: No user or no holdings.`);
-                return; // No user or nothing to update
+                return; 
             }
             
             console.log(`[UPDATE ALL PRICES] Starting price refresh...`);
             
             try {
-                // Get tickers for all owned stocks
+                // Identify all unique tickers that need price updates or drawing checks
                 const stockTickers = portfolio.holdings.map(h => h.ticker);
+                const optionTickers = portfolio.optionHoldings.map(o => o.underlyingTicker);
+                const allRelevantTickers = [...new Set([...stockTickers, ...optionTickers])];
+
+                // 1. Prepare promises for initial data fetch (Quotes and Drawings)
+                const quotePromise = fmpService.getQuote(allRelevantTickers.join(','));
+                const drawingsPromises = Promise.all(allRelevantTickers.map(ticker => loadDrawingsFromDB(user, ticker)));
                 
-                // Get all unique Ticker + Expiration Date pairs for owned options
-                // This is crucial to ensure we fetch the correct option chains
+                // Execute fetching of quotes and drawings concurrently
+                const [quotes, allDrawings] = await Promise.all([quotePromise, drawingsPromises]);
+
+                // Map drawings to tickers for easy lookup: { 'AAPL': [...drawings] }
+                const drawingsMap = allRelevantTickers.reduce((acc, ticker, index) => {
+                    acc[ticker] = allDrawings[index];
+                    return acc;
+                }, {} as Record<string, SavedDrawing[]>);
+                
+                // 2. Check Price Alerts (NEW FEATURE LOGIC)
+                const currentTime = Date.now() / 1000; // Lightweight Charts uses time in seconds
+
+                quotes.forEach(quote => {
+                    const ticker = quote.symbol;
+                    const price = quote.price;
+                    const drawings = drawingsMap[ticker] || [];
+                    
+                    if (drawings.length === 0) return;
+
+                    drawings.forEach(drawing => {
+                        // Extract time (t) and price (p) coordinates
+                        const t1 = drawing.p1.time as number; 
+                        const t2 = drawing.p2.time as number; 
+                        const p1 = drawing.p1.price;
+                        const p2 = drawing.p2.price;
+
+                        const minPrice = Math.min(p1, p2);
+                        const maxPrice = Math.max(p1, p2);
+                        const maxTime = Math.max(t1, t2);
+
+                        // CRITERIA 1: Check if the rectangle's time scope includes the present/future.
+                        // If the rightmost edge (maxTime) is later than now, we consider it active.
+                        const isFutureBox = maxTime > currentTime;
+                        
+                        // CRITERIA 2: Check if the current stock price is within the rectangle's price bounds.
+                        const priceCrossed = price >= minPrice && price <= maxPrice;
+
+                        if (isFutureBox && priceCrossed) {
+                            showNotification({
+                                sender: { uid: 'system', displayName: 'System Alert', email: '', photoURL: '' },
+                                text: `Price Alert! ${ticker} just entered the range of a saved rectangle (Price: ${formatCurrency(price)}, Range: ${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)})`
+                            });
+                            console.log(`[ALERT TRIGGER] Ticker: ${ticker}, Price: ${price}, Range: ${minPrice}-${maxPrice}`);
+                        }
+                    });
+                });
+                
+                // 3. Prepare for Portfolio Update (Options Chain Fetch)
                 const optionFetchPairs = Array.from(new Set(
                     portfolio.optionHoldings.map(o => `${o.underlyingTicker}_${o.expirationDate}`)
                 )).map(pair => {
@@ -189,36 +245,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     return { ticker, date };
                 });
                 
-                // Consolidate all unique tickers (from stocks and options) to fetch stock quotes once
-                const allUniqueTickers = [...new Set([...stockTickers, ...optionFetchPairs.map(p => p.ticker)])];
-
-                console.log(`[UPDATE ALL PRICES] Stocks to fetch quotes for: ${allUniqueTickers.join(', ')}`);
-                console.log(`[UPDATE ALL PRICES] Option pairs to fetch chains for: ${optionFetchPairs.map(p => `${p.ticker}/${p.date}`).join('; ')}`);
-
-                if (allUniqueTickers.length === 0) return;
-
-                // Fetch all data concurrently
-                const [quotes, ...optionChainsResults] = await Promise.all([
-                    // 1. Get latest stock prices for all underlying assets
-                    fmpService.getQuote(allUniqueTickers.join(',')),
-                    // 2. Get option chains for each specific expiration date we own
-                    ...optionFetchPairs.map(pair => getOptionsChain(pair.ticker, pair.date))
-                ]);
-                
-                console.log(`[UPDATE ALL PRICES] Finished fetching data. Total option chain results: ${optionChainsResults.length}`);
+                // Fetch option chains
+                const optionChainsResults = await Promise.all(
+                     optionFetchPairs.map(pair => getOptionsChain(pair.ticker, pair.date))
+                );
                 
                 // Combine all fetched option contracts into one array for easier searching
                 const flatOptionChains = optionChainsResults.flatMap(result => result.contracts);
-                
-                console.log(`[UPDATE ALL PRICES] Total unique option contracts fetched: ${flatOptionChains.length}`);
-
                 
                 let tempPortfolio = { ...portfolio };
                 let currentTransactions = [...transactions];
                 let changed = false;
 
-
-                // 1. Update stock prices
+                // 4. Update stock holdings prices
                 tempPortfolio.holdings = tempPortfolio.holdings.map(holding => {
                     const quote = quotes.find(q => q.symbol === holding.ticker);
                     if (quote && quote.price !== holding.currentPrice) {
@@ -228,11 +267,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     return holding;
                 });
                 
-                // ----------------------------------------------------------------------------------
-                // STEP 2: Process Option Holdings (Settlement & Price Update)
-                // ----------------------------------------------------------------------------------
-                
-                // 2a. Settle Expired Options (updates tempPortfolio and currentTransactions)
+                // 5. Settle Expired Options (updates tempPortfolio and currentTransactions)
                 const { updatedPortfolio: settledPortfolio, updatedTransactions: settledTransactions, changed: settledChanged } = settleExpiredOptions(
                     tempPortfolio, 
                     currentTransactions, 
@@ -243,26 +278,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 currentTransactions = settledTransactions;
                 changed = changed || settledChanged;
                 
-                // 2b. Update Prices for Remaining Options
+                // 6. Update Prices for Remaining Options
                 tempPortfolio.optionHoldings = tempPortfolio.optionHoldings.map((option) => {
-                    console.log(`[UPDATE HOLDING - OPTION] Processing ${option.symbol}. Purchase: ${option.purchasePrice}, Current (Old): ${option.currentPrice}, Contracts: ${option.shares}`);
-
-                    // Find the specific option contract from our fetched data
                     const freshOptionData = flatOptionChains.find(o => o.symbol === option.symbol);
                     
                     if (freshOptionData) {
                          const newPrice = freshOptionData.close_price;
-                         console.log(`[UPDATE HOLDING - OPTION] Fresh Data Found. New Price from API (close_price): ${newPrice}`);
-
+                         
                          if (newPrice !== null && newPrice !== undefined) {
-                            
-                            // Use a small tolerance (epsilon) for robust floating point comparison
                             const epsilon = 0.0001; 
                             const isPriceChanged = Math.abs(newPrice - option.currentPrice) > epsilon;
 
                             if (isPriceChanged) {
                                 changed = true;
-                                console.log(`[UPDATE HOLDING - OPTION] ***PRICE CHANGED***. New Price: ${newPrice}. Updating holding.`);
                                 // Update the currentPrice and all market-related fields from the fresh data
                                 return { 
                                     ...option, 
@@ -275,32 +303,24 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                                     open_interest: freshOptionData.open_interest,
                                     volume: freshOptionData.volume
                                 };
-                            } else {
-                                console.log(`[UPDATE HOLDING - OPTION] Price is numerically the same (within tolerance). Skipping update.`);
                             }
-                        } else {
-                            console.log(`[UPDATE HOLDING - OPTION] Fresh Data price is null/undefined. Skipping update for this contract.`);
-                        }
-                    } else {
-                        console.log(`[UPDATE HOLDING - OPTION] No fresh data found in flatOptionChains for contract ${option.symbol}. This suggests a fetching or symbol mismatch issue.`);
+                        } 
                     }
                     return option;
                 });
 
-                // If any price changed OR expiration occurred, save the updated portfolio to Firestore
+                // 7. Save changes if detected
                 if (changed) {
                     const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
                     console.log(`[UPDATE ALL PRICES] Changes detected. Saving portfolio to Firestore.`);
-                    // We must use 'setDoc' (or 'updateDoc' with specific fields) but since we modified the whole object (holdings, cash, etc.), setDoc is safer.
                     await setDoc(portfolioDocRef, tempPortfolio, { merge: true });
-                    // Only update local transactions state if we are saving 
                     setTransactions(currentTransactions);
                 } else {
                     console.log(`[UPDATE ALL PRICES] No material changes detected. Skipping Firestore save.`);
                 }
 
             } catch (error) {
-                console.error("[UPDATE ALL PRICES - FAIL] Failed to update prices in Firestore:", error);
+                console.error("[UPDATE ALL PRICES - FAIL] Failed to update prices or run alerts:", error);
             }
         };
 
@@ -308,8 +328,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const interval = setInterval(updateAllPrices, 60000); // Then, refresh every minute
         return () => clearInterval(interval);
 
-    }, [user, portfolio.holdings, portfolio.optionHoldings, transactions]); // Added transactions dependency to ensure fresh transaction array in the loop
-
+    }, [user, portfolio.holdings, portfolio.optionHoldings, transactions, showNotification]); // MODIFICATION: Added showNotification dependency
 
     const buyStock = useCallback(async (ticker: string, name: string, shares: number, price: number) => {
         if (!user) { alert("You must be logged in to trade."); return; }

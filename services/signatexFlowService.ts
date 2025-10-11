@@ -5,7 +5,7 @@ import { formatCurrency } from '../utils/formatters';
 
 // Defines the structure of a single step in the workflow
 export interface WorkflowStep {
-    action: 'navigate' | 'type' | 'click' | 'wait' | 'say' | 'select' | 'open_stock' | 'change_chart_view' | 'recommend_stocks' | 'plan_options_strategy';
+    action: 'navigate' | 'type' | 'click' | 'wait' | 'say' | 'select' | 'open_stock' | 'research' | 'change_chart_view' | 'recommend_stocks' | 'plan_options_strategy' | 'get_portfolio_rec';
     selector?: string; // CSS selector for 'type', 'click', and 'select'
     value?: string | number; // Value for 'type', 'select', or 'open_stock' action
     path?: string; // URL path for 'navigate' action
@@ -58,7 +58,7 @@ const signatexFlowSchema = {
             items: {
                 type: "OBJECT",
                 properties: {
-                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock', 'research', 'change_chart_view', 'recommend_stocks', 'plan_options_strategy'] }, // MODIFICATION: Added 'plan_options_strategy'
+                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock', 'research', 'change_chart_view', 'recommend_stocks', 'plan_options_strategy', 'get_portfolio_rec'] }, // MODIFICATION: Added 'get_portfolio_rec'
                     selector: { type: "STRING", description: "CSS selector for the target element." },
                     value: { type: "STRING", description: "Text to type, value to select, or stock ticker to open." },
                     path: { type: "STRING", description: "URL path for navigation (e.g., '/')." },
@@ -293,6 +293,48 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                 // Ensure a string is returned for the error message
                 const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during strategy planning.";
                 return { steps: [{ action: 'say', message: `Sorry, I failed to plan the options strategy: ${errorMessage}`, comment: 'Options planning failed.' }] };
+            }
+        }
+
+        const portfolioRecStep = workflow.steps.find(step => step.action === 'get_portfolio_rec');
+        if (portfolioRecStep && portfolioRecStep.message && context.portfolio) {
+            console.log("Portfolio recommendation step found. Executing client-side AI...");
+            
+            try {
+                const { getPortfolioRecommendation } = await import('./geminiService');
+                // Pass the current user prompt, the full portfolio, and the current stock ticker
+                const recommendation: any = await getPortfolioRecommendation(
+                    portfolioRecStep.message, 
+                    context.portfolio as any,
+                    context.currentTicker
+                );
+
+                // Format the structured recommendation into a human-readable message
+                let recText = `**Recommendation:** ${recommendation.recommendationType || 'N/A'}\n`;
+                recText += `**Target Ticker:** ${recommendation.targetTicker || 'General Market'}\n`;
+                
+                if (recommendation.suggestedQuantity && typeof recommendation.suggestedQuantity === 'number') {
+                    recText += `**Suggested Qty:** ${recommendation.suggestedQuantity}\n`;
+                }
+                if (recommendation.currentExposurePercent !== null && typeof recommendation.currentExposurePercent === 'number') {
+                    recText += `**Sector Exposure:** ${recommendation.currentExposurePercent.toFixed(1)}%\n`;
+                }
+
+                recText += `\n**Justification:** ${recommendation.actionJustification || 'N/A'}`;
+
+                // Replace the get_portfolio_rec step with a 'say' step.
+                return {
+                    steps: [{
+                        action: 'say',
+                        message: recText,
+                        comment: 'Result from AI portfolio manager recommendation.'
+                    }]
+                };
+
+            } catch (error) {
+                console.error("Error executing portfolio recommendation:", error);
+                const errorMessage = error instanceof Error ? error.message : "Unknown error.";
+                return { steps: [{ action: 'say', message: `Sorry, I failed to generate portfolio advice: ${errorMessage}`, comment: 'Portfolio advice failed.' }] };
             }
         }
 

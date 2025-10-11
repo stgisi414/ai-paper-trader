@@ -112,6 +112,7 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
         case 'recommend_stocks':
         case 'say':
         case 'plan_options_strategy':
+        case 'get_portfolio_rec':
              // 'say' action is handled in ChatPanel, no action needed here.
              // 'research' action is pre-processed in signatexFlowService.ts and should not reach here.
              break;
