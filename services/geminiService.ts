@@ -250,11 +250,10 @@ const portfolioRecSchema = {
 // --- Exported Functions ---
 
 // Helper function to call proxy with schema for Planner Mode
-const callGeminiProxyWithSchema = async (prompt: string, model: string, schema: any): Promise<any> => {
+export const callGeminiProxyWithSchema = async (prompt: string, model: string, schema: any): Promise<any> => { // MODIFICATION: ADD 'export'
     // The model is told to output JSON, so enableTools is explicitly false
     return callGeminiProxy(prompt, model, false, schema); 
 };
-
 
 export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[]): Promise<AiAnalysis> => {
     const prompt = `

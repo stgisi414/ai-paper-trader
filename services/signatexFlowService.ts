@@ -73,6 +73,17 @@ const signatexFlowSchema = {
     required: ["steps"]
 };
 
+const pickCriteriaSchema = {
+    type: "OBJECT",
+    properties: {
+        risk: { type: "STRING", enum: ['low', 'medium', 'high'], description: "Inferred risk level from the query, or 'medium' if not specified." },
+        strategy: { type: "STRING", enum: ['growth', 'value', 'dividends', 'undervalued'], description: "Inferred investment strategy, or 'growth' if not specified." },
+        sectors: { type: "ARRAY", items: { type: "STRING" }, description: "Specific sectors mentioned (e.g., ['Technology', 'Healthcare']). Empty array if none are specified." },
+        stockCount: { type: "STRING", enum: ['few', 'several', 'many'], description: "The number of stocks requested ('few' for 1-5, 'several' for 6-10, 'many' for 10+). Set to 'few' if not specified." },
+    },
+    required: ["risk", "strategy", "sectors", "stockCount"]
+};
+
 /**
  * Takes a natural language prompt and returns a structured workflow plan.
  * @param prompt The user's command (e.g., "Buy 10 shares of AAPL").
@@ -176,23 +187,30 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
              console.log("Recommend stocks step found. Executing client-side AI picks...");
              
              try {
-                 const { getStockPicks } = await import('./geminiService');
-                 const defaultAnswers = {
-                    risk: 'medium',
-                    strategy: 'growth',
-                    sectors: [],
-                    stockCount: 'few',
-                 };
-                 const picksResult = await getStockPicks(defaultAnswers);
+                 // NEW STEP: Use the AI to extract structured criteria from the user's free-form prompt
+                 const criteriaPrompt = `Analyze the user request: "${recommendStocksStep.message}". Extract the user's implied stock criteria, defaulting to 'medium' risk, 'growth' strategy, and 'few' count if not explicitly mentioned. Return a JSON object strictly conforming to the pickCriteriaSchema.`;
                  
-                 // ADDITION: Fetch missing company names
+                 // MODIFICATION: Call the imported function, fixing the ReferenceError
+                 const extractedCriteria = await callGeminiProxyWithSchema(criteriaPrompt, "gemini-2.5-flash", pickCriteriaSchema) as typeof pickCriteriaSchema.properties;
+                 
+                 const finalAnswers = {
+                    risk: extractedCriteria.risk || 'medium',
+                    strategy: extractedCriteria.strategy || 'growth',
+                    sectors: extractedCriteria.sectors || [],
+                    stockCount: extractedCriteria.stockCount || 'few', 
+                 };
+                 
+                 console.log("Extracted stock pick criteria:", finalAnswers);
+                 
+                 // MODIFICATION: Use the directly imported function
+                 const picksResult = await getStockPicks(finalAnswers);
+                 
                  const symbols = picksResult.stocks.map(p => p.symbol).join(',');
-                 const { getQuote } = await import('./fmpService');
-                 const quotes = await getQuote(symbols);
+                 // fmpService is imported as namespace
+                 const quotes = await fmpService.getQuote(symbols);
                  
                  const picksList = picksResult.stocks.map(p => {
                     const quote = quotes.find(q => q.symbol === p.symbol);
-                    // MODIFICATION: Use fetched name, fall back to N/A
                     const name = quote?.name || 'N/A'; 
                     return `${p.symbol} (${name}) - Rationale: ${p.reason}`;
                  }).join('\n');
