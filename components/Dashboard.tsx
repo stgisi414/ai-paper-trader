@@ -11,6 +11,7 @@ import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, Briefcase
 import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
+import ActiveUsers from './ActiveUsers';
 import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const Dashboard: React.FC = () => {
@@ -419,6 +420,12 @@ const Dashboard: React.FC = () => {
                     ) : (
                          <Card><p className="text-center text-night-500 p-4">Log in to view your Option Holdings.</p></Card>
                     )}
+
+                    {/* Active Users */}
+                    {import.meta.env.DEV && (
+                        <ActiveUsers />
+                    )}
+
                 </div>
             </div>
             <div className="mt-8">

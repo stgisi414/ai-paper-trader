@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../src/firebaseConfig'; // <-- CORRECTED PATH
-import { useAuth } from '../src/hooks/useAuth.tsx'; //
+import { db } from '../src/firebaseConfig';
+import { useAuth } from '../src/hooks/useAuth.tsx';
 import type { Portfolio, Holding, OptionHolding, Transaction, FmpQuote } from '../types';
 import { INITIAL_CASH } from '../constants';
 import * as fmpService from '../services/fmpService';
@@ -17,8 +17,7 @@ interface PortfolioContextType {
     sellStock: (ticker: string, shares: number, price: number) => void;
     buyOption: (option: OptionHolding) => void;
     sellOption: (symbol: string, shares: number, price: number) => void;
-    // ADDITION: New function for manual selling on dashboard
-    manualSellOption: (symbol: string) => Promise<void>; 
+    manualSellOption: (symbol: string) => Promise<void>;
     totalValue: number;
     isLoading: boolean;
 }
@@ -37,9 +36,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Create refs to hold the latest state for use in the interval callback
+    const portfolioRef = useRef(portfolio);
+    useEffect(() => {
+        portfolioRef.current = portfolio;
+    }, [portfolio]);
+
+    const transactionsRef = useRef(transactions);
+    useEffect(() => {
+        transactionsRef.current = transactions;
+    }, [transactions]);
+
     useEffect(() => {
         if (!user) {
-            // Reset state for logged-out users and stop loading
             setPortfolio({
                 cash: INITIAL_CASH,
                 holdings: [],
@@ -51,7 +60,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return;
         }
 
-        // Set up listeners for real-time updates from Firestore
         const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
         const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
 
@@ -59,7 +67,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             if (doc.exists()) {
                 setPortfolio(doc.data() as Portfolio);
             } else {
-                // If no portfolio exists, create a new one for the user
                 const initialPortfolio = {
                     cash: INITIAL_CASH,
                     holdings: [],
@@ -76,19 +83,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             if (doc.exists()) {
                 setTransactions(doc.data().transactions || []);
             } else {
-                // If no transactions doc exists, create one
                  setDoc(transactionsDocRef, { transactions: [] });
             }
         });
 
-        // Cleanup function to unsubscribe from listeners on component unmount
         return () => {
             unsubPortfolio();
             unsubTransactions();
         };
     }, [user]);
 
-    // Centralized function to save data to Firestore
     const saveData = async (newPortfolio: Portfolio, newTransactions: Transaction[]) => {
         if (!user) return;
         const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
@@ -97,8 +101,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         await setDoc(transactionsDocRef, { transactions: newTransactions });
     };
 
-
-    // ADDITION: Settlement Logic (to be called inside updateAllPrices)
     const settleExpiredOptions = (
         currentPortfolio: Portfolio, 
         currentTransactions: Transaction[], 
@@ -107,22 +109,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         let changed = false;
         let newPortfolio = { ...currentPortfolio };
         let newTransactions = [...currentTransactions];
-        // Use the current date to determine expiration
-        // Set expiry check one minute into the past to account for small clock drift
         const now = Date.now() - (60 * 1000); 
 
         const unexpiredHoldings: OptionHolding[] = [];
 
         for (const option of currentPortfolio.optionHoldings) {
-            // Check if the expiration date is in the past (using midnight UTC of the expiry date)
             const expiryDate = new Date(option.expirationDate).getTime();
             
             if (expiryDate > now) {
                 unexpiredHoldings.push(option);
-                continue; // Not expired yet
+                continue; 
             }
 
-            changed = true; // Option is expired, must be removed/settled.
+            changed = true; 
             
             const quote = stockQuotes.find(q => q.symbol === option.underlyingTicker);
             const currentStockPrice = quote?.price || 0;
@@ -136,8 +135,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 intrinsicValue = Math.max(0, option.strikePrice - currentStockPrice);
             }
             
-            const settlementPrice = intrinsicValue; // Price per share
-            // Calculate PnL based on the final settlement price vs purchase price
+            const settlementPrice = intrinsicValue;
             const realizedPnl = (settlementPrice - option.purchasePrice) * contracts * 100;
             const cashProceeds = settlementPrice * contracts * 100;
             const settlementType = intrinsicValue > 0 ? 'OPTION_EXERCISE' : 'OPTION_EXPIRE';
@@ -168,12 +166,15 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return { updatedPortfolio: newPortfolio, updatedTransactions: newTransactions, changed };
     };
 
-
-    // This useEffect hook handles periodic price updates for all holdings
+    // This useEffect hook handles periodic price updates for all holdings.
+    // It is now safe from re-rendering loops.
     useEffect(() => {
         const updateAllPrices = async () => {
-             // Prevent execution if user is not logged in or there's nothing to track
-             if (!user || (portfolio.holdings.length === 0 && portfolio.optionHoldings.length === 0)) {
+             // Use the refs to get the LATEST state without adding them as dependencies.
+             const currentPortfolio = portfolioRef.current;
+             const currentTransactions = transactionsRef.current;
+
+             if (!user || (currentPortfolio.holdings.length === 0 && currentPortfolio.optionHoldings.length === 0)) {
                 console.log(`[UPDATE ALL PRICES] Skip: No user or no holdings.`);
                 return; 
             }
@@ -181,26 +182,21 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             console.log(`[UPDATE ALL PRICES] Starting price refresh...`);
             
             try {
-                // Identify all unique tickers that need price updates or drawing checks
-                const stockTickers = portfolio.holdings.map(h => h.ticker);
-                const optionTickers = portfolio.optionHoldings.map(o => o.underlyingTicker);
+                const stockTickers = currentPortfolio.holdings.map(h => h.ticker);
+                const optionTickers = currentPortfolio.optionHoldings.map(o => o.underlyingTicker);
                 const allRelevantTickers = [...new Set([...stockTickers, ...optionTickers])];
 
-                // 1. Prepare promises for initial data fetch (Quotes and Drawings)
                 const quotePromise = fmpService.getQuote(allRelevantTickers.join(','));
                 const drawingsPromises = Promise.all(allRelevantTickers.map(ticker => loadDrawingsFromDB(user, ticker)));
                 
-                // Execute fetching of quotes and drawings concurrently
                 const [quotes, allDrawings] = await Promise.all([quotePromise, drawingsPromises]);
 
-                // Map drawings to tickers for easy lookup: { 'AAPL': [...drawings] }
                 const drawingsMap = allRelevantTickers.reduce((acc, ticker, index) => {
                     acc[ticker] = allDrawings[index];
                     return acc;
                 }, {} as Record<string, SavedDrawing[]>);
                 
-                // 2. Check Price Alerts (NEW FEATURE LOGIC)
-                const currentTime = Date.now() / 1000; // Lightweight Charts uses time in seconds
+                const currentTime = Date.now() / 1000; 
 
                 quotes.forEach(quote => {
                     const ticker = quote.symbol;
@@ -210,7 +206,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     if (drawings.length === 0) return;
 
                     drawings.forEach(drawing => {
-                        // Extract time (t) and price (p) coordinates
                         const t1 = drawing.p1.time as number; 
                         const t2 = drawing.p2.time as number; 
                         const p1 = drawing.p1.price;
@@ -220,11 +215,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                         const maxPrice = Math.max(p1, p2);
                         const maxTime = Math.max(t1, t2);
 
-                        // CRITERIA 1: Check if the rectangle's time scope includes the present/future.
-                        // If the rightmost edge (maxTime) is later than now, we consider it active.
                         const isFutureBox = maxTime > currentTime;
-                        
-                        // CRITERIA 2: Check if the current stock price is within the rectangle's price bounds.
                         const priceCrossed = price >= minPrice && price <= maxPrice;
 
                         if (isFutureBox && priceCrossed) {
@@ -237,27 +228,23 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     });
                 });
                 
-                // 3. Prepare for Portfolio Update (Options Chain Fetch)
                 const optionFetchPairs = Array.from(new Set(
-                    portfolio.optionHoldings.map(o => `${o.underlyingTicker}_${o.expirationDate}`)
+                    currentPortfolio.optionHoldings.map(o => `${o.underlyingTicker}_${o.expirationDate}`)
                 )).map(pair => {
                     const [ticker, date] = pair.split('_');
                     return { ticker, date };
                 });
                 
-                // Fetch option chains
                 const optionChainsResults = await Promise.all(
                      optionFetchPairs.map(pair => getOptionsChain(pair.ticker, pair.date))
                 );
                 
-                // Combine all fetched option contracts into one array for easier searching
                 const flatOptionChains = optionChainsResults.flatMap(result => result.contracts);
                 
-                let tempPortfolio = { ...portfolio };
-                let currentTransactions = [...transactions];
+                let tempPortfolio = { ...currentPortfolio };
+                let newTransactions = [...currentTransactions];
                 let changed = false;
 
-                // 4. Update stock holdings prices
                 tempPortfolio.holdings = tempPortfolio.holdings.map(holding => {
                     const quote = quotes.find(q => q.symbol === holding.ticker);
                     if (quote && quote.price !== holding.currentPrice) {
@@ -267,18 +254,16 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     return holding;
                 });
                 
-                // 5. Settle Expired Options (updates tempPortfolio and currentTransactions)
                 const { updatedPortfolio: settledPortfolio, updatedTransactions: settledTransactions, changed: settledChanged } = settleExpiredOptions(
                     tempPortfolio, 
-                    currentTransactions, 
-                    quotes // Pass all fetched stock quotes
+                    newTransactions, 
+                    quotes
                 );
                 
                 tempPortfolio = settledPortfolio;
-                currentTransactions = settledTransactions;
+                newTransactions = settledTransactions;
                 changed = changed || settledChanged;
                 
-                // 6. Update Prices for Remaining Options
                 tempPortfolio.optionHoldings = tempPortfolio.optionHoldings.map((option) => {
                     const freshOptionData = flatOptionChains.find(o => o.symbol === option.symbol);
                     
@@ -291,7 +276,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
                             if (isPriceChanged) {
                                 changed = true;
-                                // Update the currentPrice and all market-related fields from the fresh data
                                 return { 
                                     ...option, 
                                     currentPrice: newPrice, 
@@ -309,12 +293,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     return option;
                 });
 
-                // 7. Save changes if detected
                 if (changed) {
-                    const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
-                    console.log(`[UPDATE ALL PRICES] Changes detected. Saving portfolio to Firestore.`);
-                    await setDoc(portfolioDocRef, tempPortfolio, { merge: true });
-                    setTransactions(currentTransactions);
+                    await saveData(tempPortfolio, newTransactions);
                 } else {
                     console.log(`[UPDATE ALL PRICES] No material changes detected. Skipping Firestore save.`);
                 }
@@ -325,10 +305,10 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
 
         updateAllPrices(); // Run once on load
-        const interval = setInterval(updateAllPrices, 60000); // Then, refresh every minute
+        const interval = setInterval(updateAllPrices, 300000); // Refresh every 5 minutes
         return () => clearInterval(interval);
 
-    }, [user, portfolio.holdings, portfolio.optionHoldings, transactions, showNotification]); // MODIFICATION: Added showNotification dependency
+    }, [user, showNotification]);
 
     const buyStock = useCallback(async (ticker: string, name: string, shares: number, price: number) => {
         if (!user) { alert("You must be logged in to trade."); return; }
@@ -416,7 +396,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const buyOption = useCallback(async (option: OptionHolding) => {
         if (!user) { alert("You must be logged in to trade."); return; }
-        // Price check is now handled in StockView.tsx
         const cost = option.shares * option.purchasePrice * 100;
         
         const newTransaction: Transaction = {
@@ -428,7 +407,6 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         await saveData(newPortfolio, newTransactions);
     }, [portfolio, transactions, user]);
 
-    // ADDITION: Manual sell wrapper for Dashboard button
     const manualSellOption = useCallback(async (symbol: string) => {
         if (!user) { alert("You must be logged in to trade."); return; }
         const existingOption = portfolio.optionHoldings.find(o => o.symbol === symbol);
@@ -437,10 +415,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return;
         }
         
-        // Use the current market price for the sale
         const salePrice = existingOption.currentPrice; 
         
-        // This sells ALL contracts for the option symbol
         await sellOption(symbol, existingOption.shares, salePrice);
     }, [portfolio.optionHoldings, sellOption, user]);
 

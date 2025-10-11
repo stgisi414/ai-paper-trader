@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react';
 import { User } from '../types';
 
 export interface NotificationPayload {
@@ -20,19 +20,26 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     const [notification, setNotification] = useState<NotificationPayload | null>(null);
     const [chatTarget, setChatTarget] = useState<User | null>(null);
 
-    const showNotification = (payload: NotificationPayload) => {
+    const showNotification = useCallback((payload: NotificationPayload) => {
         setNotification(payload);
-    };
+    }, []);
 
-    const hideNotification = () => {
+    const hideNotification = useCallback(() => {
         setNotification(null);
-    };
+    }, []);
 
-    const openChatWith = (user: User | null) => {
+    const openChatWith = useCallback((user: User | null) => {
         setChatTarget(user);
-    };
+    }, []);
 
-    const value = { notification, showNotification, hideNotification, openChatWith, chatTarget };
+    // This useMemo is the critical change that prevents the loop
+    const value = useMemo(() => ({
+        notification,
+        showNotification,
+        hideNotification,
+        openChatWith,
+        chatTarget
+    }), [notification, showNotification, hideNotification, openChatWith, chatTarget]);
 
     return (
         <NotificationContext.Provider value={value}>

@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../src/firebaseConfig'; // <-- CORRECTED PATH
-import { useAuth } from '../src/hooks/useAuth.tsx'; // <-- CORRECTED PATH
+import { db } from '../src/firebaseConfig';
+import { useAuth } from '../src/hooks/useAuth.tsx';
 import type { FmpQuote } from '../types';
 import * as fmpService from '../services/fmpService';
 
@@ -30,7 +30,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Effect to listen for watchlist changes in Firestore
     useEffect(() => {
         if (!user) {
             setWatchlistTickers([]);
@@ -46,7 +45,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             if (doc.exists()) {
                 setWatchlistTickers(doc.data().tickers || []);
             } else {
-                // If no watchlist exists, create a new one for the user
                 setDoc(watchlistDocRef, { tickers: [] });
             }
         });
@@ -54,7 +52,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return () => unsubscribe();
     }, [user]);
 
-    // Effect to fetch price data when the list of tickers changes
     useEffect(() => {
         const updateWatchlistPrices = async () => {
             if (watchlistTickers.length === 0) {
@@ -68,7 +65,6 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 const tickers = watchlistTickers.join(',');
                 const quotes = await fmpService.getQuote(tickers);
                 
-                // Maintain the order from watchlistTickers
                 const updatedWatchlist = watchlistTickers.map(ticker => {
                     const quote = quotes.find(q => q.symbol === ticker);
                     return {
@@ -89,12 +85,11 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
 
         updateWatchlistPrices();
-        const interval = setInterval(updateWatchlistPrices, 60000); // Refresh every minute
+        const interval = setInterval(updateWatchlistPrices, 300000); // Refresh every 5 minutes
         return () => clearInterval(interval);
     }, [watchlistTickers]);
 
 
-    // Helper function to update the watchlist in Firestore
     const updateWatchlistInDb = async (tickers: string[]) => {
         if (!user) return;
         const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlist');
@@ -130,8 +125,15 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return watchlistTickers.includes(ticker);
     }, [watchlistTickers]);
 
-
-    const value = { watchlist: watchlistData, addToWatchlist, removeFromWatchlist, reorderWatchlist, isOnWatchlist, isLoading };
+    // This useMemo is the critical change that prevents the loop
+    const value = useMemo(() => ({
+        watchlist: watchlistData,
+        addToWatchlist,
+        removeFromWatchlist,
+        reorderWatchlist,
+        isOnWatchlist,
+        isLoading
+    }), [watchlistData, addToWatchlist, removeFromWatchlist, reorderWatchlist, isOnWatchlist, isLoading]);
 
     return (
         <WatchlistContext.Provider value={value}>

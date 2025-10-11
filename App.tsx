@@ -13,6 +13,7 @@ import { getAuth, signOut } from 'firebase/auth';
 import { NotificationProvider } from './hooks/useNotification';
 import { useUnreadListener } from './hooks/useUnreadListener';
 import NotificationPopup from './components/common/NotificationPopup';
+import VersionChecker from './components/VersionChecker';
 
 const App: React.FC = () => {
     return (
@@ -46,6 +47,7 @@ const MainApp: React.FC = () => {
 
     return (
         <div className="min-h-screen text-night-100 overflow-x-hidden">
+            <VersionChecker /> {/* Add the version checker here */}
             <NotificationPopup />
             <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                 <nav className="container mx-auto flex justify-between items-center">
