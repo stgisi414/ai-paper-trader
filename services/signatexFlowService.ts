@@ -88,7 +88,7 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         1.  If the user asks for information (like price, news, or options), your first and ONLY step MUST be \`"action": "research"\`.
         2.  The \`message\` for the "research" step must be a clear, direct command for another AI that has tool access. Example: "Get the current stock price and the next available options chain for MSFT."
         3.  If the user wants to navigate or interact (e.g., "buy 10 shares"), generate the appropriate workflow steps (\`open_stock\`, \`click\`, etc.).
-        4.  You MUST ONLY output a raw JSON object with a "steps" array. Do not add any other text.
+        4.  You MUST output a raw JSON object with a "steps" array. **Every step MUST include a descriptive 'comment' field.** Do not add any other text.
 
         **User command: "${prompt}"**
     `;
@@ -116,9 +116,10 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
             console.log("Research step found. Executing with actor AI...");
 
             // Prompt for the "Actor" AI. Its only job is to use tools to answer a question.
+            // MODIFICATION: The prompt needs to be highly directive to avoid conversational fillers.
             const actorPrompt = `
-                Your only task is to answer the following user request by calling one or more of the provided tools ('get_fmp_data', 'get_options_chain').
-                Chain tools if necessary. Respond with only the final, summarized, human-readable answer as plain text. Do not add conversational filler.
+                Your only task is to fulfill the user's Request by calling the appropriate tool(s) and summarizing the results into a single, concise, human-readable sentence or paragraph.
+                Do not add conversational filler, do not include code, and do not ask if you should proceed. 
                 Request: "${researchStep.message}"
             `;
             

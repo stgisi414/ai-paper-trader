@@ -25,12 +25,18 @@ const Dashboard: React.FC = () => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [testResult, setTestResult] = useState<{ name: string, result: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
+    const [testTicker, setTestTicker] = useState('AAPL');
 
-    const handleToolTest = useCallback(async (testName: string, prompt: string) => {
+    const handleToolTest = useCallback(async (testName: string, prompt: string, ticker: string) => {
+        if (!ticker) {
+             alert('Please enter a ticker symbol for the test.');
+             return;
+        }
         setIsTesting(true);
         setTestResult(null);
         try {
-            const result = await geminiService.runToolCallingTest(testName, prompt);
+            // Pass the ticker into runToolCallingTest
+            const result = await geminiService.runToolCallingTest(testName, prompt, ticker);
             console.log(`Gemini Tool Test [${testName}] successful:`, result);
             setTestResult({ name: testName, result: result.text });
         } catch (error) {
@@ -138,23 +144,70 @@ const Dashboard: React.FC = () => {
                         <Card>
                             <h2 className="text-2xl font-bold mb-4">Gemini Tool Calling Tests</h2>
                             <p className="text-sm text-night-500 mb-4">
-                                These buttons test the AI's ability to use tools. Check the browser console and Firebase Function logs for detailed output.
+                                These buttons test the AI's ability to use tools. They simulate user research commands in the AI Assistant.
                             </p>
+                            {/* ADDITION: Ticker Input */}
+                            <div className="mb-4">
+                                <label htmlFor="test-ticker" className="block text-sm font-medium text-night-100 mb-1">Test Ticker</label>
+                                <input
+                                    type="text"
+                                    id="test-ticker"
+                                    value={testTicker}
+                                    onChange={(e) => setTestTicker(e.target.value.toUpperCase())}
+                                    placeholder="e.g., MSFT or AAPL"
+                                    className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-4 focus:ring-2 focus:ring-brand-blue focus:outline-none"
+                                />
+                            </div>
+
+                            {/* MODIFICATION: New/Modified Test Buttons */}
                             <div className="flex flex-wrap gap-4">
-                                <button onClick={() => handleToolTest('FMP Quote', 'Get the current stock price for GOOGL using the get_fmp_data tool.')} disabled={isTesting} className="bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600">
-                                    {isTesting ? 'Testing...' : 'Test FMP Tool'}
+                                <button 
+                                    onClick={() => handleToolTest('Get Price', `Get the current stock price for ${testTicker} using the available tool.`, testTicker)} 
+                                    disabled={isTesting || !testTicker} 
+                                    className="bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-night-600"
+                                >
+                                    {isTesting ? 'Testing...' : `Price for ${testTicker}`}
                                 </button>
-                                <button onClick={() => handleToolTest('Options Chain', 'Get the options chain for GOOGL using the get_options_chain tool.')} disabled={isTesting} className="bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition-colors disabled:bg-night-600">
-                                    {isTesting ? 'Testing...' : 'Test Options Tool'}
+                                <button 
+                                    onClick={() => handleToolTest('Get News', `Find the top 5 recent news articles for ${testTicker}.`, testTicker)} 
+                                    disabled={isTesting || !testTicker} 
+                                    className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors disabled:bg-night-600"
+                                >
+                                    {isTesting ? 'Testing...' : `News for ${testTicker}`}
                                 </button>
-                                 <button onClick={() => handleToolTest('Combined', 'What is the latest price for GOOGL and what are its next available options?')} disabled={isTesting} className="bg-orange-600 text-white font-bold py-2 px-4 rounded-md hover:bg-orange-700 transition-colors disabled:bg-night-600">
-                                    {isTesting ? 'Testing...' : 'Test Combined Tools'}
+                                <button 
+                                    onClick={() => handleToolTest('Sentiment', `What is the analyst sentiment for ${testTicker}?`, testTicker)} 
+                                    disabled={isTesting || !testTicker} 
+                                    className="bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600"
+                                >
+                                    {isTesting ? 'Testing...' : `Sentiment for ${testTicker}`}
+                                </button>
+                                <button 
+                                    onClick={() => handleToolTest('Call Options', `What are the next available call options for ${testTicker}?`, testTicker)} 
+                                    disabled={isTesting || !testTicker} 
+                                    className="bg-yellow-600 text-white font-bold py-2 px-4 rounded-md hover:bg-yellow-700 transition-colors disabled:bg-night-600"
+                                >
+                                    {isTesting ? 'Testing...' : `Call Options for ${testTicker}`}
+                                </button>
+                                <button 
+                                    onClick={() => handleToolTest('Combined Price/Options', `What is the latest price for ${testTicker} and what are its next available options?`, testTicker)} 
+                                    disabled={isTesting || !testTicker} 
+                                    className="bg-orange-600 text-white font-bold py-2 px-4 rounded-md hover:bg-orange-700 transition-colors disabled:bg-night-600"
+                                >
+                                    {isTesting ? 'Testing...' : `Combined for ${testTicker}`}
+                                </button>
+                                <button 
+                                    onClick={() => handleToolTest('Complex FMP Data', `What are the latest key metrics for ${testTicker}? Use get_fmp_data.`, testTicker)} 
+                                    disabled={isTesting || !testTicker} 
+                                    className="bg-gray-600 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors disabled:bg-night-600"
+                                >
+                                    {isTesting ? 'Testing...' : `Complex FMP for ${testTicker}`}
                                 </button>
                             </div>
                              {isTesting && <Spinner />}
                              {testResult && (
                                 <div className="mt-4">
-                                    <h3 className="font-bold text-lg">Test Result: {testResult.name}</h3>
+                                    <h3 className="font-bold text-lg">Test Result: {testResult.name} ({testTicker})</h3>
                                     <div className={`mt-2 p-3 rounded-md text-sm whitespace-pre-wrap ${testResult.result.startsWith('Failed') ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`}>
                                         {testResult.result}
                                     </div>

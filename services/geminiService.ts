@@ -1,14 +1,16 @@
+// stgisi414/ai-paper-trader/ai-paper-trader-94da2b93daad8e32642263a52b2c29d9df880b75/services/geminiService.ts
+
 import { GEMINI_BASE_URL } from '../constants';
 import * as fmpService from './fmpService';
 import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating } from '../types';
 
-const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean): Promise<any> => {
+const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any): Promise<any> => {
     try {
         console.log(`[GEMINI_SERVICE] Calling Gemini Proxy. Tools enabled: ${enableTools}`);
         const response = await fetch(GEMINI_BASE_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, model, enableTools }),
+            body: JSON.stringify({ prompt, model, enableTools, responseSchema }),
         });
 
         if (!response.ok) {
@@ -20,20 +22,22 @@ const callGeminiProxy = async (prompt: string, model: string, enableTools: boole
         const data = await response.json();
         console.log("[GEMINI_SERVICE] Raw response from proxy:", data);
         
-        // For planner mode, we expect JSON. For actor mode, we expect text.
+        // Planner Mode (JSON generation) check
         if (!enableTools) {
             const cleanedText = data.text
-                .replace(/^```json\s*|\s*```$/g, '')
+                // CRITICAL FIX: Use a robust regex to strip all variations of Markdown code fences (```, ```json, `) from the start and end.
+                // This targets leading and trailing code blocks, cleaning the raw JSON.
+                .replace(/^(```json\s*|```\s*|`\s*)+|(```json\s*|```\s*|`\s*)+$/gi, '')
                 .trim();
             try {
                 return JSON.parse(cleanedText);
             } catch (parseError) {
-                 console.error("[GEMINI_SERVICE] Failed to parse AI JSON response:", cleanedText, parseError);
-                 throw new Error("AI response was corrupted and could not be parsed.");
+                 console.error("[GEMINI_SERVICE] Failed to parse AI JSON response. Cleaned text:", cleanedText, parseError);
+                 throw new Error("AI response was corrupted and could not be parsed. Check the raw response in the console.");
             }
         }
         
-        // For actor mode, just return the data object which should contain the text
+        // Actor Mode (Tool call text response)
         return data;
         
     } catch (error) {
@@ -42,7 +46,7 @@ const callGeminiProxy = async (prompt: string, model: string, enableTools: boole
     }
 };
 
-// --- Define all schemas using raw strings ---
+// --- Define all schemas using raw objects ---
 
 const sentimentAnalysisSchema = {
     type: "OBJECT",
@@ -78,7 +82,6 @@ const financialStatementAnalysisSchema = {
         strengths: {
             type: "ARRAY",
             items: {
-                // MODIFICATION: Define the actual object structure returned by the AI
                 type: "OBJECT",
                 properties: {
                     point: { type: "STRING" },
@@ -91,7 +94,6 @@ const financialStatementAnalysisSchema = {
         weaknesses: {
             type: "ARRAY",
             items: {
-                // MODIFICATION: Define the actual object structure returned by the AI
                 type: "OBJECT",
                 properties: {
                     point: { type: "STRING" },
@@ -195,13 +197,20 @@ const watchlistRecsSchema = {
 
 // --- Exported Functions ---
 
+// Helper function to call proxy with schema for Planner Mode
+const callGeminiProxyWithSchema = async (prompt: string, model: string, schema: any): Promise<any> => {
+    // The model is told to output JSON, so enableTools is explicitly false
+    return callGeminiProxy(prompt, model, false, schema); 
+};
+
+
 export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[]): Promise<AiAnalysis> => {
     const prompt = `
         Analyze the sentiment for ${companyName} based on these headlines: ${news.map(n => n.title).join('\n')}.
         CRITICAL TASK: Output ONLY the three top-level fields: "sentiment", "confidenceScore", and "summary".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-flash", sentimentAnalysisSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", sentimentAnalysisSchema);
 };
 
 export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{stocks: StockPick[]}> => {
@@ -210,7 +219,7 @@ export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{sto
         CRITICAL TASK: Output ONLY the single top-level field: "stocks" (containing the array).
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-flash", stockPickingSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", stockPickingSchema);
 };
 
 export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeStatement, balanceSheet: FmpBalanceSheet, cashFlow: FmpCashFlowStatement): Promise<FinancialStatementAnalysis> => {
@@ -219,7 +228,7 @@ export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeState
         CRITICAL TASK: Output ONLY the three top-level fields: "strengths", "weaknesses", and "summary".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-pro", financialStatementAnalysisSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", financialStatementAnalysisSchema);
 };
 
 export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[]): Promise<TechnicalAnalysis> => {
@@ -228,7 +237,7 @@ export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[]):
         CRITICAL TASK: Output ONLY the four top-level fields: "trend", "support", "resistance", and "summary".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-flash", technicalAnalysisSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", technicalAnalysisSchema);
 };
 
 export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<PortfolioRiskAnalysis> => {
@@ -270,7 +279,7 @@ export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<Portfo
         YOU MUST RESPOND ONLY with a valid JSON object that conforms exactly to the provided schema.
     `;
 
-    return callGeminiProxy(prompt, "gemini-2.5-pro", portfolioRiskAnalysisSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", portfolioRiskAnalysisSchema);
 };
 
 export const getCombinedRecommendations = async (profile: FmpProfile, ratings: FmpAnalystRating[], technicals: TechnicalAnalysis): Promise<CombinedRec> => {
@@ -279,7 +288,7 @@ export const getCombinedRecommendations = async (profile: FmpProfile, ratings: F
         CRITICAL TASK: Output ONLY the four top-level fields: "sentiment", "confidence", "strategy", and "justification".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-pro", combinedRecSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", combinedRecSchema);
 };
 
 export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile): Promise<KeyMetricsAnalysis> => {
@@ -288,11 +297,10 @@ export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile): P
         CRITICAL TASK: Output ONLY the single top-level field: "summary".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-flash", keyMetricsAnalysisSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", keyMetricsAnalysisSchema);
 };
 
 export const getMarketScreenerPicks = async (userPrompt: string): Promise<AiScreener> => {
-    // REMOVED: const tickerUniverse = "AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, BRK.B, V, JPM, JNJ, WMT, UNH, PG, MA, HD, XOM, CVX, LLY, MRK";
     const prompt = `
         Find 5 stocks that match this request: "${userPrompt}". 
         CRITICAL: The objects in the "picks" array MUST use the exact property names: "symbol" (the ticker), "name" (the company name), "reason" (the rationale), and "score" (a number from 1 to 10). 
@@ -300,7 +308,7 @@ export const getMarketScreenerPicks = async (userPrompt: string): Promise<AiScre
         CRITICAL TASK: Output ONLY the three top-level fields: "title", "description", and "picks".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-pro", marketScreenerSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", marketScreenerSchema);
 };
 
 export const getWatchlistPicks = async (holdings: { ticker: string, shares: number }[], watchlist: string[], news: string): Promise<AiWatchlistRecs> => {
@@ -311,14 +319,15 @@ export const getWatchlistPicks = async (holdings: { ticker: string, shares: numb
         CRITICAL TASK: Output ONLY the single top-level field: "picks" (containing the array).
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
-    return callGeminiProxy(prompt, "gemini-2.5-pro", watchlistRecsSchema);
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", watchlistRecsSchema);
 };
 
 // --- Test Function with Forceful Prompt ---
 export const runToolCallingTest = async (testName: string, prompt: string): Promise<{ text: string }> => {
     console.log(`[GEMINI_SERVICE] Starting tool calling test: "${testName}"`);
     try {
-        const result = await callGeminiProxy(prompt, "gemini-2.5-flash", true);
+        // Run with tools enabled (Actor Mode)
+        const result = await callGeminiProxy(prompt, "gemini-2.5-flash", true); 
         console.log(`[GEMINI_SERVICE] Test "${testName}" successful. Raw result:`, result);
         return { text: `Success: ${result.text}` };
     } catch (error) {

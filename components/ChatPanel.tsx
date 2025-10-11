@@ -247,7 +247,9 @@ const ChatPanel: React.FC = () => {
         } else {
              try {
                 // If it's a navigational step, first indicate what's happening
-                saveAiMessage('system', step.comment); // Save comment as system message
+                // FIX: Use a fallback string if step.comment is missing or falsy.
+                const systemMessage = step.comment || `Executing action: ${step.action} to fulfill your request.`; 
+                saveAiMessage('system', systemMessage); // Save comment as system message
                 await executeStep(step, navigate);
              } catch(e) {
                 saveAiMessage('bot', `I ran into an issue on that last step. Let's stop here.`);

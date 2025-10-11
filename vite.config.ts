@@ -18,24 +18,32 @@ export default defineConfig({
       '/geminiProxy': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
-        proxyTimeout: 120000,
+        proxyTimeout: 120000, // 2 minutes
         timeout: 120000,
       },
       '/fmpProxy': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+        proxyTimeout: 120000, // 2 minutes
+        timeout: 120000,
       },
       '/alpacaProxy': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+        proxyTimeout: 120000, // 2 minutes
+        timeout: 120000,
       },
       '/optionsProxy': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+        proxyTimeout: 120000, // 2 minutes
+        timeout: 120000,
       },
       '/userSearch': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+        proxyTimeout: 120000, // 2 minutes
+        timeout: 120000,
       },
     },
   },

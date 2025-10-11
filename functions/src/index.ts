@@ -22,6 +22,7 @@ interface User {
 
 initializeApp();
 
+// Ensure your environment variables are set correctly for these keys
 const fmpApiKey = defineString("FMP_API_KEY");
 const alpacaApiKey = defineString("ALPACA_API_KEY");
 const alpacaApiSecret = defineString("ALPACA_SECRET_KEY");
@@ -45,7 +46,6 @@ const fetchFmpApi = async (endpoint: string) => {
       logger.error(`FMP API Error ${apiResponse.status}:`, responseText);
       return { error: `FMP API Error: ${responseText}`, status: apiResponse.status };
     }
-    // Return the parsed data directly on success
     return { data: JSON.parse(responseText), status: 200 };
   } catch (error) {
     logger.error("FMP Fetch Error:", error);
@@ -97,6 +97,23 @@ const getOptionsChain = async ({symbol, date}: {symbol: string, date?: string}) 
   if (error) {
     return { error };
   }
+  
+  // Truncate large options chains before sending to the model (CONTEXT FIX)
+  const MAX_CONTRACTS_PER_TYPE = 10;
+  if (data && data.options && Array.isArray(data.options)) {
+      data.options = data.options.map((optionGroup: any) => {
+          if (Array.isArray(optionGroup.calls) && optionGroup.calls.length > MAX_CONTRACTS_PER_TYPE) {
+              logger.warn(`Truncating options response: calls from ${optionGroup.calls.length} to ${MAX_CONTRACTS_PER_TYPE}`);
+              optionGroup.calls = optionGroup.calls.slice(0, MAX_CONTRACTS_PER_TYPE);
+          }
+          if (Array.isArray(optionGroup.puts) && optionGroup.puts.length > MAX_CONTRACTS_PER_TYPE) {
+              logger.warn(`Truncating options response: puts from ${optionGroup.puts.length} to ${MAX_CONTRACTS_PER_TYPE}`);
+              optionGroup.puts = optionGroup.puts.slice(0, MAX_CONTRACTS_PER_TYPE);
+          }
+          return optionGroup;
+      });
+  }
+
   return data;
 };
 
@@ -106,8 +123,68 @@ const getFmpData = async ({endpoint}: {endpoint: string}) => {
   if (error) {
     return { error };
   }
+  
+  // Truncate large data arrays (CONTEXT FIX)
+  const MAX_ARRAY_LENGTH = 10;
+  if (Array.isArray(data) && data.length > MAX_ARRAY_LENGTH) {
+      logger.warn(`Truncating FMP response for tool call. Original length: ${data.length}`);
+      return data.slice(0, MAX_ARRAY_LENGTH);
+  }
+
   return data;
 };
+
+// New specific quote fetching function (TOOL CLARITY FIX)
+const getFmpQuote = async ({symbol}: {symbol: string}) => {
+    logger.info(`AI Tool: Calling getFmpQuote for ${symbol}`);
+    const endpoint = `/v3/quote/${symbol.toUpperCase()}`;
+    const { data, error } = await fetchFmpApi(endpoint);
+    if (error) {
+        return { error };
+    }
+    // Return only the first quote object (for a single symbol query)
+    return Array.isArray(data) ? data[0] : data;
+};
+
+// New specific news fetching function
+const getFmpNews = async ({symbol, limit}: {symbol: string, limit?: number}) => {
+    logger.info(`AI Tool: Calling getFmpNews for ${symbol} with limit ${limit || 10}`);
+    const newsLimit = limit || 10;
+    const endpoint = `/v3/stock_news?tickers=${symbol.toUpperCase()}&limit=${newsLimit}`;
+    const { data, error } = await fetchFmpApi(endpoint);
+    if (error) {
+        return { error };
+    }
+
+    if (Array.isArray(data) && data.length > 0) {
+        // FIX: Return a simplified array of objects with CLEANED, truncated text.
+        return data.slice(0, 5).map( (newsItem: any) => ({
+            publishedDate: newsItem.publishedDate,
+            title: newsItem.title,
+            // CRITICAL FIX: Replace newlines/tabs with spaces with a simpler summarySnippet to avoid proto buffer issues
+            summarySnippet: newsItem.text ? newsItem.text.substring(0, 100).replace(/[\r\n\t]/g, ' ') + '...' : 'No summary provided.'
+        }));
+    }
+
+    return [];
+};
+
+// New specific analyst ratings function
+const getFmpAnalystRatings = async ({symbol}: {symbol: string}) => {
+    logger.info(`AI Tool: Calling getFmpAnalystRatings for ${symbol}`);
+    const endpoint = `/v3/analyst-stock-recommendations/${symbol.toUpperCase()}`;
+    const { data, error } = await fetchFmpApi(endpoint);
+    if (error) {
+        return { error };
+    }
+    
+    // Return only the top 5 most recent ratings
+    if (Array.isArray(data)) {
+        return data.slice(0, 5); // Return the raw 5 items for the proxy to summarize
+    }
+    return data;
+};
+
 
 const tools: FunctionDeclaration[] = [
   {
@@ -122,18 +199,68 @@ const tools: FunctionDeclaration[] = [
       required: ["symbol"],
     },
   },
+  // Keep generic tool for deeper financial data/endpoints
   {
     name: "get_fmp_data",
-    description: "Get financial data from the Financial Modeling Prep API. The endpoint must be a valid FMP API endpoint path (e.g., '/v3/quote/AAPL').",
+    description: "Get comprehensive financial data from FMP using a full API endpoint path (e.g., '/v3/balance-sheet-statement/AAPL'). Use 'get_fmp_quote' for price.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         endpoint: {
           type: Type.STRING,
-          description: "The FMP API endpoint path (e.g., '/v3/historical-price-full/AAPL'). See FMP documentation for all options.",
+          description: "The full FMP API endpoint path, excluding the base URL and API key.",
         },
       },
       required: ["endpoint"],
+    },
+  },
+  // New specific quote fetching tool
+  {
+    name: "get_fmp_quote",
+    description: "Get the latest stock price and basic quote information for a given symbol.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        symbol: {
+          type: Type.STRING,
+          description: "The stock ticker symbol (e.g. 'GOOGL').",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  // New news function declaration
+  {
+    name: "get_fmp_news",
+    description: "Get the latest news headlines for a specific stock ticker.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        symbol: {
+          type: Type.STRING,
+          description: "The stock ticker symbol (e.g. 'AAPL').",
+        },
+        limit: {
+          type: Type.NUMBER,
+          description: "The maximum number of news articles to retrieve (default is 10).",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  // Analyst Ratings Tool Declaration
+  {
+    name: "get_fmp_analyst_ratings",
+    description: "Get the latest analyst consensus ratings and recommendations for a specific stock ticker.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            symbol: {
+                type: Type.STRING,
+                description: "The stock ticker symbol (e.g. 'AAPL').",
+            },
+        },
+        required: ["symbol"],
     },
   },
 ];
@@ -141,13 +268,15 @@ const tools: FunctionDeclaration[] = [
 const availableTools: { [key: string]: Function } = {
   "get_options_chain": getOptionsChain,
   "get_fmp_data": getFmpData,
+  "get_fmp_quote": getFmpQuote,
+  "get_fmp_news": getFmpNews,
+  "get_fmp_analyst_ratings": getFmpAnalystRatings,
 };
 
 // --- END: AI TOOLS ---
 
 
-// --- User Search Logic ---
-
+// --- User Search Logic (omitted for brevity) ---
 const queryUsersByField = async (
   usersRef: FirebaseFirestore.CollectionReference,
   field: string,
@@ -261,6 +390,8 @@ export const optionsProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
+    // CRITICAL FIX: Set 2-minute timeout for slow external API calls
+    timeoutSeconds: 120, 
   },
   async (req: Request, res: Response): Promise<void> => {
     const symbol = req.query.symbol;
@@ -288,6 +419,8 @@ export const fmpProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
+    // FIX: Add 120s timeout here for other potential long FMP calls
+    timeoutSeconds: 120, 
   },
   async (req: Request, res: Response): Promise<void> => {
     const endpoint = req.query.endpoint;
@@ -312,6 +445,8 @@ export const alpacaProxy = onRequest(
     invoker: "public",
     cors: true,
     region: "us-central1",
+    // FIX: Add 120s timeout here
+    timeoutSeconds: 120, 
   },
   async (req: Request, res: Response): Promise<void> => {
     const endpoint = req.query.endpoint;
@@ -360,6 +495,7 @@ export const geminiProxy = onRequest(
                 prompt,
                 model: modelName = "gemini-2.5-flash",
                 enableTools = false,
+                responseSchema, 
             } = req.body;
 
             if (!prompt) {
@@ -373,14 +509,16 @@ export const geminiProxy = onRequest(
 
             if (enableTools) {
                 logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
-                const config = {
-                    tools: [{ functionDeclarations: tools }],
-                };
-
+                
+                // First call: Request tool use
                 const firstResult = await genAI.models.generateContent({
                     model: modelName,
                     contents: history,
-                    ...config,
+                    config: { 
+                        tools: [{ functionDeclarations: tools }],
+                        // System instruction to eliminate conversational pauses and ensure clean final output.
+                        systemInstruction: "You are an expert financial assistant. Your task is to **immediately proceed with the necessary function call** if the user's request involves fetching data. Do not ask for confirmation or offer to use the tool. If you use a tool, your first response MUST be a function call. Your final, second-turn response MUST be a single, plain, human-readable sentence/paragraph. DO NOT output code blocks, JSON, or tool calls in your final turn.",
+                    },
                 });
 
                 const firstCandidate = firstResult.candidates?.[0];
@@ -397,14 +535,55 @@ export const geminiProxy = onRequest(
                             if (call.name in availableTools) {
                                 logger.info(`Executing tool: ${call.name}`, { args: call.args });
                                 const response = await availableTools[call.name](call.args);
-                                return { functionResponse: { name: call.name, response } };
+                                
+                                let summarizedResponse: any;
+                                if (response && response.error) {
+                                    summarizedResponse = { error: response.error };
+                                } else if (call.name === 'get_fmp_news' && Array.isArray(response)) {
+                                    // CRITICAL FIX: Wrap the entire news array in a key to ensure it's a valid JSON object 
+                                    summarizedResponse = {
+                                        news_articles: response.map( (item: any, index: number) => ({ 
+                                            id: index + 1,
+                                            title: item.title, 
+                                            date: item.publishedDate,
+                                            snippet: item.summarySnippet
+                                        }))
+                                    };
+                                } else if (call.name === 'get_fmp_analyst_ratings' && Array.isArray(response) && response.length > 0) {
+                                    const latestRating = response[0];
+                                    summarizedResponse = {
+                                        latest_date: latestRating.date,
+                                        total_buy: (latestRating.analystRatingsBuy || 0) + (latestRating.analystRatingsStrongBuy || 0),
+                                        hold: (latestRating.analystRatingsHold || 0),
+                                        total_sell: (latestRating.analystRatingsSell || 0) + (latestRating.analystRatingsStrongSell || 0),
+                                        num_ratings_sent: response.length
+                                    };
+                                } else if (call.name === 'get_fmp_quote' && response) {
+                                    summarizedResponse = { price: response.price, symbol: response.symbol };
+                                } else if (call.name === 'get_options_chain' && response) {
+                                    const totalContracts = response.options?.flatMap((o: any) => [...o.calls, ...o.puts]).length ?? 0;
+                                    summarizedResponse = {
+                                        num_contracts: totalContracts,
+                                        underlying_symbol: call.args.symbol,
+                                        expiration_dates: response.expirationDates
+                                    };
+                                } else {
+                                    // Default truncation for generic FMP data
+                                    const responseString = JSON.stringify(response);
+                                    const MAX_SUMMARY_LENGTH = 1500;
+                                    summarizedResponse = responseString.length > MAX_SUMMARY_LENGTH 
+                                        ? { truncated_data: responseString.substring(0, MAX_SUMMARY_LENGTH) + "...[TRUNCATED]" }
+                                        : response;
+                                }
+                                
+                                return { functionResponse: { name: call.name, response: summarizedResponse } };
                             }
                             return { functionResponse: { name: call.name, response: { error: `Tool ${call.name} not found.` } } };
                         });
 
                         const toolResponses = await Promise.all(toolPromises);
 
-                        // **FIX:** This is the corrected history construction.
+                        // Second call: Send tool results and request final text response
                         const historyWithToolResults: Content[] = [...history];
                         if (firstCandidate.content) {
                             historyWithToolResults.push(firstCandidate.content);
@@ -414,15 +593,22 @@ export const geminiProxy = onRequest(
                             parts: toolResponses.map(r => ({ functionResponse: r.functionResponse })),
                         });
 
+                        // FIX 2: Append a definitive final synthesis command
+                        historyWithToolResults.push({
+                            role: "user",
+                            parts: [{ text: "Based on the tool outputs provided in the last turn, generate the single, requested human-readable summary. Do NOT include any code or JSON." }]
+                        });
 
+
+                        // NO CONFIG/TOOLS HERE to force plain text output
                         const secondResult = await genAI.models.generateContent({
                             model: modelName,
                             contents: historyWithToolResults,
-                            ...config,
                         });
 
-                        finalResponseText = secondResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "Tool executed, but the AI did not provide a final text response.";
+                        finalResponseText = secondResult.candidates?.[0]?.content?.parts?.[0]?.text ?? "Tool executed successfully, but the AI assistant failed to generate a final, human-readable summary.";
                     } else {
+                        // The model decided no function call was needed - return text directly
                         finalResponseText = firstCandidate?.content?.parts?.[0]?.text ?? "No function call was needed, but no text response was returned.";
                     }
                 } else {
@@ -430,11 +616,24 @@ export const geminiProxy = onRequest(
                 }
 
             } else {
-                // PLANNER MODE: Generate a JSON workflow without tools.
+                // PLANNER MODE: Generate a JSON output.
                 logger.info("GEMINI_PROXY: Running in PLANNER (no-tools) mode.");
+                
+                const config: any = {};
+                // Only include the response schema if it was passed by the client (for Planner Mode)
+                if (responseSchema) {
+                    config.responseMimeType = "application/json";
+                    config.responseSchema = responseSchema;
+                }
+                
+                // CRITICAL FIX: The instruction for Planner Mode MUST be strong and placed in config
+                config.systemInstruction = "You are an expert planner. Your response MUST be a single, raw JSON object that conforms exactly to the requested schema. DO NOT wrap the JSON in Markdown fences (e.g., ```json) or conversational text. Output ONLY the JSON.";
+
+
                 const result = await genAI.models.generateContent({
                     model: modelName,
                     contents: history,
+                    config: config
                 });
                 finalResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
             }

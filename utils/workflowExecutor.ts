@@ -43,8 +43,11 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
 
     switch (step.action) {
         case 'open_stock':
-            if (step.value) {
-                navigate(`/stock/${step.value.toUpperCase()}`);
+            // FIX: Check for 'value', 'ticker', or 'symbol' to capture all possible Planner outputs.
+            const stockIdentifier = step.value || (step as any).ticker || (step as any).symbol;
+
+            if (stockIdentifier) {
+                navigate(`/stock/${String(stockIdentifier).toUpperCase()}`);
             }
             break;
             
