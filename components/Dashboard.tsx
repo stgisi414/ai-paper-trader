@@ -163,11 +163,21 @@ const Dashboard: React.FC = () => {
                             {isAnalyzing && <Spinner />}
                             {portfolioAnalysis && (
                                 <div className="bg-night-700 p-4 rounded-lg">
-                                    <h3 className="text-lg font-bold">Risk Level: <span className="text-brand-blue">{portfolioAnalysis.riskLevel}</span></h3>
-                                    <p className="text-night-100 mt-2">Highest Sector Concentration: <span className="font-bold">{portfolioAnalysis.concentration.highestSector} ({formatPercentage(portfolioAnalysis.concentration.percentage)})</span></p>
+                                    {/* Use nullish coalescing to safely display riskLevel */}
+                                    <h3 className="text-lg font-bold">Risk Level: <span className="text-brand-blue">{portfolioAnalysis.riskLevel ?? 'N/A'}</span></h3>
+                                    
+                                    {/* CRITICAL: Use optional chaining (?. ) for nested concentration properties */}
+                                    <p className="text-night-100 mt-2">
+                                        Highest Sector Concentration: <span className="font-bold">
+                                            {portfolioAnalysis.concentration?.highestSector ?? 'N/A'} 
+                                            ({formatPercentage(portfolioAnalysis.concentration?.percentage)})
+                                        </span>
+                                    </p>
+                                    
                                     <h3 className="text-lg font-bold mt-4">Suggestions</h3>
                                     <ul className="list-disc list-inside text-night-100">
-                                        {portfolioAnalysis.suggestions.map((item, index) => <li key={index}>{item}</li>)}
+                                        {/* CRITICAL: Use optional chaining before calling .map() */}
+                                        {portfolioAnalysis.suggestions?.map((item, index) => <li key={index}>{item}</li>) ?? <li>No specific suggestions provided by AI.</li>}
                                     </ul>
                                 </div>
                             )}

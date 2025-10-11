@@ -29,19 +29,20 @@ const MarketScreener: React.FC = () => {
         setActiveScreen(option.id);
         setIsLoading(true);
         setError(null);
-        setScreenerResult(null);
+        setScreenerResult(null); // Ensure it's null before starting
 
         try {
             const result = await geminiService.getMarketScreenerPicks(option.prompt);
             setScreenerResult(result);
         } catch (err) {
             console.error(err);
+            // FIX: Explicitly set result to null on failure to prevent render crashes
+            setScreenerResult(null); 
             setError("Failed to run AI screener. Please check your API keys or try again.");
         } finally {
             setIsLoading(false);
         }
     }, []);
-
     return (
         <Card>
             <div className="flex items-center gap-2 mb-6">
@@ -87,11 +88,18 @@ const MarketScreener: React.FC = () => {
                             <tbody>
                                 {screenerResult.picks.map((pick, index) => (
                                     <tr key={pick.symbol} className="border-b border-night-700 hover:bg-night-700">
-                                        <td className="p-3 font-bold text-yellow-400">{pick.score}</td>
+                                        {/* FIX 1: Ensure Score is accessed and rendered */}
+                                        <td className="p-3 font-bold text-yellow-400">{pick.score}</td> 
+                                        
+                                        {/* FIX 2: Ensure Ticker (symbol) is rendered */}
                                         <td className="p-3 font-bold">
                                             <Link to={`/stock/${pick.symbol}`} className="text-brand-blue hover:underline">{pick.symbol}</Link>
                                         </td>
+                                        
+                                        {/* Company is already correct */}
                                         <td className="p-3">{pick.name}</td>
+                                        
+                                        {/* FIX 3: Ensure AI Rationale (reason) is rendered */}
                                         <td className="p-3 text-sm text-night-100">{pick.reason}</td>
                                     </tr>
                                 ))}

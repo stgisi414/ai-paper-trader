@@ -491,19 +491,19 @@ export const geminiProxy = onRequest(
       let responseForFrontend = rawResponseText;
       if (schema) {
         try {
-          const firstBrace = rawResponseText.indexOf('{');
-          const lastBrace = rawResponseText.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace !== -1) {
-            responseForFrontend = rawResponseText.substring(firstBrace, lastBrace + 1);
-            logger.info("GEMINI_PROXY: Successfully extracted JSON.");
-          } else {
-            logger.warn("GEMINI_PROXY: Could not extract JSON from AI text response. Sending raw text.");
-          }
+          // FIX: Replace faulty index-based slicing with robust regex stripping and trimming.
+          // This removes "```json" from the start, "```" from the end, and trims whitespace.
+          const cleanedText = rawResponseText.replace(/^```json\s*|\s*```$/g, '').trim();
+
+          // Attempt to parse the cleaned text to confirm validity before sending.
+          JSON.parse(cleanedText);
+
+          responseForFrontend = cleanedText;
+          logger.info("GEMINI_PROXY: Successfully extracted and validated JSON.");
         } catch (jsonError) {
-          logger.error("GEMINI_PROXY: Error processing JSON from AI:", jsonError);
-          // If extraction fails, send a structured error
-          res.status(500).json({ error: "AI response is not valid JSON. Please try again." });
-          return;
+          logger.error("GEMINI_PROXY: Error processing JSON from AI. Sending raw text as fallback:", jsonError);
+          // If parsing fails, use the original raw text as a fallback.
+          responseForFrontend = rawResponseText; 
         }
       }
       

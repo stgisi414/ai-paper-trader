@@ -176,8 +176,8 @@ const Watchlist: React.FC = () => {
             {recommendations.length > 0 && (
                 <div className="mb-4 p-4 bg-night-700 rounded-lg space-y-3">
                     <h3 className="font-bold text-yellow-400">AI Suggestions</h3>
-                    {recommendations.map(rec => (
-                        <div key={rec.symbol} className="text-sm">
+                    {recommendations.map((rec, index) => ( // <-- ADD 'index' argument here
+                        <div key={rec.symbol || index} className="text-sm">
                             <div className="flex justify-between items-center">
                                 <span className="font-bold">{rec.symbol} - {rec.name}</span>
                                 <button onClick={() => addToWatchlist(rec.symbol, rec.name)} className="text-xs bg-brand-blue text-white px-2 py-1 rounded-md hover:bg-blue-600">+</button>
