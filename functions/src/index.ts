@@ -181,35 +181,31 @@ const getFmpNews = async ({symbol, limit}: {symbol: string,
   limit?: number}) => {
   logger.info(`AI Tool: Calling getFmpNews for ${symbol}
     with limit ${limit || 20}`);
-  const newsLimit = limit || 20; 
-  const endpoint = `/v3/stock_news?tickers=${symbol.toUpperCase()}
-    &limit=${newsLimit}`;
+  const newsLimit = limit || 20;
+  const endpoint =
+    `/v3/stock_news?tickers=${symbol.toUpperCase()}&limit=${newsLimit}`;
   const {data, error} = await fetchFmpApi(endpoint);
   if (error) {
     return {error};
   }
 
   if (Array.isArray(data) && data.length > 0) {
-    // FIX: Filter out any null or malformed items returned by FMP 
-    // to ensure only valid news objects proceed.
-    // We only filter by title and date since we're only sending those.
+    // FIX: Filter out any null or malformed items returned by FMP
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const validNews = data.filter((item: any) => item && item.title && item.publishedDate);
+    const validNews = data.filter((item: any) =>
+      item && item.title && item.publishedDate);
 
     if (validNews.length === 0) {
       return [];
     }
-    
-    // CRITICAL FIX: Aggressively limit the payload to the absolute minimum fields
-    const MAX_ARTICLES_FOR_LLM = 3; 
 
-    // Return a simplified array with minimal fields (Title, Date).
-    // This removes the potentially problematic summarySnippet/text field.
+    const MAX_ARTICLES_FOR_LLM = 5; // Limit to 5 articles for context window
+
+    // Return a simplified array of strings for the LLM to easily parse.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return validNews.slice(0, MAX_ARTICLES_FOR_LLM).map( (newsItem: any) => ({
-      publishedDate: newsItem.publishedDate,
-      title: newsItem.title,
-    }));
+    return validNews.slice(0, MAX_ARTICLES_FOR_LLM).map( (newsItem: any) => (
+      `[${newsItem.publishedDate.split(" ")[0]}] ${newsItem.title}`
+    ));
   }
 
   return [];
@@ -573,14 +569,17 @@ export const geminiProxy = onRequest(
           contents: history,
           config: {
             tools: [{functionDeclarations: tools}],
-            // CRITICAL FIX: Relax the synthesis constraint to allow lists for news.
+            // CRITICAL FIX: Relax the synthesis
+            // constraint to allow lists for news.
             systemInstruction: `You are an expert financial assistant.
              Your task is to immediately proceed w/ the necessary function call
              if the user's request involves fetching data.
              Do not ask for confirmation or offer to use the tool.
              If you use a tool, your first response MUST be a function call.
-             Your final, second-turn response MUST be a concise, human-readable summary.
-             You may use a list format if appropriate. DO NOT output code blocks,
+             Your final, second-turn response MUST be a concise,
+             human-readable summary.
+             You may use a list format if appropriate.
+             DO NOT output code blocks,
              JSON, or tool calls in your final turn.`,
           },
         });
@@ -608,21 +607,23 @@ export const geminiProxy = onRequest(
                   summarizedResponse = {error: response.error};
                 } else if (call.name === "get_fmp_news" &&
                   Array.isArray(response)) {
-
-                  // Check for empty response and provide structured feedback to the model
+                  // Check for empty response and
+                  // provide structured feedback to the model
                   if (response.length === 0) {
-                      summarizedResponse = {
-                          status: "No news found",
-                          symbol: call.args.symbol,
-                          message: "The API returned no recent news articles for this symbol."
-                      };
+                    summarizedResponse = {
+                      status: "No news found",
+                      symbol: call.args.symbol,
+                      message: `The API returned no recent
+                        news articles for this symbol.`,
+                    };
                   } else {
-                      // CRITICAL FIX: The response array from getFmpNews is already clean.
-                      // Just wrap the array under the key 'news_articles' directly.
-                      // REMOVE the previous redundant mapping logic here.
-                      summarizedResponse = {
-                        news_articles: response,
-                      };
+                    // CRITICAL FIX: The response passed
+                    // back to the Gemini model
+                    // MUST be a JSON object. We wrap
+                    // the array of headlines here.
+                    summarizedResponse = {
+                      headlines: response,
+                    };
                   }
                 } else if (call.name === "get_fmp_analyst_ratings" &&
                   Array.isArray(response) && response.length > 0) {

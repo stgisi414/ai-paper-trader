@@ -2,7 +2,7 @@
 
 import { GEMINI_BASE_URL } from '../constants';
 import * as fmpService from './fmpService';
-import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating } from '../types';
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating, OptionsStrategyRec } from '../types';
 
 const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any): Promise<any> => {
     try {
@@ -194,6 +194,34 @@ const watchlistRecsSchema = {
     required: ["picks"]
 };
 
+const optionsStrategySchema = {
+    type: "OBJECT",
+    properties: {
+        ticker: { type: "STRING", description: "The underlying stock ticker symbol." },
+        targetPrice: { type: "NUMBER", description: "The forecast price target for the strategy, or null." },
+        targetDate: { type: "STRING", description: "The forecast expiration date in YYYY-MM-DD format, or null." },
+        strategyName: { type: "STRING", enum: ['Long Call', 'Long Put', 'Covered Call', 'Cash Secured Put', 'Bull Call Spread', 'Bear Put Spread', 'Iron Condor', 'Uncertain'] },
+        strategySummary: { type: "STRING", description: "A concise, detailed summary of the strategy's goal and outlook." },
+        suggestedContracts: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    type: { type: "STRING", enum: ['call', 'put'] },
+                    action: { type: "STRING", enum: ['BUY', 'SELL'] },
+                    strike: { type: "NUMBER" },
+                    expiry: { type: "STRING", description: "YYYY-MM-DD" },
+                    premium: { type: "NUMBER", description: "Estimated premium price (per share) or current close price." },
+                    rationale: { type: "STRING" }
+                },
+                required: ["type", "action", "strike", "expiry", "premium", "rationale"]
+            }
+        },
+        riskProfile: { type: "STRING", enum: ['High', 'Medium', 'Low'] },
+        maxRisk: { type: "NUMBER", description: "The maximum amount of money risked (per contract multiplier, e.g., per 100 shares), or null." }
+    },
+    required: ["ticker", "strategyName", "strategySummary", "suggestedContracts", "riskProfile"]
+};
 
 // --- Exported Functions ---
 
@@ -334,4 +362,16 @@ export const runToolCallingTest = async (testName: string, prompt: string): Prom
         console.error(`[GEMINI_SERVICE] Test "${testName}" failed:`, error);
         return { text: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
     }
+};
+
+export const getOptionsStrategy = async (userPrompt: string, stockTicker: string): Promise<OptionsStrategyRec> => {
+    const prompt = `
+        As an expert options strategist, analyze the current market data for ${stockTicker} and devise a concrete options strategy based on the user's request: "${userPrompt}". 
+        
+        Use the 'get_fmp_quote' and 'get_options_chain' tools to retrieve necessary data. When retrieving options data, fetch contracts expiring closest to 30-60 days out. 
+        
+        CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. The 'suggestedContracts' array MUST contain the specific legs of the proposed strategy.
+    `;
+    // We use gemini-2.5-pro for its better reasoning and tool-use
+    return callGeminiProxy(prompt, "gemini-2.5-pro", true, optionsStrategySchema); 
 };

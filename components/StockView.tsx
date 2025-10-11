@@ -910,6 +910,7 @@ const StockView: React.FC = () => {
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold">Price Chart</h2>
                             <select
+                                id="chart-interval-select"
                                 value={chartInterval}
                                 onChange={(e) => setChartInterval(e.target.value)}
                                 className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none"

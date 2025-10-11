@@ -296,6 +296,24 @@ export interface CombinedRec {
     justification: string;
 }
 
+export interface OptionsStrategyRec {
+    ticker: string;
+    targetPrice: number | null;
+    targetDate: string | null;
+    strategyName: 'Long Call' | 'Long Put' | 'Covered Call' | 'Cash Secured Put' | 'Bull Call Spread' | 'Bear Put Spread' | 'Iron Condor' | 'Uncertain';
+    strategySummary: string;
+    suggestedContracts: Array<{
+        type: 'call' | 'put';
+        action: 'BUY' | 'SELL';
+        strike: number;
+        expiry: string;
+        premium: number;
+        rationale: string;
+    }>;
+    riskProfile: 'High' | 'Medium' | 'Low';
+    maxRisk: number | null;
+}
+
 export interface AlpacaOptionContract {
     symbol: string;
     name: string;

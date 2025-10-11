@@ -1,8 +1,10 @@
 import { GEMINI_BASE_URL } from '../constants';
+import { NavigateFunction } from 'react-router-dom';
+import * as fmpService from './fmpService';
 
 // Defines the structure of a single step in the workflow
 export interface WorkflowStep {
-    action: 'navigate' | 'type' | 'click' | 'wait' | 'say' | 'select' | 'open_stock';
+    action: 'navigate' | 'type' | 'click' | 'wait' | 'say' | 'select' | 'open_stock' | 'change_chart_view' | 'recommend_stocks' | 'plan_options_strategy';
     selector?: string; // CSS selector for 'type', 'click', and 'select'
     value?: string | number; // Value for 'type', 'select', or 'open_stock' action
     path?: string; // URL path for 'navigate' action
@@ -55,7 +57,7 @@ const signatexFlowSchema = {
             items: {
                 type: "OBJECT",
                 properties: {
-                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock', 'research'] }, // MODIFIED: Added 'research'
+                    action: { type: "STRING", enum: ['navigate', 'type', 'click', 'wait', 'say', 'select', 'open_stock', 'research', 'change_chart_view', 'recommend_stocks', 'plan_options_strategy'] }, // MODIFICATION: Added 'plan_options_strategy'
                     selector: { type: "STRING", description: "CSS selector for the target element." },
                     value: { type: "STRING", description: "Text to type, value to select, or stock ticker to open." },
                     path: { type: "STRING", description: "URL path for navigation (e.g., '/')." },
@@ -87,8 +89,10 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         **CRITICAL RULES:**
         1.  If the user asks for information (like price, news, or options), your first and ONLY step MUST be \`"action": "research"\`.
         2.  The \`message\` for the "research" step must be a clear, direct command for another AI that has tool access. Example: "Get the current stock price and the next available options chain for MSFT."
-        3.  If the user wants to navigate or interact (e.g., "buy 10 shares"), generate the appropriate workflow steps (\`open_stock\`, \`click\`, etc.).
-        4.  You MUST output a raw JSON object with a "steps" array. **Every step MUST include a descriptive 'comment' field.** Do not add any other text.
+        3.  If the user asks for **generic stock ideas or recommendations (e.g., "popular stocks," "stock to buy," "list of tickers")**, your first and ONLY step MUST be \`"action": "recommend_stocks"\`. Set \`"message"\` to a descriptive string.
+        4.  If the user wants to navigate or interact (e.g., "buy 10 shares"), generate the appropriate workflow steps (\`open_stock\`, \`click\`, etc.).
+        5.  You MUST output a raw JSON object with a "steps" array. **Every step MUST include a descriptive 'comment' field.** Do not add any other text.
+        6.  The action \`change_chart_view\` is used to update the interval of the currently viewed stock chart.
 
         **User command: "${prompt}"**
         
@@ -99,6 +103,17 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         //    a. An action: 'click', selector: 'button[data-cy="trade-tab-stock"]', comment: 'Select the Stock trade tab.'
         //    b. An action: 'type', selector: '#shares', value: <NUMBER>, comment: 'Input the desired number of shares.'
         // 3. For any remaining ambiguity (like clicking the final Buy button), just use 'say' or leave it to the user.
+
+        // NEW INSTRUCTION for Chart/View Changes:
+        // If the user requests to change the chart's time period or zoom level (e.g., "show AAPL on a 1-hour chart" or "change chart to monthly"):
+        // 1. Use action: 'open_stock' with the ticker/value to navigate to the stock view if needed.
+        // 2. Immediately follow with:
+        //    a. action: 'change_chart_view', selector: '<TICKER>', value: '<INTERVAL>', comment: 'Set the chart interval.'
+        // 3. The \`message\` for the "research" step must be a clear, direct command for another AI that has tool access. Example: "Get the current stock price and the next available options chain for MSFT."
+        // 4. If the user asks for **generic stock ideas or recommendations (e.g., "popular stocks," "stock to buy," "list of tickers")**, your first and ONLY step MUST be \`"action": "recommend_stocks"\`. Set \`"message"\` to a descriptive string.
+        // 5. If the user requests a **specific options trade or strategy (e.g., "bullish strategy for TSLA," "sell a covered call on GOOGL")**, your first and ONLY step MUST be \`"action": "plan_options_strategy"\`. Set \`"message"\` to the full user prompt.
+        // 6. If the user wants to navigate or interact (e.g., "buy 10 shares"), generate the appropriate workflow steps (\`open_stock\`, \`click\`, etc.).
+
     `;
 
     try {
@@ -155,6 +170,107 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
             };
         }
 
+        const recommendStocksStep = workflow.steps.find(step => step.action === 'recommend_stocks');
+        if (recommendStocksStep && recommendStocksStep.message) {
+             console.log("Recommend stocks step found. Executing client-side AI picks...");
+             
+             try {
+                 const { getStockPicks } = await import('./geminiService');
+                 const defaultAnswers = {
+                    risk: 'medium',
+                    strategy: 'growth',
+                    sectors: [],
+                    stockCount: 'few',
+                 };
+                 const picksResult = await getStockPicks(defaultAnswers);
+                 
+                 // ADDITION: Fetch missing company names
+                 const symbols = picksResult.stocks.map(p => p.symbol).join(',');
+                 const { getQuote } = await import('./fmpService');
+                 const quotes = await getQuote(symbols);
+                 
+                 const picksList = picksResult.stocks.map(p => {
+                    const quote = quotes.find(q => q.symbol === p.symbol);
+                    // MODIFICATION: Use fetched name, fall back to N/A
+                    const name = quote?.name || 'N/A'; 
+                    return `${p.symbol} (${name}) - Rationale: ${p.reason}`;
+                 }).join('\n');
+                 
+                 const resultText = picksList.length > 0 
+                     ? `Based on your request for stock ideas, here are some options:\n${picksList}`
+                     : "I couldn't generate any specific stock recommendations based on default criteria.";
+
+                 // Replace the recommend_stocks step with a 'say' step containing the result.
+                 return {
+                     steps: [{
+                         action: 'say',
+                         message: resultText,
+                         comment: 'Result from AI stock recommendation.'
+                     }]
+                 };
+             } catch (error) {
+                 console.error("Error executing stock recommendation:", error);
+                 return { steps: [{ action: 'say', message: 'Sorry, I failed to get stock picks from the AI service.', comment: 'Stock picking failed.' }] };
+             }
+        }
+
+        const planOptionsStrategyStep = workflow.steps.find(step => step.action === 'plan_options_strategy');
+        if (planOptionsStrategyStep && planOptionsStrategyStep.message) {
+            console.log("Plan options strategy step found. Executing client-side AI strategy planner...");
+            
+            try {
+                // Determine the ticker from the prompt. Fallback to currentTicker if possible.
+                const tickerMatch = planOptionsStrategyStep.message.match(/\b[A-Z]{2,5}\b/);
+                const stockTicker = tickerMatch ? tickerMatch[0] : context.currentTicker;
+
+                if (!stockTicker) {
+                    throw new Error("Could not determine stock ticker for options strategy.");
+                }
+
+                const { getOptionsStrategy } = await import('./geminiService');
+                // The JSON response from the proxy is the raw data needed for formatting
+                const strategyRec: any = await getOptionsStrategy(planOptionsStrategyStep.message, stockTicker);
+
+                // MODIFICATION: Robustly format the structured recommendation into a human-readable message
+                let strategyText = `**Strategy: ${strategyRec.strategyName || 'N/A'} for ${strategyRec.ticker || 'N/A'}**\n`;
+                strategyText += `Outlook: ${strategyRec.strategySummary || 'N/A'} (Risk: ${strategyRec.riskProfile || 'N/A'})\n`;
+                
+                // Defensive check before calling toFixed
+                if (strategyRec.maxRisk !== null && typeof strategyRec.maxRisk === 'number') {
+                    strategyText += `Max Risk: $${strategyRec.maxRisk.toFixed(2)} (per 100 shares)\n`;
+                }
+
+                strategyText += "Contracts:\n";
+                
+                strategyRec.suggestedContracts.forEach((c: any) => {
+                    // FIX: Use c.strikePrice if c.strike is undefined (to match AI output variance)
+                    // FIX: Safely check for premium/strike being a number before calling toFixed
+                    const strikePrice = typeof c.strike === 'number' ? c.strike : c.strikePrice;
+                    const premium = c.premium;
+
+                    const formattedStrike = typeof strikePrice === 'number' ? `$${strikePrice.toFixed(2)}` : 'N/A';
+                    const formattedPremium = typeof premium === 'number' ? `$${premium.toFixed(2)}` : 'N/A (Illustrative)';
+                    
+                    strategyText += `- **${c.action || 'N/A'}** ${c.type ? c.type.toUpperCase() : 'N/A'} @ Strike ${formattedStrike} (Exp: ${c.expiry || 'N/A'}) - Premium: ${formattedPremium} - Rationale: ${c.rationale || 'N/A'}\n`;
+                });
+
+                // Replace the plan_options_strategy step with a 'say' step.
+                return {
+                    steps: [{
+                        action: 'say',
+                        message: strategyText,
+                        comment: 'Result from AI options strategy planner.'
+                    }]
+                };
+
+            } catch (error) {
+                console.error("Error executing options strategy planning:", error);
+                // Ensure a string is returned for the error message
+                const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during strategy planning.";
+                return { steps: [{ action: 'say', message: `Sorry, I failed to plan the options strategy: ${errorMessage}`, comment: 'Options planning failed.' }] };
+            }
+        }
+        
         // If no research was needed, return the original workflow.
         return workflow;
 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, useLocation, useParams, Link } from 'react-router-dom';
 import { getWorkflowFromPrompt, WorkflowStep, AppContext } from '../services/signatexFlowService';
 import { executeStep, cleanupHighlight } from '../utils/workflowExecutor';
 import { MessageSquareIcon, BrainCircuitIcon, UsersIcon, MicrophoneIcon, SendIcon, SearchIcon, TrashIcon } from './common/Icons';
@@ -22,6 +22,12 @@ interface RecentChat extends User {
     lastMessage: string;
     timestamp: any; // Firestore timestamp
 }
+
+const DESKTOP_WIDTH = 384; 
+const DESKTOP_HEIGHT = 512; 
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 200;
+const HANDLE_SIZE = 16;
 
 const ChatPanel: React.FC = () => {
     const { user } = useAuth();
@@ -60,7 +66,61 @@ const ChatPanel: React.FC = () => {
 
     const recognitionRef = useRef<any>(null);
     const chatBodyRef = useRef<HTMLDivElement>(null);
+    const chatRef = useRef<HTMLDivElement>(null);
     const { chatTarget, openChatWith } = useNotification();
+
+    const [isDesktop, setIsDesktop] = useState(false);
+    const [isResizing, setIsResizing] = useState(false);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 }); 
+
+    const [activeInteraction, setActiveInteraction] = useState<'move' | 'br' | 'bl' | 'tr' | 'tl' | null>(null);
+
+    const [position, setPosition] = useState({ x: 0, y: 0 }); // Top-Left position
+    const [dimensions, setDimensions] = useState({ width: DESKTOP_WIDTH, height: DESKTOP_HEIGHT });
+
+    const linkifyTickers = (text: string, currentTicker: string | undefined): (string | JSX.Element)[] => {
+        // Regex to match 2-5 uppercase letters (common ticker format) not followed by more letters
+        // and ensuring it's not part of a longer word (using word boundaries)
+        const tickerRegex = /\b[A-Z]{2,5}\b/g; 
+        let parts: (string | JSX.Element)[] = [];
+        let lastIndex = 0;
+        let match;
+
+        while ((match = tickerRegex.exec(text)) !== null) {
+            const symbol = match[0];
+            const startIndex = match.index;
+            
+            // 1. Add the text segment before the match
+            if (startIndex > lastIndex) {
+                parts.push(text.substring(lastIndex, startIndex));
+            }
+
+            // 2. Add the linked ticker element
+            // Skip linking the current page's ticker to avoid redundancy
+            if (symbol === currentTicker) {
+                parts.push(<strong key={`${symbol}-${startIndex}`}>{symbol}</strong>);
+            } else {
+                parts.push(
+                    <Link 
+                        key={`${symbol}-${startIndex}`} 
+                        to={`/stock/${symbol}`} 
+                        className="font-bold text-yellow-400 hover:underline"
+                    >
+                        {symbol}
+                    </Link>
+                );
+            }
+
+            lastIndex = tickerRegex.lastIndex;
+        }
+
+        // 3. Add the remaining text segment
+        if (lastIndex < text.length) {
+            parts.push(text.substring(lastIndex));
+        }
+
+        return parts;
+    };
 
     // --- Firestore Operations for AI Chat ---
 
@@ -86,6 +146,9 @@ const ChatPanel: React.FC = () => {
 
     // Map Firestore messages to a simple format for rendering
     const currentMessages = useMemo(() => {
+        // ADDITION: Get the current ticker from the route params
+        const currentTicker = params.ticker?.toUpperCase();
+        
         if (mode === 'private') {
              return privateChatMessages.map(msg => ({ 
                 sender: msg.senderId === user?.uid ? 'user' : 'bot', 
@@ -97,10 +160,10 @@ const ChatPanel: React.FC = () => {
             sender: msg.sender, 
             text: msg.text 
         }));
-    }, [mode, privateChatMessages, localMessages, user]);
-
+    }, [mode, privateChatMessages, localMessages, user, params.ticker]);
     // --- Effects ---
 
+    //Chat panel open key
     useEffect(() => {
         try {
             localStorage.setItem(CHAT_PANEL_OPEN_KEY, String(isOpen));
@@ -109,11 +172,152 @@ const ChatPanel: React.FC = () => {
         }
     }, [isOpen]);
 
+    //chat body ref scorll
     useEffect(() => {
         if (chatBodyRef.current) {
             chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
         }
     }, [localMessages, privateChatMessages]);
+
+    //screen size check
+    useEffect(() => {
+        const checkIsDesktop = () => {
+            // Check for Tailwind's 'md' breakpoint (typically 768px)
+            const newIsDesktop = window.innerWidth >= 768;
+            setIsDesktop(newIsDesktop);
+            
+            // Only calculate initial position once for desktop when the chat is open
+            // This runs only if the component loads *on* desktop, effectively calculating the bottom-right corner.
+            if (newIsDesktop && position.x === 0 && position.y === 0) {
+                // Initial fixed position was: right-6 (24px), bottom-24 (96px).
+                const initialX = window.innerWidth - DESKTOP_WIDTH - 24; 
+                const initialY = window.innerHeight - DESKTOP_HEIGHT - 96; 
+                setPosition({ x: initialX, y: initialY });
+            }
+        };
+
+        checkIsDesktop();
+        window.addEventListener('resize', checkIsDesktop);
+        return () => window.removeEventListener('resize', checkIsDesktop);
+    }, [position.x, position.y]);
+
+    useEffect(() => {
+        const checkIsDesktop = () => {
+            const newIsDesktop = window.innerWidth >= 768;
+            setIsDesktop(newIsDesktop);
+            
+            if (newIsDesktop && position.x === 0 && position.y === 0) {
+                const initialX = window.innerWidth - DESKTOP_WIDTH - 24; 
+                const initialY = window.innerHeight - DESKTOP_HEIGHT - 96; 
+                setPosition({ x: initialX, y: initialY });
+            }
+        };
+
+        checkIsDesktop();
+        window.addEventListener('resize', checkIsDesktop);
+        return () => window.removeEventListener('resize', checkIsDesktop);
+    }, [position.x, position.y]); // Keep the dependency array as is
+
+    // MODIFIED: Combined handler for all mouse-down events
+    const handleInteractionStart = useCallback((e: React.MouseEvent, mode: 'move' | 'br' | 'bl' | 'tr' | 'tl') => {
+        if (!isDesktop) return;
+        e.preventDefault();
+        e.stopPropagation(); 
+        
+        setIsResizing(true);
+        setActiveInteraction(mode);
+        
+        // Store starting mouse position
+        setDragOffset({
+            x: e.clientX,
+            y: e.clientY,
+        });
+
+    }, [isDesktop]);
+
+    // MODIFIED: Core logic now handles moving and resizing all corners
+    useEffect(() => {
+        if (!isDesktop) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing || !activeInteraction) return;
+
+            const currentX = e.clientX;
+            const currentY = e.clientY;
+            
+            let newX = position.x;
+            let newY = position.y;
+            let newWidth = dimensions.width;
+            let newHeight = dimensions.height;
+            
+            const dx = currentX - dragOffset.x;
+            const dy = currentY - dragOffset.y;
+
+            if (activeInteraction === 'move') {
+                // Moving: Just adjust position
+                newX = Math.min(Math.max(position.x + dx, 0), window.innerWidth - dimensions.width);
+                newY = Math.min(Math.max(position.y + dy, 0), window.innerHeight - dimensions.height);
+                
+                setPosition({ x: newX, y: newY });
+                // Reset offset to the current mouse position to continue the move
+                setDragOffset({ x: currentX, y: currentY });
+
+            } else {
+                // Resizing: Logic depends on the corner
+                const isTop = activeInteraction.includes('t');
+                const isLeft = activeInteraction.includes('l');
+                const isBottom = activeInteraction.includes('b');
+                const isRight = activeInteraction.includes('r');
+                
+                if (isRight) {
+                    newWidth = Math.min(Math.max(MIN_WIDTH, dimensions.width + dx), window.innerWidth - position.x);
+                }
+                if (isBottom) {
+                    newHeight = Math.min(Math.max(MIN_HEIGHT, dimensions.height + dy), window.innerHeight - position.y);
+                }
+                if (isLeft) {
+                    newWidth = Math.min(Math.max(MIN_WIDTH, dimensions.width - dx), position.x + dimensions.width);
+                    if (newWidth > MIN_WIDTH) {
+                         newX = position.x + dx;
+                    }
+                }
+                if (isTop) {
+                    newHeight = Math.min(Math.max(MIN_HEIGHT, dimensions.height - dy), position.y + dimensions.height);
+                    if (newHeight > MIN_HEIGHT) {
+                        newY = position.y + dy;
+                    }
+                }
+                
+                // Update state if changes occurred
+                if (newX !== position.x || newY !== position.y) {
+                    setPosition({ x: newX, y: newY });
+                }
+                if (newWidth !== dimensions.width || newHeight !== dimensions.height) {
+                    setDimensions({ width: newWidth, height: newHeight });
+                }
+
+                // Reset offset to the current mouse position to continue the resize
+                setDragOffset({ x: currentX, y: currentY });
+            }
+        };
+
+        const handleMouseUp = () => {
+            if (isResizing) {
+                setIsResizing(false);
+                setActiveInteraction(null);
+            }
+        };
+
+        if (isResizing) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isResizing, activeInteraction, dragOffset, position, dimensions, isDesktop]);
 
     useEffect(() => {
         if (!user) {
@@ -303,7 +507,7 @@ const ChatPanel: React.FC = () => {
         e.preventDefault();
         if (!inputValue.trim() || isLoading) return;
 
-        const userMessage = inputValue;
+        const userMessage = inputValue; // Line 467: userMessage is defined here
         setInputValue('');
         
         if (mode === 'ai') {
@@ -503,8 +707,36 @@ const ChatPanel: React.FC = () => {
             )}
 
             {isOpen && user && (
-                 <div className="fixed bottom-24 right-6 z-50 w-96 bg-night-800 rounded-lg shadow-2xl flex flex-col h-[32rem]">
-                    <div className="p-4 border-b border-night-700 space-y-3">
+                 <div 
+                    ref={chatRef} 
+                    className={`fixed 
+                        inset-0 
+                        md:bottom-auto md:right-auto md:top-auto md:left-auto 
+                        z-50 
+                        w-full h-full 
+                        bg-night-800 rounded-lg 
+                        shadow-2xl 
+                        flex flex-col
+                        // ADDITION: Enable touch-action for better touch-device interaction
+                        ${isDesktop ? 'touch-action-none' : ''} 
+                    `}
+                    style={isDesktop ? { 
+                        top: position.y, 
+                        left: position.x, 
+                        width: dimensions.width, 
+                        height: dimensions.height,
+                    } : {}}
+                    // CRITICAL FIX: The initial mouse down is now ONLY for the resizer/mover, not the whole panel.
+                    onMouseDown={(e) => {
+                        // Prevent dragging by clicking the main panel area, only allow via designated handles/header.
+                        if (!e.target.closest('[data-handler]')) return;
+                    }}
+                 >
+                    <div 
+                        className="p-4 border-b border-night-700 space-y-3 cursor-grab md:cursor-move" 
+                        data-handler="move" // ADDITION: Tag as a handler
+                        onMouseDown={(e) => handleInteractionStart(e, 'move')} // MODIFIED: Use new handler
+                    > 
                         <div className="flex justify-around items-center bg-night-700 rounded-full p-1">
                             <button 
                                 onClick={() => { setMode('ai'); setLocalMessages([]); setIsAwaitingContinue(false); cleanupHighlight(); setPrivateChatTarget(null); setPrivateChatMessages([]); }}
@@ -527,7 +759,7 @@ const ChatPanel: React.FC = () => {
                        {currentMessages.length === 0 && mode === 'ai' && !isLoading && (
                             <div className="flex justify-start">
                                 <div className="rounded-lg px-3 py-2 max-w-xs text-sm bg-night-700 text-night-100">
-                                    Hello! I'm your AI Trading Assistant. I can help you research stocks, manage your watchlist, analyze your portfolio, and execute trades. Try asking: "Buy 5 shares of MSFT" or "What's the latest news on GOOGL?"
+                                    Hello! I'm your AI Trading Assistant. I can help you research stocks, manage your watchlist, analyze your portfolio, and execute trades. Try asking: "Buy 5 shares of <Link to="/stock/MSFT" className="font-bold text-yellow-400 hover:underline">MSFT</Link>" or "What's the latest news on <Link to="/stock/GOOGL" className="font-bold text-yellow-400 hover:underline">GOOGL</Link>?"
                                 </div>
                             </div>
                         )}
@@ -538,7 +770,8 @@ const ChatPanel: React.FC = () => {
                                    msg.sender === 'bot' ? 'bg-night-700 text-night-100' : 
                                    'bg-night-600 text-night-500 italic'
                                }`}>
-                                   {msg.text}
+                                   {/* MODIFICATION: Apply linkifyTickers here */}
+                                   {linkifyTickers(msg.text, params.ticker?.toUpperCase())}
                                </div>
                            </div>
                        ))}
@@ -570,6 +803,39 @@ const ChatPanel: React.FC = () => {
                                 <SendIcon className="w-5 h-5 text-night-900" />
                             </button>
                         </form>
+                        {isDesktop && (
+                            <>
+                                {/* Bottom-Right (br) - Diagonal resize */}
+                                <div 
+                                    data-handler="br"
+                                    className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize bg-yellow-400 rounded-br-lg"
+                                    onMouseDown={(e) => handleInteractionStart(e, 'br')}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-night-900 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 18V6M6 12h12"/></svg>
+                                </div>
+                                
+                                {/* Top-Left (tl) - Diagonal resize */}
+                                <div 
+                                    data-handler="tl"
+                                    className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize bg-yellow-400 rounded-tl-lg"
+                                    onMouseDown={(e) => handleInteractionStart(e, 'tl')}
+                                />
+
+                                {/* Top-Right (tr) - Diagonal resize */}
+                                <div 
+                                    data-handler="tr"
+                                    className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize bg-yellow-400 rounded-tr-lg"
+                                    onMouseDown={(e) => handleInteractionStart(e, 'tr')}
+                                />
+
+                                {/* Bottom-Left (bl) - Diagonal resize */}
+                                <div 
+                                    data-handler="bl"
+                                    className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize bg-yellow-400 rounded-bl-lg"
+                                    onMouseDown={(e) => handleInteractionStart(e, 'bl')}
+                                />
+                            </>
+                        )}
                     </div>
                 </div>
             )}

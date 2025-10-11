@@ -50,6 +50,29 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
                 navigate(`/stock/${String(stockIdentifier).toUpperCase()}`);
             }
             break;
+
+        case 'change_chart_view': // NEW CASE: Handles changing the chart interval
+            if (step.value) {
+                // The select element for the chart interval is controlled via a <select> tag
+                // and should be the one element with the value set by the chart component.
+                // We assume the selector is on the <select> tag itself.
+                const selectElement = document.querySelector('#chart-interval-select');
+                
+                if (selectElement) {
+                    highlightElement(selectElement as HTMLElement);
+                    await delay(1000); // Pause to show the user what's being targeted
+
+                    const chartSelect = selectElement as HTMLSelectElement;
+                    chartSelect.value = String(step.value);
+                    
+                    // Dispatch an event to update the parent component's state
+                    chartSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    await delay(500); // Give component time to process change
+                } else {
+                    console.warn("Chart interval select element not found.");
+                }
+            }
+            break;
             
         case 'navigate':
             if (step.path) {
@@ -86,7 +109,9 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
             break;
 
         case 'research':
+        case 'recommend_stocks':
         case 'say':
+        case 'plan_options_strategy':
              // 'say' action is handled in ChatPanel, no action needed here.
              // 'research' action is pre-processed in signatexFlowService.ts and should not reach here.
              break;
