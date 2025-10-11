@@ -5,7 +5,7 @@ import { PortfolioProvider } from './hooks/usePortfolio';
 import { WatchlistProvider } from './hooks/useWatchlist';
 import Dashboard from './components/Dashboard';
 import StockView from './components/StockView';
-import { TrendingUpIcon, BrainCircuitIcon, BriefcaseIcon } from './components/common/Icons';
+import { BrainCircuitIcon, BriefcaseIcon } from './components/common/Icons';
 import StockPicker from './components/StockPicker';
 import HistoryLedger from './components/HistoryLedger';
 import Login from './src/components/Login';
@@ -41,13 +41,15 @@ const MainApp: React.FC = () => {
         navigate('/');
     };
 
+    const logoClassName = 'h-6 w-6 rounded-full border-2 border-night-500 transition-all duration-300';
+
     return (
         <div className="min-h-screen text-night-100 overflow-x-hidden">
             <NotificationPopup />
             <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                 <nav className="container mx-auto flex justify-between items-center">
                     <Link to="/" className="flex items-center gap-2 text-xl font-bold text-white">
-                        <TrendingUpIcon className="h-6 w-6 text-brand-blue" />
+                        <img src="/logo.jpg" alt="Signatex Logo" className={logoClassName} />
                         <span className="hidden sm:inline">Signatex.co</span> {/* MODIFIED: Hide text logo on small screens */}
                         <span className="inline sm:hidden text-lg">Signatex</span> {/* ADDITION: Shorter mobile logo */}
                     </Link>
