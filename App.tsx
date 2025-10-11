@@ -41,15 +41,20 @@ const MainApp: React.FC = () => {
         navigate('/');
     };
 
-    const logoClassName = 'h-6 w-6 rounded-full border-2 border-night-500 transition-all duration-300';
+    const logoClassName = 'h-10 w-8 bg-white transition-all duration-300';
 
     return (
         <div className="min-h-screen text-night-100 overflow-x-hidden">
             <NotificationPopup />
             <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                 <nav className="container mx-auto flex justify-between items-center">
-                    <Link to="/" className="flex items-center gap-2 text-xl font-bold text-white">
-                        <img src="/logo.jpg" alt="Signatex Logo" className={logoClassName} />
+                    <Link to="/" className="flex items-center pl-4 pr-4 gap-2 text-xl font-bold text-blue-500 rounded-md bg-white border border-night-400 border-4 p-1">
+                        <img 
+                            src="/logo.jpg" 
+                            alt="Signatex Logo" 
+                            className={logoClassName} 
+                            style={{ objectFit: 'contain' }} 
+                        />
                         <span className="hidden sm:inline">Signatex.co</span> {/* MODIFIED: Hide text logo on small screens */}
                         <span className="inline sm:hidden text-lg">Signatex</span> {/* ADDITION: Shorter mobile logo */}
                     </Link>
