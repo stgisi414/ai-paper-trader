@@ -46,7 +46,7 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const tickers = doc.exists() ? doc.data().tickers || [] : [];
             setWatchlistTickers(tickers);
             // The list of tickers has been loaded, so we can set loading to false.
-            setIsLoading(false); 
+            setIsLoading(false);
         }, (error) => {
             console.error("Error fetching watchlist tickers:", error);
             setIsLoading(false); // Also stop loading on error

@@ -80,6 +80,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
             // Set loading to false only after the first data snapshot
             setIsLoading(false);
+        }, (error) => { // ADD THIS ERROR HANDLER
+            console.error("Error fetching portfolio:", error);
+            setIsLoading(false);
         });
         
         const unsubTransactions = onSnapshot(transactionsDocRef, (doc) => {
