@@ -237,16 +237,23 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                 // MODIFICATION: More robustly format the structured recommendation into a human-readable message, checking for all new fields.
                 let strategyText = `**Strategy: ${strategyRec.strategyName || 'N/A'} for ${stockTicker}**\n\n`;
                 strategyText += `**Market Outlook:** ${strategyRec.marketOutlook || 'N/A'}\n`;
-                strategyText += `**Risk/Profit:** ${strategyRec.riskProfile || 'N/A'} / ${strategyRec.profitProfile || 'N/A'}\n\n`;
+                
+                // FIX 1: Explicitly check for string type and provide fallback for riskProfile/profitProfile
+                const riskProfile = typeof strategyRec.riskProfile === 'string' ? strategyRec.riskProfile : 'N/A (AI Error)';
+                const profitProfile = typeof strategyRec.profitProfile === 'string' ? strategyRec.profitProfile : 'N/A (AI Error)';
+                strategyText += `**Risk/Profit:** ${riskProfile} / ${profitProfile}\n\n`;
+                
+                // FIX 2: Ensure description is handled gracefully.
                 strategyText += `**Description:** ${strategyRec.description || 'N/A'}\n\n`;
 
                 if (strategyRec.keyMetrics) {
                     const metrics = strategyRec.keyMetrics;
                     strategyText += `**Key Metrics:**\n`;
                     strategyText += `- Underlying Price: ${formatCurrency(metrics.underlyingPrice)}\n`;
-                    strategyText += `- Max Profit: ${formatCurrency(metrics.maxProfit)}\n`;
+                    // Calls to formatCurrency now handle nulls and undefined values thanks to the fix in formatters.ts
+                    strategyText += `- Max Profit: ${formatCurrency(metrics.maxProfit)}\n`; 
                     strategyText += `- Max Loss: ${formatCurrency(metrics.maxLoss)}\n`;
-                    strategyText += `- Breakeven: ${formatCurrency(metrics.breakevenPrice)}\n\n`;
+                    strategyText += `- Breakeven: ${formatCurrency(metrics.breakevenPrice)}\n\n`; 
                 }
 
                 strategyText += "**Suggested Contracts:**\n";
@@ -260,7 +267,8 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                         const formattedStrike = typeof strikePrice === 'number' ? formatCurrency(strikePrice) : 'N/A';
                         const formattedPremium = typeof premium === 'number' ? formatCurrency(premium) : 'N/A';
                         
-                        strategyText += `- **${c.action.toUpperCase()} ${c.type.toUpperCase()}** @ ${formattedStrike} (Exp: ${expiration})\n`;
+                        // FIX 3: Add fallback to 'N/A' inside template to prevent 'undefined' string
+                        strategyText += `- **${c.action.toUpperCase()} ${c.type.toUpperCase()}** @ ${formattedStrike} (Exp: ${expiration || 'N/A'})\n`;
                         strategyText += `  - Premium: ${formattedPremium}\n`;
                         strategyText += `  - Rationale: *${c.rationale}*\n`;
                     });

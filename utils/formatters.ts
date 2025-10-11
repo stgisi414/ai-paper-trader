@@ -1,10 +1,12 @@
 
-export const formatCurrency = (value: number) => {
+export const formatCurrency = (value: number | null | undefined) => {
+  if (value === null || value === undefined || isNaN(value)) return 'N/A';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
   }).format(value);
 };
+
 
 export const formatPercentage = (value: number | null | undefined) => {
   if (value === null || value === undefined || isNaN(value)) return 'N/A';

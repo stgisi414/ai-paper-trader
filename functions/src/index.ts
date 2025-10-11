@@ -572,8 +572,10 @@ export const geminiProxy = onRequest(
             // CRITICAL FIX: Relax the synthesis
             // constraint to allow lists for news.
             systemInstruction: `You are an expert financial assistant. 
-            Your primary task is to use the provided tools to gather financial data 
-            and then synthesize that data into a clear, human-readable summary or
+            Your primary task is to use the provided tools
+            to gather financial data 
+            and then synthesize that data into a clear,
+            human-readable summary or
             a structured JSON object as requested.
   
            When a user asks for information that requires a tool
@@ -651,7 +653,8 @@ export const geminiProxy = onRequest(
                   const totalContracts = response.options?.flatMap((o: any) =>
                     [...o.calls, ...o.puts]).length ?? 0;
                   summarizedResponse = {
-                    status: totalContracts > 0 ? "Success" : "No contracts found",
+                    status: totalContracts >
+                      0 ? "Success" : "No contracts found",
                     num_contracts_returned: totalContracts,
                     underlying_symbol: call.args.symbol,
                     requested_expiration_date: call.args.date,
@@ -678,6 +681,29 @@ export const geminiProxy = onRequest(
 
             const toolResponses = await Promise.all(toolPromises);
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const secondCallConfig: any = {};
+            let secondCallPrompt = `Based on the tool outputs
+             provided in the last turn,
+             generate the single, requested human-readable summary.
+              Do NOT include any code or JSON.`;
+
+            if (responseSchema) {
+              // If a responseSchema was provided, we force JSON output.
+              logger.info("GEMINI_PROXY: Overriding second call for schema.");
+              secondCallConfig.responseMimeType = "application/json";
+              secondCallConfig.responseSchema = responseSchema;
+              // Set a specific system instruction for the JSON output flow
+              secondCallConfig.systemInstruction =
+              `You are a specialist JSON generator.
+               Your entire output MUST be a single raw JSON object that strictly
+              conforms to the requested schema.
+              DO NOT include any conversational filler,
+              markdown fences (\`\`\`json), or non-JSON text.`;
+              secondCallPrompt = `Generate the required JSON object based on
+               the context and tool outputs. Output ONLY the JSON.`;
+            }
+
             // Second call: Send tool results and request final text response
             const historyWithToolResults: Content[] = [...history];
             if (firstCandidate.content) {
@@ -692,10 +718,7 @@ export const geminiProxy = onRequest(
             // FIX 2: Append a definitive final synthesis command
             historyWithToolResults.push({
               role: "user",
-              parts: [{text: `Based on the tool outputs
-                provided in the last turn,
-                generate the single, requested human-readable summary.
-                Do NOT include any code or JSON.`}],
+              parts: [{text: secondCallPrompt}],
             });
 
 
@@ -703,6 +726,7 @@ export const geminiProxy = onRequest(
             const secondResult = await genAI.models.generateContent({
               model: modelName,
               contents: historyWithToolResults,
+              config: secondCallConfig,
             });
 
             finalResponseText = secondResult.candidates?.[0]?.content?.
