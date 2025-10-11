@@ -107,7 +107,8 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         if (!plannerResponse.ok) throw new Error(`Planner AI failed: ${await plannerResponse.text()}`);
         
         const planData = await plannerResponse.json();
-        const workflow = JSON.parse(planData.text) as SignatexFlowResponse;
+        const cleanedText = planData.text.replace(/^```json\s*|\s*```$/g, '').trim();
+        const workflow = JSON.parse(cleanedText) as SignatexFlowResponse;
 
         // --- Step 2: Check if the plan requires research ---
         const researchStep = workflow.steps.find(step => step.action === 'research');
