@@ -22,17 +22,16 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
     const showNotification = useCallback((payload: NotificationPayload) => {
         setNotification(payload);
-    }, []);
-
+    }, []); // Correctly memoized: stable
+    
     const hideNotification = useCallback(() => {
         setNotification(null);
-    }, []);
+    }, []); // Correctly memoized: stable
 
     const openChatWith = useCallback((user: User | null) => {
         setChatTarget(user);
-    }, []);
+    }, []); // Correctly memoized: stable
 
-    // This useMemo is the critical change that prevents the loop
     const value = useMemo(() => ({
         notification,
         showNotification,

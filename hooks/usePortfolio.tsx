@@ -308,7 +308,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const interval = setInterval(updateAllPrices, 300000); // Refresh every 5 minutes
         return () => clearInterval(interval);
 
-    }, [user, showNotification]);
+    }, [user]);
 
     const buyStock = useCallback(async (ticker: string, name: string, shares: number, price: number) => {
         if (!user) { alert("You must be logged in to trade."); return; }
