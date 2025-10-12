@@ -37,6 +37,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    console.log('[DEBUG] usePortfolio.tsx: PortfolioProvider rendering.');
+
     const portfolioRef = useRef(portfolio);
     useEffect(() => {
         portfolioRef.current = portfolio;
@@ -48,7 +50,9 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, [transactions]);
 
     useEffect(() => {
+        console.log('[DEBUG] usePortfolio.tsx: Main data fetching useEffect triggered. User:', user ? user.uid : 'null');
         if (!user) {
+            console.log('[DEBUG] usePortfolio.tsx: No user, resetting portfolio and transactions.');
             setPortfolio({
                 cash: INITIAL_CASH,
                 holdings: [],
@@ -56,19 +60,24 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 initialValue: INITIAL_CASH,
             });
             setTransactions([]);
+            console.log('[DEBUG] usePortfolio.tsx: Setting isLoading to false (no user).');
             setIsLoading(false);
             return;
         }
 
-        // Set loading to true when user changes
+        console.log('[DEBUG] usePortfolio.tsx: User found, setting isLoading to true and attaching Firestore listeners.');
         setIsLoading(true);
         const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
         const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
 
+        console.log(`[DEBUG] usePortfolio.tsx: Attaching snapshot listener to portfolio path: ${portfolioDocRef.path}`);
         const unsubPortfolio = onSnapshot(portfolioDocRef, (doc) => {
+            console.log('[DEBUG] usePortfolio.tsx: Portfolio snapshot received.');
             if (doc.exists()) {
+                console.log('[DEBUG] usePortfolio.tsx: Portfolio document exists. Data:', doc.data());
                 setPortfolio(doc.data() as Portfolio);
             } else {
+                console.log('[DEBUG] usePortfolio.tsx: Portfolio document does NOT exist. Creating initial portfolio.');
                 const initialPortfolio = {
                     cash: INITIAL_CASH,
                     holdings: [],
@@ -78,22 +87,29 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 setDoc(portfolioDocRef, initialPortfolio);
                 setPortfolio(initialPortfolio);
             }
-            // Set loading to false only after the first data snapshot
+            console.log('[DEBUG] usePortfolio.tsx: Setting isLoading to false (after portfolio snapshot).');
             setIsLoading(false);
-        }, (error) => { // ADD THIS ERROR HANDLER
-            console.error("Error fetching portfolio:", error);
+        }, (error) => {
+            console.error("[DEBUG] usePortfolio.tsx: FATAL ERROR fetching portfolio snapshot:", error);
             setIsLoading(false);
         });
         
+        console.log(`[DEBUG] usePortfolio.tsx: Attaching snapshot listener to transactions path: ${transactionsDocRef.path}`);
         const unsubTransactions = onSnapshot(transactionsDocRef, (doc) => {
+            console.log('[DEBUG] usePortfolio.tsx: Transactions snapshot received.');
             if (doc.exists()) {
+                console.log('[DEBUG] usePortfolio.tsx: Transactions document exists. Count:', (doc.data().transactions || []).length);
                 setTransactions(doc.data().transactions || []);
             } else {
+                 console.log('[DEBUG] usePortfolio.tsx: Transactions document does NOT exist. Creating empty transactions array.');
                  setDoc(transactionsDocRef, { transactions: [] });
             }
+        }, (error) => {
+            console.error("[DEBUG] usePortfolio.tsx: FATAL ERROR fetching transactions snapshot:", error);
         });
 
         return () => {
+            console.log('[DEBUG] usePortfolio.tsx: Unsubscribing from Firestore listeners.');
             unsubPortfolio();
             unsubTransactions();
         };

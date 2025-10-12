@@ -16,16 +16,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const auth = getAuth();
 
   useEffect(() => {
+    console.log('[DEBUG] useAuth.tsx: AuthProvider useEffect for onAuthStateChanged mounting.');
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+      console.log('[DEBUG] useAuth.tsx: onAuthStateChanged callback fired.');
+      if (user) {
+        console.log(`[DEBUG] useAuth.tsx: User detected with UID: ${user.uid}`);
+        setUser(user);
+      } else {
+        console.log('[DEBUG] useAuth.tsx: No user detected.');
+        setUser(null);
+      }
+      console.log('[DEBUG] useAuth.tsx: Setting auth loading to false.');
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+        console.log('[DEBUG] useAuth.tsx: Unsubscribing from onAuthStateChanged.');
+        unsubscribe();
+    }
   }, [auth]);
 
   useEffect(() => {
     if (user) {
+      console.log(`[DEBUG] useAuth.tsx: User is present, setting up lastSeen interval for UID: ${user.uid}`);
       const userDocRef = doc(db, 'users', user.uid);
       const updateLastSeen = () => {
         setDoc(userDocRef, { lastSeen: serverTimestamp() }, { merge: true });
@@ -34,9 +47,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       updateLastSeen();
       const interval = setInterval(updateLastSeen, 60000); // Update every minute
 
-      return () => clearInterval(interval);
+      return () => {
+        console.log(`[DEBUG] useAuth.tsx: Clearing lastSeen interval for UID: ${user.uid}`);
+        clearInterval(interval);
+      };
+    } else {
+        console.log('[DEBUG] useAuth.tsx: No user, skipping lastSeen effect.');
     }
   }, [user]);
+  
+  console.log(`[DEBUG] useAuth.tsx: AuthProvider rendering. Loading: ${loading}, User:`, user ? user.uid : 'null');
 
   return (
     <AuthContext.Provider value={{ user, loading }}>

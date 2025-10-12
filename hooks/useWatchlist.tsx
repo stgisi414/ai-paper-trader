@@ -30,45 +30,63 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    console.log('[DEBUG] useWatchlist.tsx: WatchlistProvider rendering.');
+
     // Effect 1: Manages fetching the LIST of tickers and the primary loading state.
     useEffect(() => {
+        console.log('[DEBUG] useWatchlist.tsx: Ticker fetching useEffect triggered. User:', user ? user.uid : 'null');
         if (!user) {
+            console.log('[DEBUG] useWatchlist.tsx: No user, resetting watchlist data.');
             setWatchlistTickers([]);
             setWatchlistData([]);
+            console.log('[DEBUG] useWatchlist.tsx: Setting isLoading to false (no user).');
             setIsLoading(false);
             return;
         }
 
+        console.log('[DEBUG] useWatchlist.tsx: User found, setting isLoading to true and attaching listener.');
         setIsLoading(true);
         const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlist');
         
+        console.log(`[DEBUG] useWatchlist.tsx: Attaching snapshot listener to watchlist path: ${watchlistDocRef.path}`);
         const unsubscribe = onSnapshot(watchlistDocRef, (doc) => {
+            console.log('[DEBUG] useWatchlist.tsx: Watchlist snapshot received.');
             const tickers = doc.exists() ? doc.data().tickers || [] : [];
+            console.log('[DEBUG] useWatchlist.tsx: Tickers from Firestore:', tickers);
             setWatchlistTickers(tickers);
-            // The list of tickers has been loaded, so we can set loading to false.
-            setIsLoading(false);
+            console.log('[DEBUG] useWatchlist.tsx: Setting isLoading to false (after ticker snapshot).');
+            setIsLoading(false); 
         }, (error) => {
-            console.error("Error fetching watchlist tickers:", error);
-            setIsLoading(false); // Also stop loading on error
+            console.error("[DEBUG] useWatchlist.tsx: FATAL ERROR fetching watchlist snapshot:", error);
+            setIsLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            console.log('[DEBUG] useWatchlist.tsx: Unsubscribing from Firestore listener.');
+            unsubscribe();
+        };
     }, [user]);
 
     // Effect 2: Manages fetching the PRICES for the tickers whenever the list changes.
     useEffect(() => {
-        // Do not run this effect until the initial ticker list has been loaded.
-        if (isLoading) return;
+        console.log(`[DEBUG] useWatchlist.tsx: Price fetching useEffect triggered. isLoading: ${isLoading}, Ticker count: ${watchlistTickers.length}`);
+        if (isLoading) {
+            console.log('[DEBUG] useWatchlist.tsx: Skipping price fetch because initial ticker load is not complete.');
+            return;
+        }
 
         const updateWatchlistPrices = async () => {
             if (watchlistTickers.length === 0) {
+                console.log('[DEBUG] useWatchlist.tsx: No tickers in watchlist, clearing data.');
                 setWatchlistData([]); // Clear data if watchlist is empty
                 return;
             }
             
+            console.log(`[DEBUG] useWatchlist.tsx: Fetching quotes for tickers: ${watchlistTickers.join(',')}`);
             try {
                 const tickers = watchlistTickers.join(',');
                 const quotes = await fmpService.getQuote(tickers);
+                console.log('[DEBUG] useWatchlist.tsx: Received quotes from FMP:', quotes);
                 
                 const quoteMap = new Map<string, FmpQuote>();
                 quotes.forEach(q => quoteMap.set(q.symbol, q));
@@ -83,19 +101,18 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                         changesPercentage: quote?.changesPercentage || 0,
                     };
                 });
-
+                
+                console.log('[DEBUG] useWatchlist.tsx: Setting new watchlist data:', updatedWatchlist);
                 setWatchlistData(updatedWatchlist);
             } catch (error) {
-                console.error("Failed to update watchlist prices:", error);
+                console.error("[DEBUG] useWatchlist.tsx: Failed to update watchlist prices:", error);
             }
         };
 
         updateWatchlistPrices();
         const interval = setInterval(updateWatchlistPrices, 300000);
         return () => clearInterval(interval);
-    // This effect now correctly depends on both the tickers list and the initial loading state.
     }, [watchlistTickers, isLoading]);
-
 
     const updateWatchlistInDb = async (tickers: string[]) => {
         if (!user) return;
@@ -110,6 +127,9 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         if (!watchlistTickers.includes(ticker)) {
             const newTickers = [...watchlistTickers, ticker];
+            // --- FIX: Optimistically update the local state ---
+            setWatchlistTickers(newTickers); 
+            // Now, update the database in the background
             updateWatchlistInDb(newTickers);
         }
     }, [watchlistTickers, user]);
@@ -117,6 +137,9 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const removeFromWatchlist = useCallback((ticker: string) => {
         if (!user) return;
         const newTickers = watchlistTickers.filter(t => t !== ticker);
+        // --- FIX: Optimistically update the local state ---
+        setWatchlistTickers(newTickers);
+        // Now, update the database in the background
         updateWatchlistInDb(newTickers);
     }, [watchlistTickers, user]);
     

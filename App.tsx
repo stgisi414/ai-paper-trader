@@ -16,6 +16,7 @@ import NotificationPopup from './components/common/NotificationPopup';
 import VersionChecker from './components/VersionChecker';
 
 const App: React.FC = () => {
+    console.log('[DEBUG] App.tsx: Rendering App component');
     return (
         <AuthProvider>
             {/* FIX: Move NotificationProvider up */}

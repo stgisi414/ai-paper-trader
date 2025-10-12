@@ -2,6 +2,7 @@ import { GEMINI_BASE_URL } from '../constants';
 import { NavigateFunction } from 'react-router-dom';
 import * as fmpService from './fmpService';
 import { formatCurrency } from '../utils/formatters';
+import { callGeminiProxyWithSchema, getStockPicks } from './geminiService';
 
 // Defines the structure of a single step in the workflow
 export interface WorkflowStep {
