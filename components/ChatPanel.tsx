@@ -717,7 +717,6 @@ const ChatPanel: React.FC = () => {
                         bg-night-800 rounded-lg 
                         shadow-2xl 
                         flex flex-col
-                        // ADDITION: Enable touch-action for better touch-device interaction
                         ${isDesktop ? 'touch-action-none' : ''} 
                     `}
                     style={isDesktop ? { 
@@ -726,16 +725,24 @@ const ChatPanel: React.FC = () => {
                         width: dimensions.width, 
                         height: dimensions.height,
                     } : {}}
-                    // CRITICAL FIX: The initial mouse down is now ONLY for the resizer/mover, not the whole panel.
                     onMouseDown={(e) => {
-                        // Prevent dragging by clicking the main panel area, only allow via designated handles/header.
                         if (!e.target.closest('[data-handler]')) return;
                     }}
                  >
+                    {/* ADDITION: Mobile-only close button */}
+                    {!isDesktop && (
+                        <button
+                            onClick={() => setIsOpen(false)}
+                            className="absolute top-4 right-4 text-night-500 hover:text-white z-10 p-2"
+                            aria-label="Close chat"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    )}
                     <div 
                         className="p-4 border-b border-night-700 space-y-3 cursor-grab md:cursor-move" 
-                        data-handler="move" // ADDITION: Tag as a handler
-                        onMouseDown={(e) => handleInteractionStart(e, 'move')} // MODIFIED: Use new handler
+                        data-handler="move"
+                        onMouseDown={(e) => handleInteractionStart(e, 'move')}
                     > 
                         <div className="flex justify-around items-center bg-night-700 rounded-full p-1">
                             <button 
@@ -755,7 +762,6 @@ const ChatPanel: React.FC = () => {
                     </div>
 
                     <div ref={chatBodyRef} className="flex-1 p-4 overflow-y-auto space-y-4">
-                       {/* ADDITION: Friendly Welcome Message for AI Mode when chat is empty */}
                        {currentMessages.length === 0 && mode === 'ai' && !isLoading && (
                             <div className="flex justify-start">
                                 <div className="rounded-lg px-3 py-2 max-w-xs text-sm bg-night-700 text-night-100">
@@ -770,7 +776,6 @@ const ChatPanel: React.FC = () => {
                                    msg.sender === 'bot' ? 'bg-night-700 text-night-100' : 
                                    'bg-night-600 text-night-500 italic'
                                }`}>
-                                   {/* MODIFICATION: Apply linkifyTickers here */}
                                    {linkifyTickers(msg.text, params.ticker?.toUpperCase())}
                                </div>
                            </div>

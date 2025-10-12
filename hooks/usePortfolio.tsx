@@ -76,17 +76,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             if (doc.exists()) {
                 console.log('[DEBUG] usePortfolio.tsx: Portfolio document exists. Data:', doc.data());
                 setPortfolio(doc.data() as Portfolio);
-            } else {
-                console.log('[DEBUG] usePortfolio.tsx: Portfolio document does NOT exist. Creating initial portfolio.');
-                const initialPortfolio = {
-                    cash: INITIAL_CASH,
-                    holdings: [],
-                    optionHoldings: [],
-                    initialValue: INITIAL_CASH,
-                };
-                setDoc(portfolioDocRef, initialPortfolio);
-                setPortfolio(initialPortfolio);
             }
+            // No longer creating a new portfolio here
             console.log('[DEBUG] usePortfolio.tsx: Setting isLoading to false (after portfolio snapshot).');
             setIsLoading(false);
         }, (error) => {
