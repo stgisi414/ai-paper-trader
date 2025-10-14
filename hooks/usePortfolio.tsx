@@ -247,10 +247,20 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                         const maxPrice = Math.max(p1, p2);
                         const maxTime = Math.max(t1, t2);
 
-                        const isFutureBox = maxTime > currentTime;
-                        const priceCrossed = price >= minPrice && price <= maxPrice;
+                        // Original Code (Too restrictive/buggy for continuous checks):
+                        // const isFutureBox = maxTime > currentTime;
+                        // const priceCrossed = price >= minPrice && price <= maxPrice;
 
-                        if (isFutureBox && priceCrossed) {
+                        // if (isFutureBox && priceCrossed) {
+                        
+                        // FIX: Check if the current price is within the defined vertical (price) range.
+                        const priceWithinRange = price >= minPrice && price <= maxPrice;
+                        
+                        // FIX: Only check if the drawing's start time (min time) has passed.
+                        const minTime = Math.min(t1, t2);
+                        const isDrawingActive = minTime <= currentTime;
+
+                        if (isDrawingActive && priceWithinRange) {
                             showNotification({
                                 sender: { uid: 'system', displayName: 'System Alert', email: '', photoURL: '' },
                                 text: `Price Alert! ${ticker} just entered the range of a saved rectangle (Price: ${formatCurrency(price)}, Range: ${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)})`
