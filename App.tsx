@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './src/hooks/useAuth.tsx';
 import { PortfolioProvider } from './hooks/usePortfolio';
@@ -14,6 +14,8 @@ import { NotificationProvider } from './hooks/useNotification';
 import { useUnreadListener } from './hooks/useUnreadListener';
 import NotificationPopup from './components/common/NotificationPopup';
 import VersionChecker from './components/VersionChecker';
+
+const FONT_SIZES = ['small', 'medium', 'large'] as const;
 
 const App: React.FC = () => {
     console.log('[DEBUG] App.tsx: Rendering App component');
@@ -34,10 +36,12 @@ const App: React.FC = () => {
 };
 
 const MainApp: React.FC = () => {
-    const { user } = useAuth();
+    const { user, userSettings, updateFontSize } = useAuth();
     const auth = getAuth();
     const navigate = useNavigate();
     useUnreadListener();
+
+    const [isFontSizeMenuOpen, setIsFontSizeMenuOpen] = useState(false);
 
     const handleSignOut = async () => {
         await signOut(auth);
@@ -63,6 +67,61 @@ const MainApp: React.FC = () => {
                         <span className="inline sm:hidden text-lg">Signatex</span> {/* ADDITION: Shorter mobile logo */}
                     </Link>
                     <div className="flex gap-2 sm:gap-4 items-center"> {/* MODIFIED: Reduced gap on small screens */}
+                        {user && (
+                            // MODIFIED: Only display the button on small screens
+                            <button 
+                                onClick={() => setIsFontSizeMenuOpen(true)}
+                                className="sm:hidden text-md font-bold text-white p-2 rounded-full bg-night-700 hover:bg-night-600"
+                                title="Change Font Size"
+                            >
+                                A
+                            </button>
+                        )}
+
+                        {user && (
+                            // MODIFIED: The font controls are wrapped in a new conditional container
+                            <div className={`
+                                flex items-center gap-1 p-1 
+                                sm:bg-night-700 sm:rounded-md 
+                                ${isFontSizeMenuOpen ? 'fixed inset-0 bg-night-900/90 z-50 flex-col justify-center items-center' : 'hidden sm:flex'}
+                            `} 
+                                title="Font Size"
+                            >
+                                {/* ADDITION: Close button for mobile popout */}
+                                {isFontSizeMenuOpen && (
+                                    <button 
+                                        onClick={() => setIsFontSizeMenuOpen(false)} 
+                                        className="absolute top-4 right-4 text-white p-2"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    </button>
+                                )}
+
+                                {/* MODIFIED: Font size buttons */}
+                                <div className={`flex gap-3 ${isFontSizeMenuOpen ? 'flex-col p-6 bg-night-800 rounded-lg shadow-xl' : ''}`}>
+                                    {isFontSizeMenuOpen && <h3 className="text-xl font-bold mb-4">Select Font Size</h3>}
+                                    <div className="flex gap-3">
+                                        {FONT_SIZES.map(size => (
+                                            <button
+                                                key={size}
+                                                onClick={() => {
+                                                    updateFontSize(size);
+                                                    if (isFontSizeMenuOpen) setIsFontSizeMenuOpen(false); // Close on selection
+                                                }}
+                                                className={`px-4 py-2 text-lg font-bold rounded-md transition-colors ${
+                                                    userSettings.fontSize === size 
+                                                        ? 'bg-brand-blue text-white' 
+                                                        : 'text-night-500 hover:bg-night-600'
+                                                }`}
+                                            >
+                                                {size === 'small' ? 'A-' : size === 'large' ? 'A+' : 'A'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {user && (
                             <>
                                 <Link to="/history" className="flex items-center gap-2 text-md font-bold text-white bg-night-700 px-3 py-2 rounded-md hover:bg-night-600 transition-colors" title="History"> {/* MODIFIED: Smaller padding/title for mobile */}

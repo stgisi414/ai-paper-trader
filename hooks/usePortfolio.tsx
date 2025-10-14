@@ -65,12 +65,28 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return;
         }
 
+        // --- TEMPORARY DISABLE START ---
+        /* console.log('[DEBUG] usePortfolio.tsx: User found. TEMPORARILY DISABLING Firestore listeners and live pricing.');
+        setPortfolio({
+            cash: INITIAL_CASH,
+            holdings: [],
+            optionHoldings: [],
+            initialValue: INITIAL_CASH,
+        });
+        setTransactions([]);
+        setIsLoading(false);
+        const interval = setInterval(() => {   }, 300000); // Stop price updates 
+        return () => clearInterval(interval); */
+        // --- TEMPORARY DISABLE END ---
+
         console.log('[DEBUG] usePortfolio.tsx: User found, setting isLoading to true and attaching Firestore listeners.');
         setIsLoading(true);
         const portfolioDocRef = doc(db, 'users', user.uid, 'data', 'portfolio');
         const transactionsDocRef = doc(db, 'users', user.uid, 'data', 'transactions');
 
         console.log(`[DEBUG] usePortfolio.tsx: Attaching snapshot listener to portfolio path: ${portfolioDocRef.path}`);
+        
+
         const unsubPortfolio = onSnapshot(portfolioDocRef, (doc) => {
             console.log('[DEBUG] usePortfolio.tsx: Portfolio snapshot received.');
             if (doc.exists()) {

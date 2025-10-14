@@ -444,6 +444,7 @@ export interface User {
   email: string;
   displayName: string;
   photoURL: string;
+  fontSize: 'small' | 'medium' | 'large';
 }
 
 export interface AiChatMessage {

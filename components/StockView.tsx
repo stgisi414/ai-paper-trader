@@ -747,10 +747,39 @@ const StockView: React.FC = () => {
                 </div>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-1 space-y-6">
-                    {user && <Watchlist />} {/* MODIFIED: Only show Watchlist if logged in */}
-                    {/* MODIFIED: Conditionally render Trade Card */}
+            {/* MODIFICATION: The layout of content within the grid columns is swapped */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                
+                {/* LEFT COLUMN (lg:col-span-2) - Only contains Watchlist now */}
+                <div className="lg:col-span-2 space-y-6"> 
+                    {user && <Watchlist />}
+                </div>
+
+                {/* RIGHT COLUMN (lg:col-span-3) - Now contains Chart, Trade Card, and Tabs/Content */}
+                <div className="lg:col-span-3 space-y-6">
+                    
+                    {/* 1. Chart Card (REMAINS HERE) */}
+                    <Card>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">Price Chart</h2>
+                            <select
+                                id="chart-interval-select"
+                                value={chartInterval}
+                                onChange={(e) => setChartInterval(e.target.value)}
+                                className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none"
+                            >
+                                <option value="15min">15 Minute</option>
+                                <option value="1hour">1 Hour</option>
+                                <option value="4hour">4 Hour</option>
+                                <option value="1day">1 Day</option>
+                                <option value="1week">1 Week</option>
+                                <option value="1month">1 Month</option>
+                            </select>
+                        </div>
+                        <CandlestickChart data={historicalData} ticker={ticker as string} />
+                    </Card>
+
+                    {/* 2. Trade Card (MOVED HERE) */}
                     {user ? (
                         <Card>
                             <h2 className="text-xl font-bold mb-4">Trade</h2>
@@ -773,7 +802,7 @@ const StockView: React.FC = () => {
                                     </>
                                 )}
                                 
-                                {/* ADDITION: Expiration Date Selector for Options */}
+                                {/* Expiration Date Selector for Options */}
                                 {(tradeTab === 'calls' || tradeTab === 'puts') && (
                                     <div>
                                         <label htmlFor="expiry-select" className="block text-sm font-medium text-night-100 mb-1">Expiration Date</label>
@@ -799,79 +828,81 @@ const StockView: React.FC = () => {
                                 )}
 
                                 {(tradeTab === 'calls' || tradeTab === 'puts') && (
-                                    <div className="h-48 overflow-auto bg-night-700 p-2 rounded-md">
-                                        <table className="text-left text-xs">
-                                            <thead>
-                                                <tr>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('strike_price')}>
-                                                        Strike {renderSortIcon('strike_price')}
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap">Expiry</th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('close_price')}>
-                                                        Price {renderSortIcon('close_price')}
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('impliedVolatility')}>
-                                                        <div className="flex items-center gap-1">
-                                                            IV {renderSortIcon('impliedVolatility')} <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
-                                                        </div>
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('volume')}>
-                                                        <div className="flex items-center gap-1">
-                                                            OI/Vol {renderSortIcon('volume')}
-                                                        </div>
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('delta')}>
-                                                        <div className="flex items-center gap-1">
-                                                            &Delta; {renderSortIcon('delta')} <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
-                                                        </div>
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('gamma')}>
-                                                        <div className="flex items-center gap-1">
-                                                            &Gamma; {renderSortIcon('gamma')} <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
-                                                        </div>
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('theta')}>
-                                                        <div className="flex items-center gap-1">
-                                                            &Theta; {renderSortIcon('theta')} <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
-                                                        </div>
-                                                    </th>
-                                                    <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('vega')}>
-                                                        <div className="flex items-center gap-1">
-                                                            &nu; {renderSortIcon('vega')} <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
-                                                        </div>
-                                                    </th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {isOptionsLoading ? (
+                                     <div className="h-48 overflow-auto bg-night-700 p-2 rounded-md">
+                                        <div className="w-full"> 
+                                            <table className="w-full text-left text-xs table-auto"> 
+                                                <thead>
                                                     <tr>
-                                                        <td colSpan={10} className="text-center p-3"><Spinner /></td>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('strike_price')}>
+                                                            Strike {renderSortIcon('strike_price')}
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap">Expiry</th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('close_price')}>
+                                                            Price {renderSortIcon('close_price')}
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('impliedVolatility')}>
+                                                            <div className="flex items-center gap-1">
+                                                                IV {renderSortIcon('impliedVolatility')} <HelpIconWithTooltip tooltip="Implied Volatility: The market's forecast of a likely movement in a security's price." />
+                                                            </div>
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('volume')}>
+                                                            <div className="flex items-center gap-1">
+                                                                OI/Vol {renderSortIcon('volume')}
+                                                            </div>
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('delta')}>
+                                                            <div className="flex items-center gap-1">
+                                                                &Delta; {renderSortIcon('delta')} <HelpIconWithTooltip tooltip="Delta: Rate of change of an option's price relative to a $1 change in the underlying asset's price." />
+                                                            </div>
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('gamma')}>
+                                                            <div className="flex items-center gap-1">
+                                                                &Gamma; {renderSortIcon('gamma')} <HelpIconWithTooltip tooltip="Gamma: Rate of change in an option's delta per $1 change in the underlying asset price." />
+                                                            </div>
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('theta')}>
+                                                            <div className="flex items-center gap-1">
+                                                                &Theta; {renderSortIcon('theta')} <HelpIconWithTooltip tooltip="Theta: Rate of decline in the value of an option due to the passage of time." />
+                                                            </div>
+                                                        </th>
+                                                        <th className="p-2 whitespace-nowrap cursor-pointer hover:text-brand-blue" onClick={() => handleSort('vega')}>
+                                                            <div className="flex items-center gap-1">
+                                                                &nu; {renderSortIcon('vega')} <HelpIconWithTooltip tooltip="Vega: Rate of change in an option's price for a 1% change in the implied volatility." />
+                                                            </div>
+                                                        </th>
                                                     </tr>
-                                                ) : filteredOptions.length === 0 ? (
-                                                    <tr>
-                                                        <td colSpan={10} className="text-center text-night-500 p-3">No {tradeTab} options for this date.</td>
-                                                    </tr>
-                                                ) : (
-                                                    filteredOptions.map(option => (
-                                                        <tr 
-                                                            key={option.symbol} 
-                                                            onClick={() => setSelectedOption(option)} 
-                                                            className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}
-                                                        >
-                                                            <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
-                                                            <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
-                                                            <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
-                                                            <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
-                                                            <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
-                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
-                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
-                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
-                                                            <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
+                                                </thead>
+                                                <tbody>
+                                                    {isOptionsLoading ? (
+                                                        <tr>
+                                                            <td colSpan={10} className="text-center p-3"><Spinner /></td>
                                                         </tr>
-                                                    ))
-                                                )}
-                                            </tbody>
-                                        </table>
+                                                    ) : filteredOptions.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={10} className="text-center text-night-500 p-3">No {tradeTab} options for this date.</td>
+                                                        </tr>
+                                                    ) : (
+                                                        filteredOptions.map(option => (
+                                                            <tr 
+                                                                key={option.symbol} 
+                                                                onClick={() => setSelectedOption(option)} 
+                                                                className={`cursor-pointer hover:bg-night-600 ${selectedOption?.symbol === option.symbol ? 'bg-brand-blue' : ''}`}
+                                                            >
+                                                                <td className="p-2 whitespace-nowrap">{formatCurrency(parseFloat(option.strike_price))}</td>
+                                                                <td className="p-2 whitespace-nowrap">{option.expiration_date.slice(5, 10)}</td>
+                                                                <td className="p-2 whitespace-nowrap">{formatCurrency(option.close_price || 0)}</td>
+                                                                <td className="p-2 whitespace-nowrap">{option.impliedVolatility !== null ? formatPercentage(option.impliedVolatility * 100) : 'N/A'}</td>
+                                                                <td className="p-2 whitespace-nowrap text-night-500">{formatNumber(option.open_interest || 0)}/{formatNumber(option.volume || 0)}</td>
+                                                                <td className="p-2 whitespace-nowrap">{formatGreek(option.delta)}</td>
+                                                                <td className="p-2 whitespace-nowrap">{formatGreek(option.gamma)}</td>
+                                                                <td className="p-2 whitespace-nowrap">{formatGreek(option.theta)}</td>
+                                                                <td className="p-2 whitespace-nowrap">{formatGreek(option.vega)}</td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 )}
                                 
@@ -904,28 +935,8 @@ const StockView: React.FC = () => {
                     ) : (
                          <Card><p className="text-center text-night-500 p-4">Please log in to trade stocks or options.</p></Card>
                     )}
-                </div>
-                <div className="lg:col-span-2 space-y-6">
-                    <Card>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold">Price Chart</h2>
-                            <select
-                                id="chart-interval-select"
-                                value={chartInterval}
-                                onChange={(e) => setChartInterval(e.target.value)}
-                                className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none"
-                            >
-                                <option value="15min">15 Minute</option>
-                                <option value="1hour">1 Hour</option>
-                                <option value="4hour">4 Hour</option>
-                                <option value="1day">1 Day</option>
-                                <option value="1week">1 Week</option>
-                                <option value="1month">1 Month</option>
-                            </select>
-                        </div>
-                        <CandlestickChart data={historicalData} ticker={ticker as string} />
-                    </Card>
-
+                    
+                    {/* Tabs Navigation (REMAINS HERE) */}
                     <div className="border-b border-night-700 mb-6 overflow-x-auto overflow-y-hidden">
                         <nav className="-mb-px flex space-x-8 whitespace-nowrap" aria-label="Tabs">
                             <button onClick={() => setActiveTab('summary')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'summary' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Summary</button>
@@ -937,6 +948,8 @@ const StockView: React.FC = () => {
                             <button onClick={() => setActiveTab('advanced')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'advanced' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Advanced Recs</button>
                         </nav>
                     </div>
+                    
+                    {/* Tab Content (REMAINS HERE) */}
                     {renderTabContent()}
                 </div>
             </div>

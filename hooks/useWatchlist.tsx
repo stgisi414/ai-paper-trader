@@ -44,6 +44,14 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return;
         }
 
+        // --- TEMPORARY DISABLE START ---
+        /* console.log('[DEBUG] useWatchlist.tsx: User found. TEMPORARILY DISABLING Firestore listener for Watchlist.');
+        setWatchlistTickers([]);
+        setWatchlistData([]);
+        setIsLoading(false);
+        return () => {}; */
+        // --- TEMPORARY DISABLE END ---
+
         console.log('[DEBUG] useWatchlist.tsx: User found, setting isLoading to true and attaching listener.');
         setIsLoading(true);
         const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlist');
