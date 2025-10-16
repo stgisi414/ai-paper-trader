@@ -106,13 +106,15 @@ const fetchOptionsApi = async (symbol: string, date?: string) => {
 
 const getOptionsChain = async (
   {symbol, date}: {symbol: string, date?: string}) => {
-  logger.info(`AI Tool: Calling getOptionsChain for ${symbol} with date: ${date}`);
+  logger.info(`AI Tool: Calling getOptionsChain
+    for ${symbol} with date: ${date}`);
 
   // 1. Initial fetch (fetches next expiry & all dates list if date is missing)
   const initialResult = await fetchOptionsApi(symbol, undefined) as {data:
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    {options: OptionGroup[], expirationDates: any, quote: any}, error: string | null};
-  
+    {options: OptionGroup[], expirationDates: any, quote: any},
+      error: string | null};
+
   if (initialResult.error || !initialResult.data) {
     return {error: initialResult.error};
   }
@@ -123,20 +125,24 @@ const getOptionsChain = async (
     data.expirationDates.map((expDateRaw: string | number) => {
       const expDateNum = Number(expDateRaw);
       let dateObj;
-      if (typeof expDateRaw === 'number' || !isNaN(expDateNum)) {
-        const num = typeof expDateRaw === 'number' ? expDateRaw : expDateNum;
+      if (typeof expDateRaw === "number" || !isNaN(expDateNum)) {
+        const num = typeof expDateRaw === "number" ? expDateRaw : expDateNum;
         // Check if it's likely seconds (10 digits) or milliseconds
-        dateObj = String(num).length > 10 ? new Date(num) : new Date(num * 1000);
+        dateObj = String(num).length > 10 ?
+          new Date(num) : new Date(num * 1000);
       } else {
         dateObj = new Date(expDateRaw);
       }
-      return isNaN(dateObj.getTime()) ? null : dateObj.toISOString().split('T')[0];
+      return isNaN(dateObj.getTime()) ?
+        null : dateObj.toISOString().split("T")[0];
     }).filter(Boolean)
   )) as string[];
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let contractsToProcess: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let fetchedDates: string[] = [];
-  
+
   if (date) {
     // SCENARIO 1: Date provided, fetch only that specific date.
     logger.info(`Fetching single chain for specific date: ${date}`);
@@ -145,47 +151,53 @@ const getOptionsChain = async (
       return {error: specificResult.error};
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    contractsToProcess = specificResult.data.options.flatMap((group: any) => [...group.calls, ...group.puts]);
+    contractsToProcess = specificResult.data.options.flatMap((group: any) =>
+      [...group.calls, ...group.puts]);
     fetchedDates = [date];
   } else {
     // SCENARIO 2: No date provided (general query), fetch ALL available chains.
     // This addresses the user's need to find max OI across all dates.
-    logger.info(`Fetching ALL available chains for ${symbol} across ${allExpirationDates.length} dates.`);
-    
+    logger.info(`Fetching ALL available chains for ${symbol}
+      across ${allExpirationDates.length} dates.`);
+
     // Use the fetched dates to generate all chain promises
     const chainPromises = allExpirationDates.map(async (expDate) => {
-        const result = await fetchOptionsApi(symbol, expDate) as {data: {options: OptionGroup[]}, error: string | null};
-        return result.data?.options || [];
+      const result = await fetchOptionsApi(symbol, expDate) as
+        {data: {options: OptionGroup[]}, error: string | null};
+      return result.data?.options || [];
     });
 
     const allOptionsGroups = await Promise.all(chainPromises);
-    
+
     // Flatten all contracts from all dates
-    contractsToProcess = allOptionsGroups.flat().flatMap((group: OptionGroup) => [...group.calls, ...group.puts]);
+    contractsToProcess =
+     allOptionsGroups.flat().flatMap((group: OptionGroup) =>
+       [...group.calls, ...group.puts]);
     fetchedDates = allExpirationDates;
 
     // Truncate contracts for LLM context (Important safety limit)
-    const MAX_TOTAL_CONTRACTS = 50; 
+    const MAX_TOTAL_CONTRACTS = 50;
     if (contractsToProcess.length > MAX_TOTAL_CONTRACTS) {
-        logger.warn(`Truncating total contracts from ${contractsToProcess.length} to ${MAX_TOTAL_CONTRACTS}.`);
-        contractsToProcess = contractsToProcess.slice(0, MAX_TOTAL_CONTRACTS);
+      logger.warn(`Truncating total contracts from ${contractsToProcess.length}
+        to ${MAX_TOTAL_CONTRACTS}.`);
+      contractsToProcess = contractsToProcess.slice(0, MAX_TOTAL_CONTRACTS);
     }
   }
 
   // --- Prepare simplified, combined response for the LLM ---
-  
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const simplifiedContracts = contractsToProcess.map((c: any) => ({
     symbol: c.contractSymbol,
-    expirationDate: typeof c.expiration === 'number' 
-        ? new Date(c.expiration * 1000).toISOString().split('T')[0] 
-        : String(c.expiration),
+    expirationDate: typeof c.expiration === "number" ?
+      new Date(c.expiration * 1000).toISOString().split("T")[0] :
+      String(c.expiration),
     strike: c.strike,
-    type: c.contractSymbol.includes('C') ? 'call' : 'put', 
+    type: c.contractSymbol.includes("C") ? "call" : "put",
     openInterest: c.openInterest,
     volume: c.volume,
     lastPrice: c.lastPrice,
   }));
-  
+
   // Consolidate the data into a single object for the model
   const modelResponse = {
     underlyingSymbol: symbol,
@@ -702,7 +714,8 @@ export const geminiProxy = onRequest(
                   summarizedResponse = {price: response.price,
                     symbol: response.symbol};
                 } else if (call.name === "get_options_chain" && response) {
-                  // FIX: Update summary logic for the new options chain structure
+                  // FIX: Update summary logic for
+                  // the new options chain structure
                   summarizedResponse = {
                     status: response.totalContractsReturned >
                       0 ? "Success" : "No contracts found",
@@ -711,7 +724,7 @@ export const geminiProxy = onRequest(
                     dates_fetched_count: response.datesFetched.length,
                     total_contracts_returned: response.totalContractsReturned,
                     // Pass the list of all contracts to the model for analysis
-                    allContracts: response.allContracts, 
+                    allContracts: response.allContracts,
                   };
                 } else {
                   // Default truncation for generic FMP data

@@ -16,6 +16,7 @@ interface PortfolioContextType {
     transactions: Transaction[];
     buyStock: (ticker: string, name: string, shares: number, price: number) => void;
     sellStock: (ticker: string, shares: number, price: number) => void;
+    sellAllStock: (ticker: string) => Promise<void>; // ADD THIS
     buyOption: (option: OptionHolding) => void;
     sellOption: (symbol: string, shares: number, price: number) => void;
     manualSellOption: (symbol: string) => Promise<void>;
@@ -34,6 +35,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         optionHoldings: [],
         initialValue: INITIAL_CASH,
     });
+    const recentAlertsRef = useRef<Record<string, number>>({});
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -211,6 +213,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 return; 
             }
             
+            const ALERT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
             try {
                 const stockTickers = currentPortfolio.holdings.map(h => h.ticker);
                 const optionTickers = currentPortfolio.optionHoldings.map(o => o.underlyingTicker);
@@ -261,10 +265,19 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                         const isDrawingActive = minTime <= currentTime;
 
                         if (isDrawingActive && priceWithinRange) {
-                            showNotification({
-                                sender: { uid: 'system', displayName: 'System Alert', email: '', photoURL: '' },
-                                text: `Price Alert! ${ticker} just entered the range of a saved rectangle (Price: ${formatCurrency(price)}, Range: ${formatCurrency(minPrice)} - ${formatCurrency(maxPrice)})`
-                            });
+                            // FIX: Add cooldown check before showing notification
+                            const lastAlertTime = recentAlertsRef.current[ticker] || 0;
+                            const now = Date.now();
+
+                            if (now - lastAlertTime > ALERT_COOLDOWN_MS) {
+                                showNotification({
+                                    sender: { uid: 'system', displayName: 'System Alert', email: '', photoURL: '', fontSize: 'medium' },
+                                    text: `Price Alert! ${ticker} entered a saved rectangle (Price: ${formatCurrency(price)})`,
+                                    ticker: ticker // Pass the ticker in the payload
+                                });
+                                // Update the timestamp for this ticker
+                                recentAlertsRef.current[ticker] = now;
+                            }
                         }
                     });
                 });
@@ -288,11 +301,44 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
                 tempPortfolio.holdings = tempPortfolio.holdings.map(holding => {
                     const quote = quotes.find(q => q.symbol === holding.ticker);
-                    if (quote && quote.price !== holding.currentPrice) {
+                    if (quote && (quote.price !== holding.currentPrice || quote.change !== holding.change)) {
                         changed = true;
-                        return { ...holding, currentPrice: quote.price };
+                        return { 
+                            ...holding, 
+                            currentPrice: quote.price,
+                            change: quote.change,
+                            changesPercentage: quote.changesPercentage
+                        };
                     }
                     return holding;
+                });
+
+                tempPortfolio.optionHoldings = tempPortfolio.optionHoldings.map((option) => {
+                    const freshOptionData = flatOptionChains.find(o => o.symbol === option.symbol);
+                    if (freshOptionData) {
+                         const newPrice = freshOptionData.close_price;
+                         if (newPrice !== null && newPrice !== undefined) {
+                            const epsilon = 0.0001; 
+                            const isPriceChanged = Math.abs(newPrice - option.currentPrice) > epsilon;
+                            if (isPriceChanged) {
+                                changed = true;
+                                return { 
+                                    ...option, 
+                                    currentPrice: newPrice,
+                                    change: freshOptionData.change || 0,
+                                    changesPercentage: freshOptionData.changesPercentage || 0,
+                                    delta: freshOptionData.delta,
+                                    gamma: freshOptionData.gamma,
+                                    theta: freshOptionData.theta,
+                                    vega: freshOptionData.vega,
+                                    impliedVolatility: freshOptionData.impliedVolatility,
+                                    open_interest: freshOptionData.open_interest,
+                                    volume: freshOptionData.volume
+                                };
+                            }
+                        } 
+                    }
+                    return option;
                 });
                 
                 const { updatedPortfolio: settledPortfolio, updatedTransactions: settledTransactions, changed: settledChanged } = settleExpiredOptions(
@@ -391,7 +437,8 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const totalCost = (existing.shares * existing.purchasePrice) + cost;
             newHoldings[existingHoldingIndex] = { ...existing, shares: totalShares, purchasePrice: totalCost / totalShares, currentPrice: price };
         } else {
-            newHoldings.push({ ticker, name, shares, purchasePrice: price, currentPrice: price });
+            // FIX: Initialize change and changesPercentage for new holdings
+            newHoldings.push({ ticker, name, shares, purchasePrice: price, currentPrice: price, change: 0, changesPercentage: 0 });
         }
         
         const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash - cost, holdings: newHoldings };
@@ -456,6 +503,22 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         await saveData(newPortfolio, newTransactions);
     }, [user, saveData]);
 
+    const sellAllStock = useCallback(async (ticker: string) => {
+        if (!user) {
+            alert("You must be logged in to trade.");
+            return;
+        }
+        const currentPortfolio = portfolioRef.current;
+        const existingHolding = currentPortfolio.holdings.find(h => h.ticker === ticker);
+        if (!existingHolding || existingHolding.shares <= 0) {
+            alert("You do not own any shares of this stock to sell.");
+            return;
+        }
+        // Call the existing sellStock function with all shares and the current price
+        await sellStock(ticker, existingHolding.shares, existingHolding.currentPrice);
+        alert(`Successfully submitted order to sell all ${existingHolding.shares.toFixed(4)} shares of ${ticker}.`);
+    }, [user, sellStock]);
+
     const buyOption = useCallback(async (option: OptionHolding) => {
         if (!user) { alert("You must be logged in to trade."); return; }
         const currentPortfolio = portfolioRef.current;
@@ -471,7 +534,37 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
         const newTransactions = [...transactionsRef.current, newTransaction];
         
-        const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash - cost, optionHoldings: [...currentPortfolio.optionHoldings, option] };
+        // FIX START: Add logic to average price for existing option holdings
+        const newOptionHoldings = [...currentPortfolio.optionHoldings];
+        const existingOptionIndex = newOptionHoldings.findIndex(o => o.symbol === option.symbol);
+
+        if (existingOptionIndex > -1) {
+            const existing = newOptionHoldings[existingOptionIndex];
+            const totalContracts = existing.shares + option.shares;
+            const totalCost = (existing.shares * existing.purchasePrice * 100) + cost;
+            const newAveragePrice = (totalCost / totalContracts) / 100;
+            
+            newOptionHoldings[existingOptionIndex] = {
+                ...existing,
+                shares: totalContracts,
+                purchasePrice: newAveragePrice,
+                // Update with the latest data from the new option object
+                currentPrice: option.currentPrice,
+                delta: option.delta,
+                gamma: option.gamma,
+                theta: option.theta,
+                vega: option.vega,
+                impliedVolatility: option.impliedVolatility,
+                open_interest: option.open_interest,
+                volume: option.volume,
+            };
+        } else {
+            newOptionHoldings.push(option);
+        }
+        
+        const newPortfolio: Portfolio = { ...currentPortfolio, cash: currentPortfolio.cash - cost, optionHoldings: newOptionHoldings };
+        // FIX END
+
         await saveData(newPortfolio, newTransactions);
     }, [user, saveData]);
 
@@ -497,6 +590,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         transactions, 
         buyStock, 
         sellStock, 
+        sellAllStock,
         buyOption, 
         sellOption, 
         manualSellOption, 
@@ -507,6 +601,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         transactions, 
         buyStock, 
         sellStock, 
+        sellAllStock,
         buyOption, 
         sellOption, 
         manualSellOption, 

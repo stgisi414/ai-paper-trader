@@ -1,9 +1,17 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig';
 import { useAuth } from '../src/hooks/useAuth.tsx';
-import type { FmpQuote } from '../types';
+import type { FmpQuote, FmpProfile, UserWatchlists as OldUserWatchlists } from '../types';
 import * as fmpService from '../services/fmpService';
+
+// Define the new ordered structure for a single watchlist
+export interface Watchlist {
+    name: string;
+    tickers: string[];
+}
+// Define the collection of all watchlists, which is an array to preserve order
+export type WatchlistCollection = Watchlist[];
 
 export interface WatchlistItem {
     ticker: string;
@@ -11,13 +19,21 @@ export interface WatchlistItem {
     price: number;
     change: number;
     changesPercentage: number;
+    sector?: string;
 }
 
 interface WatchlistContextType {
     watchlist: WatchlistItem[];
+    allWatchlists: WatchlistCollection;
+    activeWatchlist: string;
+    setActiveWatchlist: (name: string) => void;
     addToWatchlist: (ticker: string, name: string) => void;
     removeFromWatchlist: (ticker: string) => void;
-    reorderWatchlist: (startIndex: number, endIndex: number) => void;
+    reorderWatchlistItems: (startIndex: number, endIndex: number) => void;
+    createNewWatchlist: (name: string) => Promise<void>;
+    deleteWatchlist: (name: string) => Promise<void>;
+    renameWatchlist: (oldName: string, newName: string) => Promise<void>;
+    reorderWatchlists: (startIndex: number, endIndex: number) => Promise<void>;
     isOnWatchlist: (ticker: string) => boolean;
     isLoading: boolean;
 }
@@ -26,94 +42,107 @@ const WatchlistContext = createContext<WatchlistContextType | undefined>(undefin
 
 export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user } = useAuth();
-    const [watchlistTickers, setWatchlistTickers] = useState<string[]>([]);
+    const [allWatchlists, setAllWatchlists] = useState<WatchlistCollection>([{ name: 'My Watchlist', tickers: [] }]);
+    const [activeWatchlist, setActiveWatchlist] = useState<string>('My Watchlist');
     const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    console.log('[DEBUG] useWatchlist.tsx: WatchlistProvider rendering.');
+    const watchlistTickers = useMemo(() => {
+        return allWatchlists.find(w => w.name === activeWatchlist)?.tickers || [];
+    }, [allWatchlists, activeWatchlist]);
 
-    // Effect 1: Manages fetching the LIST of tickers and the primary loading state.
     useEffect(() => {
-        console.log('[DEBUG] useWatchlist.tsx: Ticker fetching useEffect triggered. User:', user ? user.uid : 'null');
         if (!user) {
-            console.log('[DEBUG] useWatchlist.tsx: No user, resetting watchlist data.');
-            setWatchlistTickers([]);
+            setAllWatchlists([{ name: 'My Watchlist', tickers: [] }]);
+            setActiveWatchlist('My Watchlist');
             setWatchlistData([]);
-            console.log('[DEBUG] useWatchlist.tsx: Setting isLoading to false (no user).');
             setIsLoading(false);
             return;
         }
 
-        // --- TEMPORARY DISABLE START ---
-        /* console.log('[DEBUG] useWatchlist.tsx: User found. TEMPORARILY DISABLING Firestore listener for Watchlist.');
-        setWatchlistTickers([]);
-        setWatchlistData([]);
-        setIsLoading(false);
-        return () => {}; */
-        // --- TEMPORARY DISABLE END ---
-
-        console.log('[DEBUG] useWatchlist.tsx: User found, setting isLoading to true and attaching listener.');
         setIsLoading(true);
-        const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlist');
-        
-        console.log(`[DEBUG] useWatchlist.tsx: Attaching snapshot listener to watchlist path: ${watchlistDocRef.path}`);
-        const unsubscribe = onSnapshot(watchlistDocRef, (doc) => {
-            console.log('[DEBUG] useWatchlist.tsx: Watchlist snapshot received.');
-            const tickers = doc.exists() ? doc.data().tickers || [] : [];
-            console.log('[DEBUG] useWatchlist.tsx: Tickers from Firestore:', tickers);
-            setWatchlistTickers(tickers);
-            console.log('[DEBUG] useWatchlist.tsx: Setting isLoading to false (after ticker snapshot).');
-            setIsLoading(false); 
+        const watchlistsDocRef = doc(db, 'users', user.uid, 'data', 'watchlists');
+
+        const unsubscribe = onSnapshot(watchlistsDocRef, async (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                // **MIGRATION LOGIC**: Check if data is in old object format or new array format
+                if (data && !Array.isArray(data.lists)) { // Old format (object) detected
+                    console.log("Migrating old watchlist object format to ordered array format...");
+                    const oldWatchlists = data as OldUserWatchlists;
+                    const newWatchlistArray = Object.keys(oldWatchlists).map(name => ({
+                        name,
+                        tickers: oldWatchlists[name] || []
+                    }));
+                    // Save the new array format
+                    await setDoc(watchlistsDocRef, { lists: newWatchlistArray });
+                    // The onSnapshot will re-trigger with the correct format, so we don't set state here.
+                    return; 
+                } else { // New format (array) exists
+                    const lists = (data?.lists as WatchlistCollection) || [];
+                    setAllWatchlists(lists);
+                    // Ensure the active watchlist exists, if not, reset to the first one
+                    if (!lists.some(w => w.name === activeWatchlist)) {
+                        setActiveWatchlist(lists[0]?.name || 'My Watchlist');
+                    }
+                }
+            } else {
+                 // New user setup
+                const defaultLists: WatchlistCollection = [
+                    { name: 'My Watchlist', tickers: [] },
+                    { name: 'Trending Tech', tickers: ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'META'] },
+                ];
+                await setDoc(watchlistsDocRef, { lists: defaultLists });
+                setAllWatchlists(defaultLists);
+                setActiveWatchlist('My Watchlist');
+            }
+            setIsLoading(false);
         }, (error) => {
-            console.error("[DEBUG] useWatchlist.tsx: FATAL ERROR fetching watchlist snapshot:", error);
+            console.error("Error fetching watchlists:", error);
             setIsLoading(false);
         });
 
-        return () => {
-            console.log('[DEBUG] useWatchlist.tsx: Unsubscribing from Firestore listener.');
-            unsubscribe();
-        };
-    }, [user]);
+        return () => unsubscribe();
+    }, [user]); // Removed activeWatchlist from dep array to prevent re-subscribing on switch
 
-    // Effect 2: Manages fetching the PRICES for the tickers whenever the list changes.
     useEffect(() => {
-        console.log(`[DEBUG] useWatchlist.tsx: Price fetching useEffect triggered. isLoading: ${isLoading}, Ticker count: ${watchlistTickers.length}`);
-        if (isLoading) {
-            console.log('[DEBUG] useWatchlist.tsx: Skipping price fetch because initial ticker load is not complete.');
-            return;
-        }
+        if (isLoading) return;
 
         const updateWatchlistPrices = async () => {
             if (watchlistTickers.length === 0) {
-                console.log('[DEBUG] useWatchlist.tsx: No tickers in watchlist, clearing data.');
-                setWatchlistData([]); // Clear data if watchlist is empty
+                setWatchlistData([]);
                 return;
             }
             
-            console.log(`[DEBUG] useWatchlist.tsx: Fetching quotes for tickers: ${watchlistTickers.join(',')}`);
             try {
                 const tickers = watchlistTickers.join(',');
-                const quotes = await fmpService.getQuote(tickers);
-                console.log('[DEBUG] useWatchlist.tsx: Received quotes from FMP:', quotes);
+                const [quotes, profiles] = await Promise.all([
+                    fmpService.getQuote(tickers),
+                    fmpService.getProfile(tickers)
+                ]);
                 
                 const quoteMap = new Map<string, FmpQuote>();
                 quotes.forEach(q => quoteMap.set(q.symbol, q));
 
+                const profileMap = new Map<string, FmpProfile>();
+                profiles.forEach(p => profileMap.set(p.symbol, p));
+
                 const updatedWatchlist = watchlistTickers.map(ticker => {
                     const quote = quoteMap.get(ticker);
+                    const profile = profileMap.get(ticker);
                     return {
                         ticker: ticker,
                         name: quote?.name || 'Loading...',
                         price: quote?.price || 0,
                         change: quote?.change || 0,
                         changesPercentage: quote?.changesPercentage || 0,
+                        sector: profile?.sector || 'N/A',
                     };
                 });
                 
-                console.log('[DEBUG] useWatchlist.tsx: Setting new watchlist data:', updatedWatchlist);
                 setWatchlistData(updatedWatchlist);
             } catch (error) {
-                console.error("[DEBUG] useWatchlist.tsx: Failed to update watchlist prices:", error);
+                console.error("Failed to update watchlist prices:", error);
             }
         };
 
@@ -122,55 +151,112 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return () => clearInterval(interval);
     }, [watchlistTickers, isLoading]);
 
-    const updateWatchlistInDb = async (tickers: string[]) => {
+    const updateWatchlistsInDb = async (lists: WatchlistCollection) => {
         if (!user) return;
-        const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlist');
-        await setDoc(watchlistDocRef, { tickers });
+        const watchlistDocRef = doc(db, 'users', user.uid, 'data', 'watchlists');
+        await setDoc(watchlistDocRef, { lists });
     };
 
-    const addToWatchlist = useCallback((ticker: string, name: string) => {
+    const createNewWatchlist = useCallback(async (name: string) => {
+        if (!user) return;
+        if (Object.keys(allWatchlists).length >= 20) {
+            alert('You can only have a maximum of 20 watchlists.');
+            return;
+        }
+        if (allWatchlists.some(w => w.name === name)) {
+            alert('A watchlist with this name already exists.');
+            return;
+        }
+        const newLists = [...allWatchlists, { name, tickers: [] }];
+        await updateWatchlistsInDb(newLists);
+        setActiveWatchlist(name); // Switch to the new list
+    }, [user, allWatchlists]);
+
+    const addToWatchlist = useCallback((ticker: string) => {
         if (!user) {
             alert("Please log in to add stocks to your watchlist.");
             return;
         }
-        if (!watchlistTickers.includes(ticker)) {
-            const newTickers = [...watchlistTickers, ticker];
-            // --- FIX: Optimistically update the local state ---
-            setWatchlistTickers(newTickers); 
-            // Now, update the database in the background
-            updateWatchlistInDb(newTickers);
+        const currentTickers = allWatchlists.find(w => w.name === activeWatchlist)?.tickers || [];
+        if (!currentTickers.includes(ticker)) {
+            const newTickers = [...currentTickers, ticker];
+            const newLists = allWatchlists.map(w => w.name === activeWatchlist ? { ...w, tickers: newTickers } : w);
+            updateWatchlistsInDb(newLists);
         }
-    }, [watchlistTickers, user]);
+    }, [user, allWatchlists, activeWatchlist]);
 
     const removeFromWatchlist = useCallback((ticker: string) => {
         if (!user) return;
-        const newTickers = watchlistTickers.filter(t => t !== ticker);
-        // --- FIX: Optimistically update the local state ---
-        setWatchlistTickers(newTickers);
-        // Now, update the database in the background
-        updateWatchlistInDb(newTickers);
-    }, [watchlistTickers, user]);
+        const currentTickers = allWatchlists.find(w => w.name === activeWatchlist)?.tickers || [];
+        const newTickers = currentTickers.filter(t => t !== ticker);
+        const newLists = allWatchlists.map(w => w.name === activeWatchlist ? { ...w, tickers: newTickers } : w);
+        updateWatchlistsInDb(newLists);
+    }, [user, allWatchlists, activeWatchlist]);
     
-    const reorderWatchlist = useCallback((startIndex: number, endIndex: number) => {
+    const reorderWatchlistItems = useCallback((startIndex: number, endIndex: number) => {
         if (!user) return;
-        const result = Array.from(watchlistTickers);
+        const currentTickers = allWatchlists.find(w => w.name === activeWatchlist)?.tickers || [];
+        const result = Array.from(currentTickers);
         const [removed] = result.splice(startIndex, 1);
         result.splice(endIndex, 0, removed);
-        updateWatchlistInDb(result);
-    }, [watchlistTickers, user]);
+        const newLists = allWatchlists.map(w => w.name === activeWatchlist ? { ...w, tickers: result } : w);
+        updateWatchlistsInDb(newLists);
+    }, [user, allWatchlists, activeWatchlist]);
 
+    const deleteWatchlist = useCallback(async (nameToDelete: string) => {
+        if (!user) return;
+        if (allWatchlists.length <= 1) {
+            alert("You must have at least one watchlist.");
+            return;
+        }
+        const newLists = allWatchlists.filter(w => w.name !== nameToDelete);
+        if (activeWatchlist === nameToDelete) {
+            setActiveWatchlist(newLists[0]?.name || '');
+        }
+        await updateWatchlistsInDb(newLists);
+    }, [user, allWatchlists, activeWatchlist]);
+
+    const renameWatchlist = useCallback(async (oldName: string, newName: string) => {
+        if (!user || !newName.trim() || oldName === newName) return;
+        if (allWatchlists.some(w => w.name === newName)) {
+            alert("A watchlist with this name already exists.");
+            return;
+        }
+        const newLists = allWatchlists.map(w => w.name === oldName ? { ...w, name: newName.trim() } : w);
+        if (activeWatchlist === oldName) {
+            setActiveWatchlist(newName.trim());
+        }
+        await updateWatchlistsInDb(newLists);
+    }, [user, allWatchlists, activeWatchlist]);
+
+    const reorderWatchlists = useCallback(async (startIndex: number, endIndex: number) => {
+        if (!user) return;
+        const result = Array.from(allWatchlists);
+        const [removed] = result.splice(startIndex, 1);
+        result.splice(endIndex, 0, removed);
+        await updateWatchlistsInDb(result);
+    }, [user, allWatchlists]);
+    
     const isOnWatchlist = useCallback((ticker: string) => {
         return watchlistTickers.includes(ticker);
     }, [watchlistTickers]);
 
     const value = useMemo(() => ({
         watchlist: watchlistData,
+        allWatchlists,
+        activeWatchlist,
+        setActiveWatchlist,
         addToWatchlist,
         removeFromWatchlist,
-        reorderWatchlist,
+        reorderWatchlistItems,
+        createNewWatchlist,
+        deleteWatchlist,
+        renameWatchlist,
+        reorderWatchlists,
         isOnWatchlist,
         isLoading
-    }), [watchlistData, addToWatchlist, removeFromWatchlist, reorderWatchlist, isOnWatchlist, isLoading]);
+    }), [watchlistData, allWatchlists, activeWatchlist, addToWatchlist, removeFromWatchlist, reorderWatchlistItems, createNewWatchlist, deleteWatchlist, renameWatchlist, reorderWatchlists, isOnWatchlist, isLoading]);
+
 
     return (
         <WatchlistContext.Provider value={value}>

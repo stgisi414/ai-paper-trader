@@ -4,6 +4,8 @@ export interface Holding {
   shares: number;
   purchasePrice: number;
   currentPrice: number;
+  change: number;
+  changesPercentage: number;
 }
 
 export interface Portfolio {
@@ -343,6 +345,8 @@ export interface AlpacaOptionContract {
     theta: number | null;
     vega: number | null;
     impliedVolatility: number | null;
+    change: number;
+    changesPercentage: number;
 }
 
 export interface AlpacaOptionsResponse {
@@ -356,6 +360,8 @@ export interface OptionHolding {
   shares: number; // Number of contracts
   purchasePrice: number; // Price per share (premium)
   currentPrice: number;
+  change: number; // Day's change in premium
+  changesPercentage: number; // Day's % change in premium
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
@@ -435,15 +441,28 @@ export interface WatchlistPick {
     reason: string;
 }
 
+export interface UserWatchlists {
+    [name: string]: string[]; // e.g., { "My Watchlist": ["AAPL", "GOOGL"], "Tech Stocks": ["MSFT"] }
+}
+
 export interface AiWatchlistRecs {
     picks: WatchlistPick[];
 }
 
+export interface TradeAllocationRecommendation {
+    reasoning: string;
+    allocations: Array<{
+        ticker: string;
+        percentage: number; // e.g., 25 for 25%
+        amount: number;     // e.g., 25000 for $25,000
+    }>;
+}
+
 export interface User {
   uid: string;
-  email: string;
-  displayName: string;
-  photoURL: string;
+  email: string | null; // Make email nullable to match Firebase Auth
+  displayName: string | null; // Make displayName nullable
+  photoURL: string | null; // Make photoURL nullable
   fontSize: 'small' | 'medium' | 'large';
 }
 

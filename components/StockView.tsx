@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import ReactDOM from 'react-dom'; // Import ReactDOM for portal
 import { useParams, Link } from 'react-router-dom';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
@@ -8,7 +9,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { BrainCircuitIcon, StarIcon, HelpCircleIcon } from './common/Icons';
+import { BrainCircuitIcon, StarIcon, HelpCircleIcon, RegenerateIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as optionsProxyService from '../services/optionsProxyService';
 import ChatPanel from './ChatPanel';
@@ -40,14 +41,61 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
     return [state, setState];
 };
 
-const HelpIconWithTooltip: React.FC<{ tooltip: string }> = ({ tooltip }) => (
-    <div className="relative flex items-center group">
-        <HelpCircleIcon className="h-4 w-4 text-night-500" />
-        <div className="absolute top-full mt-2 bg-night-600 text-white text-xs rounded-md p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+const HelpIconWithTooltip: React.FC<{ tooltip: string }> = ({ tooltip }) => {
+    const iconRef = useRef<HTMLDivElement>(null);
+    const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+    const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+
+    // Using useCallback to prevent re-creating functions on every render
+    const showTooltip = useCallback(() => {
+        if (iconRef.current) {
+            const rect = iconRef.current.getBoundingClientRect();
+            // CORRECTED POSITIONING:
+            // Use coordinates directly from getBoundingClientRect since the tooltip is position: fixed
+            setTooltipPosition({
+                top: rect.bottom, // Use rect.bottom for positioning below the icon
+                left: rect.left + (rect.width / 2), // Center horizontally
+            });
+        }
+        setIsTooltipVisible(true);
+    }, []);
+
+    const hideTooltip = useCallback(() => {
+        setIsTooltipVisible(false);
+    }, []);
+
+    // The tooltip element to be rendered in the portal
+    const tooltipElement = isTooltipVisible ? (
+        <div
+            className="fixed bg-night-600 text-white text-xs rounded-md p-2 transition-opacity pointer-events-none"
+            style={{
+                // Position based on state, add a 5px margin from the icon
+                top: `${tooltipPosition.top + 5}px`,
+                left: `${tooltipPosition.left}px`,
+                // Horizontally center the tooltip itself on the 'left' coordinate
+                transform: 'translateX(-50%)',
+                // Use a standard maximum z-index
+                zIndex: 2147483647,
+                opacity: 1,
+            }}
+        >
             {tooltip}
         </div>
-    </div>
-);
+    ) : null;
+
+    return (
+        <div
+            ref={iconRef}
+            className="flex items-center"
+            onMouseEnter={showTooltip}
+            onMouseLeave={hideTooltip}
+        >
+            <HelpCircleIcon className="h-4 w-4 text-night-500" />
+            {/* The portal renders the tooltipElement into the document body, escaping its parents */}
+            {tooltipElement && ReactDOM.createPortal(tooltipElement, document.body)}
+        </div>
+    );
+};
 
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
@@ -87,7 +135,8 @@ const StockView: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [isKeyMetricsLoading, setIsKeyMetricsLoading] = useState(false);
-    const [tradeShares, setTradeShares] = usePersistentState<number | ''>(`tradeShares-${ticker}`, 1);
+    const [tradeAmount, setTradeAmount] = usePersistentState<number | ''>(`tradeAmount-${ticker}`, 1);
+    const [tradeInputMode, setTradeInputMode] = usePersistentState<'shares' | 'dollars'>(`tradeInputMode-${ticker}`, 'shares');
     const [activeTab, setActiveTab] = useState('summary');
     const [tradeTab, setTradeTab] = usePersistentState<'stock' | 'calls' | 'puts'>(`tradeTab-${ticker}`, 'stock');
     
@@ -146,10 +195,28 @@ const StockView: React.FC = () => {
         if (!ticker) return;
         const fetchData = async () => {
             setIsLoading(true);
+
             // Clear out old data when a new ticker is loaded
-            setAvailableExpirationDates([]);
+            setQuote(null);
+            setProfile(null);
+            setHistoricalData([]);
+            setNews([]);
+            setAiAnalysis(null);
+            setAnalystRatings([]);
+            setIncomeStatement(null);
+            setBalanceSheet(null);
+            setCashFlowStatement(null);
+            setInsiderTrades([]);
+            setFinancialStatementAnalysis(null);
+            setTechnicalAnalysis(null);
+            setCombinedRec(null);
+            setKeyMetricsAnalysis(null);
             setOptions([]);
+            setAvailableExpirationDates([]);
             setSelectedExpiry('');
+            setHasRunFinancialAnalysis(false);
+            setHasRunTechnicalAnalysis(false);
+            setHasRunAdvancedRecs(false);
 
             // ADDITION: Helper function to safely extract fulfilled promise values (for Promise.allSettled)
             const extractValue = <T,>(result: PromiseSettledResult<T>, defaultValue: T): T => {
@@ -217,7 +284,7 @@ const StockView: React.FC = () => {
             }
         };
         fetchData();
-    }, [ticker, chartInterval]);
+    }, [ticker, chartInterval, setCombinedRec]);
 
     // ADDITION: New effect to fetch options data when the selected expiry changes
     useEffect(() => {
@@ -327,22 +394,25 @@ const StockView: React.FC = () => {
     }, [historicalData]);
 
     const handleAdvancedRecommendations = useCallback(async () => {
-        if (!profile || historicalData.length === 0 || analystRatings.length === 0) {
-            alert("Not enough data to generate a recommendation. Please ensure all data has loaded.");
+        // FIX: Remove the strict check for analystRatings to allow analysis for ETFs and other assets.
+        if (!profile || historicalData.length === 0) {
+            alert("Not enough data to generate a recommendation. Please ensure the profile and price chart have loaded.");
             return;
         }
         setIsAiLoading(true);
         setHasRunAdvancedRecs(true);
-        setCombinedRec(null); // Clear previous recommendation before fetching new one
+        setCombinedRec(null); // This correctly clears the previous state to prevent stale data.
         try {
             const technicals = await geminiService.getTechnicalAnalysis(historicalData);
             setTechnicalAnalysis(technicals);
+            // The analystRatings array will now be passed, even if it's empty. The updated AI service will handle it.
             const recommendation = await geminiService.getCombinedRecommendations(profile, analystRatings, technicals);
             setCombinedRec(recommendation);
 
         } catch (error) {
             console.error("AI Advanced Recommendations failed:", error);
-            alert("The AI advanced recommendations could not be completed.");
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            alert(`The AI recommendation could not be completed. Reason: ${errorMessage}`);
         } finally {
             setIsAiLoading(false);
         }
@@ -371,45 +441,60 @@ const StockView: React.FC = () => {
             setTradeShares('');
         } else {
             const numValue = parseInt(value, 10);
-            setTradeShares(Math.max(1, numValue) || 1);
+            if (!isNaN(numValue) && numValue >= 0) {
+                setTradeShares(numValue);
+            }
+        }
+    };
+
+    const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        if (value === '') {
+            setTradeAmount('');
+        } else {
+            const numValue = parseFloat(value);
+            // Allow 0 and fractions, but not negative numbers
+            setTradeAmount(Math.max(0, numValue) || '');
         }
     };
     
     const handleBuy = () => {
-        const shares = Number(tradeShares);
-        if (shares <= 0) return;
+        const amount = Number(tradeAmount);
+        if (amount <= 0 || !quote) return;
 
-        if (tradeTab === 'stock' && quote && profile) {
-            buyStock(quote.symbol, profile.companyName, shares, quote.price);
-            alert(`Successfully bought ${shares} share(s) of ${quote.symbol}`);
+        if (tradeTab === 'stock' && profile) {
+            // Calculate shares based on input mode
+            const sharesToBuy = tradeInputMode === 'shares' ? amount : amount / quote.price;
+            if (sharesToBuy <= 0) {
+                alert("Please enter a valid amount.");
+                return;
+            }
+            buyStock(quote.symbol, profile.companyName, sharesToBuy, quote.price);
+            alert(`Successfully bought ${sharesToBuy.toFixed(4)} share(s) of ${quote.symbol}`);
         } else if (selectedOption) {
-            
+            const contractsToBuy = amount;
+            // ... (rest of the existing option buying logic)
             // --- ENHANCED ARBITRAGE PREVENTION CHECK ---
             const currentStockPrice = quote.price;
             const strikePrice = parseFloat(selectedOption.strike_price);
             const marketPremium = selectedOption.close_price || 0;
-            const impliedVolatility = selectedOption.impliedVolatility || 0; // Use 0 if null
+            const impliedVolatility = selectedOption.impliedVolatility || 0; 
             
             const intrinsicFloor = calculateIntrinsicValueFloor(currentStockPrice, strikePrice, selectedOption.type);
             
-            // Allow a small numerical tolerance for comparison
             const epsilon = 0.0001; 
 
-            // Check 1: General Arbitrage (Premium must be > Intrinsic Floor, accounting for tolerance)
             if (marketPremium < intrinsicFloor - epsilon) {
                  alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is below the intrinsic floor (\$${intrinsicFloor.toFixed(2)}). This is stale data. Please select another option or try again.`);
                  return;
             }
             
-            // NEW CHECK: Prevent buying if the premium is EXACTLY the floor and the IV is zero (no time value, clearly flawed data)
-            // This blocks the zero-time-value scenario you just experienced.
             if (Math.abs(marketPremium - intrinsicFloor) < epsilon && impliedVolatility < epsilon) {
                  alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is equal to the intrinsic floor and has 0.00% Implied Volatility. This indicates critically flawed (stale or static) data and no real time value. Please select another option.`);
                  return;
             }
             
-            // Check 2: Insufficient cash check
-            if (portfolio.cash < shares * marketPremium * 100) {
+            if (portfolio.cash < contractsToBuy * marketPremium * 100) {
                  alert("Not enough cash to complete option purchase.");
                  return;
             }
@@ -419,10 +504,11 @@ const StockView: React.FC = () => {
                 symbol: selectedOption.symbol,
                 underlyingTicker: selectedOption.underlying_symbol,
                 shares: shares,
-                // The price used here (marketPremium) is guaranteed to be arbitrage-proof 
-                // due to the correction in the optionsProxyService.ts
                 purchasePrice: marketPremium, 
                 currentPrice: marketPremium,
+                // FIX: Add change and changesPercentage when buying a new option
+                change: selectedOption.change || 0,
+                changesPercentage: selectedOption.changesPercentage || 0,
                 optionType: selectedOption.type,
                 strikePrice: parseFloat(selectedOption.strike_price),
                 expirationDate: selectedOption.expiration_date,
@@ -435,21 +521,37 @@ const StockView: React.FC = () => {
                 volume: selectedOption.volume
             };
             buyOption(optionToBuy);
-            alert(`Successfully bought ${shares} contract(s) of ${selectedOption.symbol}`);
+            alert(`Successfully bought ${contractsToBuy} contract(s) of ${selectedOption.symbol}`);
         }
     };
     
     const handleSell = () => {
-        const shares = Number(tradeShares);
-        if (shares <= 0) return;
+        const amount = Number(tradeAmount);
+        if (amount <= 0 || !quote) return;
 
-        if (tradeTab === 'stock' && quote) {
-            sellStock(quote.symbol, shares, quote.price);
-            alert(`Successfully sold ${shares} share(s) of ${quote.symbol}`);
+        if (tradeTab === 'stock') {
+            // Calculate shares based on input mode
+            const sharesToSell = tradeInputMode === 'shares' ? amount : amount / quote.price;
+            if (sharesToSell <= 0) {
+                alert("Please enter a valid amount.");
+                return;
+            }
+            sellStock(quote.symbol, sharesToSell, quote.price);
+            alert(`Successfully sold ${sharesToSell.toFixed(4)} share(s) of ${quote.symbol}`);
         } else if (selectedOption) {
-            sellOption(selectedOption.symbol, shares, selectedOption.close_price || 0);
-             alert(`Successfully sold ${shares} contract(s) of ${selectedOption.symbol}`);
+            const contractsToSell = amount;
+            sellOption(selectedOption.symbol, contractsToSell, selectedOption.close_price || 0);
+             alert(`Successfully sold ${contractsToSell} contract(s) of ${selectedOption.symbol}`);
         }
+    };
+
+    const handleSellAll = () => {
+        if (tradeTab !== 'stock' || sharesOwned <= 0 || !quote) return;
+
+        // Use the sellStock function with the total number of shares owned
+        sellStock(quote.symbol, sharesOwned, quote.price);
+        alert(`Successfully sold all ${sharesOwned.toFixed(4)} share(s) of ${quote.symbol}`);
+        setTradeAmount(''); // Clear the input after selling
     };
 
     const handleWatchlistToggle = () => {
@@ -464,6 +566,18 @@ const StockView: React.FC = () => {
     const sharesOwned = portfolio.holdings.find(h => h.ticker === ticker)?.shares || 0;
     const contractsOwned = portfolio.optionHoldings.find(o => o.symbol === selectedOption?.symbol)?.shares || 0;
 
+    const quantity = Number(tradeAmount) || 0;
+    const isStockTrade = tradeTab === 'stock';
+
+    const totalTradeValue = isStockTrade
+        ? (tradeInputMode === 'dollars' ? quantity : quantity * (quote?.price || 0))
+        : quantity * (selectedOption?.close_price || 0) * 100;
+
+    // Safely get the price per unit (either stock price or option premium per contract)
+    const pricePerUnit = isStockTrade
+        ? quote?.price || 0
+        : (selectedOption?.close_price || 0) * 100;
+
     if (isLoading) {
         return <div className="flex justify-center items-center h-screen"><Spinner /></div>;
     }
@@ -472,6 +586,9 @@ const StockView: React.FC = () => {
         return <div className="text-center text-red-500 mt-10">Stock data not found for {ticker}.</div>;
     }
 
+    const tradePrice = tradeTab === 'stock' ? (quote?.price || 0) : (selectedOption?.close_price || 0);
+    const multiplier = tradeTab === 'stock' ? 1 : 100;
+
     const priceChangeColor = quote.change >= 0 ? 'text-brand-green' : 'text-brand-red';
     const onWatchlist = ticker ? isOnWatchlist(ticker) : false;
 
@@ -479,9 +596,20 @@ const StockView: React.FC = () => {
         // This is the new, reusable section for the AI recommendation
         const smartRecSection = (
             <div className="bg-night-700 p-4 rounded-lg mt-6 border-l-4 border-brand-blue">
-                <h3 className="text-lg font-bold flex items-center gap-2"><BrainCircuitIcon className="h-5 w-5 text-brand-blue" /> AI Smart Recommendation</h3>
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold flex items-center gap-2">
+                        <BrainCircuitIcon className="h-5 w-5 text-brand-blue" /> AI Smart Recommendation
+                    </h3>
+                    {/* FIX: Add Regenerate Button */}
+                    {combinedRec && !isAiLoading && (
+                         <button onClick={handleAdvancedRecommendations} className="text-night-500 hover:text-yellow-400" title="Regenerate Recommendation">
+                            <RegenerateIcon className="h-5 w-5" />
+                        </button>
+                    )}
+                </div>
+
                 {(isAiLoading && hasRunAdvancedRecs) ? (
-                     <div className="mt-2"><Spinner /></div>
+                     <div className="mt-2 flex justify-center"><Spinner /></div>
                 ) : combinedRec ? (
                     <div>
                         <p className="mt-2">
@@ -797,8 +925,25 @@ const StockView: React.FC = () => {
                             <div className="space-y-4">
                                 {tradeTab === 'stock' && (
                                     <>
-                                        <div className="text-sm">Shares Owned: <span className="font-bold">{sharesOwned}</span></div>
+                                        <div className="text-sm">Shares Owned: <span className="font-bold">{sharesOwned.toFixed(4)}</span></div>
                                         <div className="text-sm">Cash Available: <span className="font-bold">{formatCurrency(portfolio.cash)}</span></div>
+                                        
+                                        {/* ADDITION START: Mode Toggle */}
+                                        <div className="flex bg-night-700 rounded-md p-1">
+                                            <button 
+                                                onClick={() => setTradeInputMode('shares')}
+                                                className={`w-1/2 py-1 rounded-md text-sm font-semibold transition-colors ${tradeInputMode === 'shares' ? 'bg-brand-blue text-white' : 'text-night-100'}`}
+                                            >
+                                                Shares
+                                            </button>
+                                            <button 
+                                                onClick={() => setTradeInputMode('dollars')}
+                                                className={`w-1/2 py-1 rounded-md text-sm font-semibold transition-colors ${tradeInputMode === 'dollars' ? 'bg-brand-blue text-white' : 'text-night-100'}`}
+                                            >
+                                                Dollars
+                                            </button>
+                                        </div>
+                                        {/* ADDITION END */}
                                     </>
                                 )}
                                 
@@ -914,21 +1059,44 @@ const StockView: React.FC = () => {
                                 )}
                                 
                                 <div>
-                                    <label htmlFor="shares" className="block text-sm font-medium text-night-100 mb-1">{tradeTab === 'stock' ? 'Shares' : 'Contracts'}</label>
+                                    {/* MODIFICATION: Dynamic label for the input */}
+                                    <label htmlFor="trade-amount" className="block text-sm font-medium text-night-100 mb-1">
+                                        {tradeTab === 'stock' ? (tradeInputMode === 'shares' ? 'Shares' : 'Amount ($)') : 'Contracts'}
+                                    </label>
                                     <input
                                         type="number"
-                                        id="shares"
-                                        value={tradeShares}
-                                        onChange={handleSharesChange}
+                                        id="trade-amount"
+                                        value={tradeAmount}
+                                        onChange={handleAmountChange}
                                         className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none"
-                                        min="1"
+                                        min="0"
+                                        step="any" // Allow decimals for dollar amount
                                         placeholder="0"
                                     />
                                 </div>
-                                <div className="text-center font-bold">Total: {formatCurrency(Number(tradeShares) * (tradeTab === 'stock' ? quote.price : (selectedOption?.close_price || 0) * 100))}</div>
-                                <div className="flex gap-4">
-                                    <button onClick={handleBuy} disabled={tradeTab !== 'stock' && !selectedOption} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">Buy</button>
-                                    <button onClick={handleSell} disabled={(tradeTab === 'stock' && sharesOwned === 0) || (tradeTab !== 'stock' && contractsOwned === 0)} className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600">Sell</button>
+                                {/* MODIFICATION: Use the new totalTradeValue variable */}
+                                <div className="text-center font-bold">Total: {formatCurrency(totalTradeValue)}</div>
+                                <div className="flex gap-2">
+                                    <button onClick={handleBuy} disabled={!tradeAmount || (tradeTab !== 'stock' && !selectedOption)} className="w-full bg-brand-green text-white font-bold py-2 px-4 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">Buy</button>
+                                    
+                                    {/* Show "Sell All" button only for stock trades */}
+                                    {tradeTab === 'stock' && (
+                                        <button 
+                                            onClick={handleSellAll} 
+                                            disabled={sharesOwned === 0} 
+                                            className="w-full bg-yellow-600 text-white font-bold py-2 px-4 rounded-md hover:bg-yellow-700 transition-colors disabled:bg-night-600"
+                                        >
+                                            Sell All
+                                        </button>
+                                    )}
+
+                                    <button 
+                                        onClick={handleSell} 
+                                        disabled={!tradeAmount || (tradeTab === 'stock' && sharesOwned === 0) || (tradeTab !== 'stock' && contractsOwned === 0)} 
+                                        className="w-full bg-brand-red text-white font-bold py-2 px-4 rounded-md hover:bg-red-600 transition-colors disabled:bg-night-600"
+                                    >
+                                        Sell
+                                    </button>
                                 </div>
                             </div>
                         </Card>

@@ -146,7 +146,7 @@ const MainApp: React.FC = () => {
                     </div>
                 </nav>
             </header>
-            <main className="container mx-auto p-4 md:p-6 lg:p-8">
+            <main className="container mx-auto p-4 md:p-3 lg:p-4">
                 <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/stock/:ticker" element={<StockView />} />

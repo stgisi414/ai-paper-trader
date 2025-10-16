@@ -2,7 +2,8 @@
 
 import { GEMINI_BASE_URL } from '../constants';
 import * as fmpService from './fmpService';
-import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating, OptionsStrategyRec, PortfolioRec } from '../types';
+import { formatCurrency } from '../utils/formatters';
+import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating, OptionsStrategyRec, PortfolioRec, TradeAllocationRecommendation } from '../types';
 
 const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any): Promise<any> => {
     try {
@@ -247,6 +248,26 @@ const portfolioRecSchema = {
     required: ["recommendationType", "targetTicker", "actionJustification"]
 };
 
+const tradeAllocationSchema = {
+    type: "OBJECT",
+    properties: {
+        reasoning: { type: "STRING", description: "A detailed explanation for the allocation decisions, citing the news sentiment, user goals, and stock data." },
+        allocations: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    ticker: { type: "STRING" },
+                    percentage: { type: "NUMBER", description: "The percentage of the available cash to allocate to this ticker." },
+                    amount: { type: "NUMBER", description: "The dollar amount to allocate to this ticker." }
+                },
+                required: ["ticker", "percentage", "amount"]
+            }
+        }
+    },
+    required: ["reasoning", "allocations"]
+};
+
 // --- Exported Functions ---
 
 // Helper function to call proxy with schema for Planner Mode
@@ -334,8 +355,19 @@ export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<Portfo
 };
 
 export const getCombinedRecommendations = async (profile: FmpProfile, ratings: FmpAnalystRating[], technicals: TechnicalAnalysis): Promise<CombinedRec> => {
+    // FIX: Make the prompt resilient to missing analyst ratings for ETFs/composites.
+    const ratingsData = ratings.length > 0 ? JSON.stringify(ratings[0]) : "No analyst ratings available for this asset.";
+    
     const prompt = `
-        Generate a trading recommendation for ${profile.companyName} using this data: Profile=${JSON.stringify(profile)}, Ratings=${JSON.stringify(ratings[0])}, Technicals=${JSON.stringify(technicals)}.
+        As an expert financial analyst, generate a trading recommendation for ${profile.companyName} (${profile.symbol}).
+        Synthesize the following information:
+        - Profile: ${JSON.stringify(profile)}
+        - Analyst Ratings: ${ratingsData}
+        - Technical Analysis: ${JSON.stringify(technicals)}
+
+        If Analyst Ratings are not available, you MUST rely more heavily on the technical analysis and the asset's description/sector.
+        For ETFs, commodities, or funds, focus on the technical trend and the description of the underlying assets instead of traditional stock metrics.
+
         CRITICAL TASK: Output ONLY the four top-level fields: "sentiment", "confidence", "strategy", and "justification".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
     `;
@@ -430,4 +462,32 @@ export const getPortfolioRecommendation = async (userPrompt: string, portfolio: 
     `;
     // Use gemini-2.5-pro for complex reasoning. Set enableTools to false as the data is provided in the prompt.
     return callGeminiProxy(prompt, "gemini-2.5-pro", false, portfolioRecSchema); 
+};
+
+export const getTradeAllocation = async (
+    newsAnalysis: AiAnalysis,
+    riskTolerance: string,
+    investmentGoal: string,
+    quotes: FmpQuote[],
+    amountToAllocate: number
+): Promise<TradeAllocationRecommendation> => {
+    const prompt = `
+        As an expert portfolio manager, create a trade allocation recommendation based on the following data.
+
+        **CONTEXT:**
+        - **Available Cash for Investment:** ${formatCurrency(amountToAllocate)}
+        - **User's Stated Risk Tolerance:** "${riskTolerance}"
+        - **User's Stated Investment Goal:** "${investmentGoal}"
+        - **Recent News Sentiment Analysis:** - Sentiment: ${newsAnalysis.sentiment}
+          - Confidence: ${newsAnalysis.confidenceScore.toFixed(2)}
+          - Summary: "${newsAnalysis.summary}"
+        - **Current Stock Data for Watchlist:**
+          ${quotes.map(q => `- ${q.symbol}: Price=${formatCurrency(q.price)}, Change=${q.change.toFixed(2)} (${q.changesPercentage.toFixed(2)}%)`).join('\n')}
+
+        **CRITICAL TASK:**
+        Generate a JSON object that provides a clear investment allocation plan. The 'reasoning' must explain how the allocation aligns with the user's goals, risk tolerance, and the provided market data. The 'allocations' should break down how to distribute the specified "Available Cash for Investment". Do not recommend allocating more than this amount.
+        
+        YOU MUST RESPOND ONLY with a valid JSON object that conforms exactly to the provided schema.
+    `;
+    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", tradeAllocationSchema);
 };

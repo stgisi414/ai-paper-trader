@@ -16,8 +16,7 @@ import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const Dashboard: React.FC = () => {
     const { user } = useAuth();
-    // MODIFIED: Destructure manualSellOption
-    const { portfolio, totalValue, isLoading: isPortfolioLoading, manualSellOption } = usePortfolio();
+    const { portfolio, totalValue, isLoading: isPortfolioLoading, manualSellOption, sellAllStock } = usePortfolio();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -36,7 +35,6 @@ const Dashboard: React.FC = () => {
         setIsTesting(true);
         setTestResult(null);
         try {
-            // Pass the ticker into runToolCallingTest
             const result = await geminiService.runToolCallingTest(testName, prompt, ticker);
             console.log(`Gemini Tool Test [${testName}] successful:`, result);
             setTestResult({ name: testName, result: result.text });
@@ -62,7 +60,6 @@ const Dashboard: React.FC = () => {
             setSearchResults(results.slice(0, 5));
         } catch (error) {
             console.error("Search failed:", error);
-            // Replace alert with console.error or custom modal
             console.error("Failed to search for stocks.");
             setSearchResults([]);
         } finally {
@@ -78,7 +75,6 @@ const Dashboard: React.FC = () => {
             setPortfolioAnalysis(analysis);
         } catch (error) {
             console.error("Portfolio analysis failed:", error);
-            // Replace alert with console.error or custom modal
             console.error("The AI portfolio analysis could not be completed.");
         } finally {
             setIsAnalyzing(false);
@@ -88,11 +84,19 @@ const Dashboard: React.FC = () => {
     const holdingsValue = totalValue - portfolio.cash;
     const totalGain = totalValue - portfolio.initialValue;
     const totalGainPercent = portfolio.initialValue > 0 ? (totalGain / portfolio.initialValue) * 100 : 0;
-    const GainLossIcon = totalGain >= 0 ? TrendingUpIcon : TrendingDownIcon;
+    
+    const totalDailyStockGain = portfolio.holdings.reduce((acc, h) => acc + (h.shares * (h.change || 0)), 0);
+    const totalDailyOptionGain = portfolio.optionHoldings.reduce((acc, o) => acc + (o.shares * (o.change || 0) * 100), 0);
+    const totalDailyGain = totalDailyStockGain + totalDailyOptionGain;
+    
+    const previousTotalValue = totalValue - totalDailyGain;
+    const totalDailyGainPercent = previousTotalValue > 0 ? (totalDailyGain / previousTotalValue) * 100 : 0;
+    
+    const GainLossIcon = totalGain !== 0 ? (totalGain >= 0 ? TrendingUpIcon : TrendingDownIcon) : (totalDailyGain >= 0 ? TrendingUpIcon : TrendingDownIcon);
 
     return (
         <div>
-            {user && <ChatPanel />} {/* MODIFIED: Only show SignatexFlow if logged in */}
+            {user && <ChatPanel />}
             <div className="text-center">
                 <h1 className="text-4xl font-bold">Signatex.co</h1>
                 <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
@@ -100,11 +104,9 @@ const Dashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
                 <div className="lg:col-span-1">
-                    {/* MODIFIED: Conditionally render Watchlist or a login prompt */}
                     {user ? <Watchlist /> : <Card><p className="text-center text-night-500 p-4">Log in to view your Watchlist.</p></Card>}
                 </div>
                 <div className="lg:col-span-2 space-y-8">
-                    {/* Search Bar */}
                     <Card>
                         <form onSubmit={handleSearch} className="flex items-center gap-4">
                             <div className="relative flex-grow">
@@ -147,7 +149,6 @@ const Dashboard: React.FC = () => {
                             <p className="text-sm text-night-500 mb-4">
                                 These buttons test the AI's ability to use tools. They simulate user research commands in the AI Assistant.
                             </p>
-                            {/* ADDITION: Ticker Input */}
                             <div className="mb-4">
                                 <label htmlFor="test-ticker" className="block text-sm font-medium text-night-100 mb-1">Test Ticker</label>
                                 <input
@@ -159,8 +160,6 @@ const Dashboard: React.FC = () => {
                                     className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-4 focus:ring-2 focus:ring-brand-blue focus:outline-none"
                                 />
                             </div>
-
-                            {/* MODIFICATION: New/Modified Test Buttons */}
                             <div className="flex flex-wrap gap-4">
                                 <button 
                                     onClick={() => handleToolTest('Get Price', `Get the current stock price for ${testTicker} using the available tool.`, testTicker)} 
@@ -217,7 +216,6 @@ const Dashboard: React.FC = () => {
                         </Card>
                     )}
 
-                    {/* MODIFIED: Portfolio Risk Analysis - now conditional */}
                     {user ? (
                         <Card>
                             <div className="flex justify-between items-center mb-4">
@@ -229,20 +227,15 @@ const Dashboard: React.FC = () => {
                             {isAnalyzing && <Spinner />}
                             {portfolioAnalysis && (
                                 <div className="bg-night-700 p-4 rounded-lg">
-                                    {/* Use nullish coalescing to safely display riskLevel */}
                                     <h3 className="text-lg font-bold">Risk Level: <span className="text-brand-blue">{portfolioAnalysis.riskLevel ?? 'N/A'}</span></h3>
-                                    
-                                    {/* CRITICAL: Use optional chaining (?. ) for nested concentration properties */}
                                     <p className="text-night-100 mt-2">
                                         Highest Sector Concentration: <span className="font-bold">
                                             {portfolioAnalysis.concentration?.highestSector ?? 'N/A'} 
                                             ({formatPercentage(portfolioAnalysis.concentration?.percentage)})
                                         </span>
                                     </p>
-                                    
                                     <h3 className="text-lg font-bold mt-4">Suggestions</h3>
                                     <ul className="list-disc list-inside text-night-100">
-                                        {/* CRITICAL: Use optional chaining before calling .map() */}
                                         {portfolioAnalysis.suggestions?.map((item, index) => <li key={index}>{item}</li>) ?? <li>No specific suggestions provided by AI.</li>}
                                     </ul>
                                 </div>
@@ -252,7 +245,6 @@ const Dashboard: React.FC = () => {
                         <Card><p className="text-center text-night-500 p-4">Log in to run AI Portfolio Risk Analysis.</p></Card>
                     )}
 
-                    {/* MODIFIED: Portfolio Overview - now conditional */}
                     {user ? (
                         <Card>
                             <h2 className="text-2xl font-bold mb-4">Portfolio Overview</h2>
@@ -262,15 +254,23 @@ const Dashboard: React.FC = () => {
                                         <BriefcaseIcon className="h-8 w-8 text-brand-blue" />
                                         <div>
                                             <div className="text-sm text-night-500">Total Value</div>
-                                            <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>
+                                            <div className="text-3xl font-bold">{formatCurrency(totalValue)}</div>
                                         </div>
                                     </div>
                                     <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
                                         <GainLossIcon className={`h-8 w-8 ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`} />
-                                        <div>
-                                            <div className="text-sm text-night-500">Total Gain / Loss</div>
-                                            <div className={`text-2xl font-bold ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                                                {formatCurrency(totalGain)} ({formatPercentage(totalGainPercent)})
+                                        <div className="flex flex-col">
+                                            <div>
+                                                <div className="text-xs text-night-500">Open G/L</div>
+                                                <div className={`text-lg font-bold ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                    {formatCurrency(totalGain)} ({formatPercentage(totalGainPercent)})
+                                                </div>
+                                            </div>
+                                            <div className="mt-1">
+                                                <div className="text-xs text-night-500">Day's G/L</div>
+                                                <div className={`text-lg font-bold ${totalDailyGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                    {formatCurrency(totalDailyGain)} ({formatPercentage(totalDailyGainPercent)})
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -295,7 +295,6 @@ const Dashboard: React.FC = () => {
                         <Card><p className="text-center text-night-500 p-4">Log in to view your Portfolio Overview.</p></Card>
                     )}
 
-                    {/* MODIFIED: Stock Holdings - now conditional */}
                     {user ? (
                         <Card>
                             <h2 className="text-2xl font-bold mb-4">My Stock Holdings</h2>
@@ -308,26 +307,43 @@ const Dashboard: React.FC = () => {
                                             <th className="p-3">Avg. Price</th>
                                             <th className="p-3">Current Price</th>
                                             <th className="p-3">Total Value</th>
-                                            <th className="p-3">Day's Gain/Loss</th>
+                                            <th className="p-3">Day's G/L</th>
+                                            <th className="p-3">Open G/L</th>
+                                            <th className="p-3 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {portfolio.holdings.length === 0 ? (
-                                            <tr><td colSpan={6} className="text-center p-6 text-night-500">You do not own any stocks.</td></tr>
+                                            <tr><td colSpan={8} className="text-center p-6 text-night-500">You do not own any stocks.</td></tr>
                                         ) : (
                                             portfolio.holdings.map(h => {
+                                                // FIX START: Define the missing variables here
                                                 const totalValue = h.shares * h.currentPrice;
-                                                const gain = (h.currentPrice - h.purchasePrice) * h.shares;
-                                                const gainPercent = (gain / (h.purchasePrice * h.shares)) * 100;
+                                                const openGain = (h.currentPrice - h.purchasePrice) * h.shares;
+                                                const openGainPercent = h.purchasePrice > 0 ? (openGain / (h.purchasePrice * h.shares)) * 100 : 0;
+                                                const dayGain = h.shares * (h.change || 0);
+                                                const dayGainPercent = h.changesPercentage || 0;
+                                                // FIX END
                                                 return (
                                                     <tr key={h.ticker} className="border-b border-night-700 hover:bg-night-700">
                                                         <td className="p-3 font-bold"><Link to={`/stock/${h.ticker}`} className="text-brand-blue hover:underline">{h.ticker}</Link></td>
-                                                        <td className="p-3">{h.shares}</td>
+                                                        <td className="p-3">{h.shares.toFixed(3)}</td>
                                                         <td className="p-3">{formatCurrency(h.purchasePrice)}</td>
                                                         <td className="p-3">{formatCurrency(h.currentPrice)}</td>
                                                         <td className="p-3">{formatCurrency(totalValue)}</td>
-                                                        <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                                                            {formatCurrency(gain)} ({formatPercentage(gainPercent)})
+                                                        <td className={`p-3 font-semibold ${dayGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                            {formatCurrency(dayGain)} ({formatPercentage(dayGainPercent)})
+                                                        </td>
+                                                        <td className={`p-3 font-semibold ${openGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                            {formatCurrency(openGain)} ({formatPercentage(openGainPercent)})
+                                                        </td>
+                                                        <td className="p-3 text-right">
+                                                            <button 
+                                                                onClick={() => sellAllStock(h.ticker)}
+                                                                className="text-white bg-brand-red px-3 py-1 rounded-md text-sm hover:bg-red-600 transition-colors"
+                                                            >
+                                                                Sell All
+                                                            </button>
                                                         </td>
                                                     </tr>
                                                 );
@@ -341,7 +357,6 @@ const Dashboard: React.FC = () => {
                          <Card><p className="text-center text-night-500 p-4">Log in to view your Stock Holdings.</p></Card>
                     )}
 
-                    {/* MODIFIED: Option Holdings Table - now conditional */}
                     {user ? (
                         <Card>
                             <h2 className="text-2xl font-bold mb-4">My Option Holdings</h2>
@@ -349,58 +364,51 @@ const Dashboard: React.FC = () => {
                                 <table className="w-full text-left">
                                     <thead className="border-b border-night-600">
                                         <tr>
-                                            <th className="p-3">Symbol</th>
+                                            <th className="p-3">Ticker</th>
+                                            <th className="p-3">Expiry</th>
+                                            <th className="p-3">Strike Price</th>
                                             <th className="p-3">Contracts</th>
                                             <th className="p-3">Avg. Premium</th>
                                             <th className="p-3">Current Premium</th>
                                             <th className="p-3">Total Value</th>
-                                            <th className="p-3">Gain/Loss</th>
-                                            {/* ADDITION: Expiry Date Column */}
-                                            <th className="p-3">Expiry</th>
-                                            {/* MODIFICATION: Action Column */}
+                                            <th className="p-3">Day's G/L</th>
+                                            <th className="p-3">Open G/L</th>
                                             <th className="p-3 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {portfolio.optionHoldings.length === 0 ? (
-                                            <tr><td colSpan={8} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
+                                            <tr><td colSpan={10} className="text-center p-6 text-night-500">You do not own any options.</td></tr>
                                         ) : (
                                             portfolio.optionHoldings.map(o => {
                                                 const totalValue = o.shares * o.currentPrice * 100;
-                                                const gain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
-                                                const gainPercent = o.purchasePrice > 0 ? (gain / (o.purchasePrice * o.shares * 100)) * 100 : 0;
-                                                
-                                                // EXTENSIVE DEBUG LOGGING - Keep for now
-                                                console.log(`[DASHBOARD RENDER - OPTION ${o.symbol}]`);
-                                                console.log(`  - Contracts: ${o.shares}`);
-                                                console.log(`  - Purchase Price (o.purchasePrice): ${o.purchasePrice}`);
-                                                console.log(`  - Current Price (o.currentPrice): ${o.currentPrice}`);
-                                                console.log(`  - Calculated Gain (Total): ${gain}`);
-                                                console.log(`  - Calculated Gain (%): ${gainPercent}`);
-                                                // END DEBUG LOGGING
+                                                const openGain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
+                                                const openGainPercent = o.purchasePrice > 0 ? (openGain / (o.purchasePrice * o.shares * 100)) * 100 : 0;
+                                                const dayGain = (o.change || 0) * o.shares * 100;
+                                                const dayGainPercent = o.changesPercentage || 0;
                                                 
                                                 const handleSellClick = () => {
-                                                    // Sells ALL contracts for the symbol using the manualSellOption wrapper
                                                     manualSellOption(o.symbol); 
                                                 };
 
                                                 return (
                                                     <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
                                                         <td className="p-3 font-bold">
-                                                            <Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.symbol}</Link>
-                                                            {/* ADDITION: Display the option type and use color coding */}
+                                                            <Link to={`/stock/${o.underlyingTicker}`} className="text-brand-blue hover:underline">{o.underlyingTicker}</Link>
                                                             <span className={`ml-2 text-xs font-semibold uppercase ${o.optionType === 'call' ? 'text-brand-green' : 'text-brand-red'}`}>({o.optionType})</span>
                                                         </td>
+                                                        <td className="p-3 text-sm">{o.expirationDate}</td>
+                                                        <td className="p-3">{formatCurrency(o.strikePrice)}</td>
                                                         <td className="p-3">{o.shares}</td>
                                                         <td className="p-3">{formatCurrency(o.purchasePrice)}</td>
                                                         <td className="p-3">{formatCurrency(o.currentPrice)}</td>
                                                         <td className="p-3">{formatCurrency(totalValue)}</td>
-                                                        <td className={`p-3 font-semibold ${gain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
-                                                            {formatCurrency(gain)} ({formatPercentage(gainPercent)})
+                                                        <td className={`p-3 font-semibold ${dayGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                            {formatCurrency(dayGain)} ({formatPercentage(dayGainPercent)})
                                                         </td>
-                                                        {/* ADDITION: Expiry Date */}
-                                                        <td className="p-3 text-sm">{o.expirationDate}</td>
-                                                        {/* MODIFICATION: Sell Button */}
+                                                        <td className={`p-3 font-semibold ${openGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                                            {formatCurrency(openGain)} ({formatPercentage(openGainPercent)})
+                                                        </td>
                                                         <td className="p-3 text-right">
                                                             <button 
                                                                 onClick={handleSellClick}
@@ -421,7 +429,6 @@ const Dashboard: React.FC = () => {
                          <Card><p className="text-center text-night-500 p-4">Log in to view your Option Holdings.</p></Card>
                     )}
 
-                    {/* Active Users */}
                     {import.meta.env.DEV && (
                         <ActiveUsers />
                     )}

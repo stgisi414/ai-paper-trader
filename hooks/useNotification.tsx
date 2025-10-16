@@ -4,6 +4,7 @@ import { User } from '../types';
 export interface NotificationPayload {
     sender: User;
     text: string;
+    ticker?: string; // ADD: Optional ticker for navigation
 }
 
 interface NotificationContextType {

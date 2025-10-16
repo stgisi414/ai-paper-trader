@@ -165,6 +165,8 @@ export const getOptionsChain = async (symbol: string, date?: string): Promise<Op
                 strike_price: String(c.strike),
                 underlying_symbol: symbol.toUpperCase(),
                 close_price: closePrice,
+                change: c.change || 0,
+                changesPercentage: c.percentChange || 0,
                 volume: c.volume || 0,
                 open_interest: c.openInterest || 0,
                 // Use calculated or fetched greeks
