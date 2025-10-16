@@ -5,6 +5,9 @@ import { useAuth } from '../src/hooks/useAuth.tsx';
 import type { FmpQuote, FmpProfile, UserWatchlists as OldUserWatchlists } from '../types';
 import * as fmpService from '../services/fmpService';
 
+export type WatchlistSortKey = 'ticker' | 'change';
+export type WatchlistSortDirection = 'asc' | 'desc';
+
 // Define the new ordered structure for a single watchlist
 export interface Watchlist {
     name: string;
@@ -36,6 +39,10 @@ interface WatchlistContextType {
     reorderWatchlists: (startIndex: number, endIndex: number) => Promise<void>;
     isOnWatchlist: (ticker: string) => boolean;
     isLoading: boolean;
+    sortKey: WatchlistSortKey | null;
+    sortDirection: WatchlistSortDirection;
+    setSort: (key: WatchlistSortKey | null) => void;
+    isOnWatchlist: (ticker: string) => boolean;
 }
 
 const WatchlistContext = createContext<WatchlistContextType | undefined>(undefined);
@@ -46,6 +53,8 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [activeWatchlist, setActiveWatchlist] = useState<string>('My Watchlist');
     const [watchlistData, setWatchlistData] = useState<WatchlistItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [sortKey, setSortKey] = useState<WatchlistSortKey | null>(null);
+    const [sortDirection, setSortDirection] = useState<WatchlistSortDirection>('desc');
 
     const watchlistTickers = useMemo(() => {
         return allWatchlists.find(w => w.name === activeWatchlist)?.tickers || [];
@@ -182,6 +191,9 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const newTickers = [...currentTickers, ticker];
             const newLists = allWatchlists.map(w => w.name === activeWatchlist ? { ...w, tickers: newTickers } : w);
             updateWatchlistsInDb(newLists);
+            // FIX: Explicitly reset the active watchlist to prevent it from reverting
+            // to the default (list[0]) after the Firestore snapshot triggers.
+            setActiveWatchlist(activeWatchlist);
         }
     }, [user, allWatchlists, activeWatchlist]);
 
@@ -241,6 +253,21 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return watchlistTickers.includes(ticker);
     }, [watchlistTickers]);
 
+    const setSort = useCallback((key: WatchlistSortKey | null) => {
+        setSortKey(prevKey => {
+            if (prevKey === key && key !== null) {
+                // Toggle direction if same key clicked
+                setSortDirection(prevDir => (prevDir === 'asc' ? 'desc' : 'asc'));
+                return key;
+            } else {
+                // New key clicked or clearing sort.
+                // Default descending for 'change' (High to Low), ascending for 'ticker' (A-Z).
+                setSortDirection(key === 'ticker' ? 'asc' : 'desc');
+                return key;
+            }
+        });
+    }, []);
+
     const value = useMemo(() => ({
         watchlist: watchlistData,
         allWatchlists,
@@ -254,8 +281,11 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         renameWatchlist,
         reorderWatchlists,
         isOnWatchlist,
-        isLoading
-    }), [watchlistData, allWatchlists, activeWatchlist, addToWatchlist, removeFromWatchlist, reorderWatchlistItems, createNewWatchlist, deleteWatchlist, renameWatchlist, reorderWatchlists, isOnWatchlist, isLoading]);
+        isLoading,
+        sortKey,
+        sortDirection,
+        setSort
+    }), [watchlistData, allWatchlists, activeWatchlist, addToWatchlist, removeFromWatchlist, reorderWatchlistItems, createNewWatchlist, deleteWatchlist, renameWatchlist, reorderWatchlists, isOnWatchlist, isLoading, sortKey, sortDirection, setSort ]);
 
 
     return (

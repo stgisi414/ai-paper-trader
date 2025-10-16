@@ -5,10 +5,11 @@ import { usePortfolio } from '../hooks/usePortfolio';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
 import type { FmpSearchResult, CombinedRec, WatchlistPick, FmpHistoricalData, TechnicalAnalysis, QuestionnaireAnswers } from '../types';
+import { WatchlistSortKey } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
-import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, BrainCircuitIcon, SaveIcon, FilterIcon, NewspaperIcon, RegenerateIcon, SettingsIcon, EditIcon } from './common/Icons';
+import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, BrainCircuitIcon, SaveIcon, FilterIcon, NewspaperIcon, RegenerateIcon, SettingsIcon, EditIcon, SortIcon, SortAscIcon, SortDescIcon } from './common/Icons';
 import WatchlistNews from './WatchlistNews';
 
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities", "Basic Materials"];
@@ -105,7 +106,8 @@ const Watchlist: React.FC = () => {
     const {
         watchlist, addToWatchlist, removeFromWatchlist, reorderWatchlistItems, isLoading,
         allWatchlists, activeWatchlist, setActiveWatchlist, createNewWatchlist,
-        deleteWatchlist, renameWatchlist, reorderWatchlists
+        deleteWatchlist, renameWatchlist, reorderWatchlists,
+        sortKey, sortDirection, setSort
     } = useWatchlist();
     
     const { portfolio } = usePortfolio();
@@ -124,14 +126,61 @@ const Watchlist: React.FC = () => {
     const [sectorFilter, setSectorFilter] = useState<string | null>(null);
     const [showWatchlistNews, setShowWatchlistNews] = useState(false);
     const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+    const [showSorts, setShowSorts] = useState(false);
 
     const dragItem = useRef<number | null>(null);
     const dragOverItem = useRef<number | null>(null);
 
-    const filteredWatchlist = useMemo(() => {
-        if (!sectorFilter) return watchlist;
-        return watchlist.filter(item => item.sector === sectorFilter);
-    }, [watchlist, sectorFilter]);
+    const renderSortIcon = (key: WatchlistSortKey) => {
+        if (sortKey !== key) return null;
+        return (
+            <span className="ml-1 text-xs">
+                {sortDirection === 'asc' ? '▲' : '▼'}
+            </span>
+        );
+    };
+
+    const sortedAndFilteredWatchlist = useMemo(() => {
+        let sortedList = [...watchlist]; // Start with the raw watchlist data
+        
+        // 1. Apply Filter
+        if (sectorFilter) {
+            sortedList = sortedList.filter(item => item.sector === sectorFilter);
+        }
+
+        // 2. Apply Sort
+        if (sortKey) {
+            sortedList.sort((a, b) => {
+                let aValue: string | number;
+                let bValue: string | number;
+
+                if (sortKey === 'ticker') {
+                    aValue = a.ticker;
+                    bValue = b.ticker;
+                } else if (sortKey === 'change') {
+                    aValue = a.change;
+                    bValue = b.change;
+                } else {
+                    return 0;
+                }
+                
+                const modifier = sortDirection === 'asc' ? 1 : -1;
+                
+                if (typeof aValue === 'number' && typeof bValue === 'number') {
+                    return (aValue - bValue) * modifier;
+                }
+                
+                // String comparison for 'ticker'
+                if (String(aValue) < String(bValue)) return -1 * modifier;
+                if (String(aValue) > String(bValue)) return 1 * modifier;
+                return 0;
+            });
+        }
+        
+        return sortedList;
+    }, [watchlist, sectorFilter, sortKey, sortDirection]);
+
+   const displayedWatchlist = sortedAndFilteredWatchlist;
 
     const handleSearch = useCallback(async (query: string) => {
         setSearchQuery(query);
@@ -166,11 +215,18 @@ const Watchlist: React.FC = () => {
     };
 
     const handleDragEnd = () => {
-        if (dragItem.current !== null && dragOverItem.current !== null) {
+        // DRAGGING ONLY APPLIES IF NOT SORTED
+        if (dragItem.current !== null && dragOverItem.current !== null && !sortKey) {
             reorderWatchlistItems(dragItem.current, dragOverItem.current);
         }
         dragItem.current = null;
         dragOverItem.current = null;
+    };
+
+    const handleSetSort = (key: WatchlistSortKey | null) => {
+        setSort(key); // Use the hook's setter to manage key and direction
+        setShowSorts(false); // Close the menu
+        setShowFilters(false); // Close filters too
     };
     
     const handleSmartRecs = useCallback(async () => {
@@ -274,9 +330,34 @@ const Watchlist: React.FC = () => {
                         <button onClick={() => setShowNewWatchlistInput(!showNewWatchlistInput)} className="text-night-100 hover:text-brand-green" title="Create New Watchlist">
                             <SaveIcon className="h-6 w-6" />
                         </button>
+                        <button onClick={() => setShowSorts(!showSorts)} className="text-night-100 hover:text-green-400" title="Sort Watchlist">
+                            <SortIcon className="h-6 w-6" />
+                        </button>
                         <button onClick={() => setShowFilters(!showFilters)} className="text-night-100 hover:text-purple-400" title="Filter by Sector">
                             <FilterIcon className="h-6 w-6" />
                         </button>
+
+                        {showSorts && ( // ADDITION: Sort Menu Pop-up
+                            <div className="absolute top-full right-0 mt-2 bg-night-600 p-2 rounded-md shadow-lg z-10 w-48">
+                                <ul className="space-y-1">
+                                    <li><button onClick={() => handleSetSort(null)} className="w-full text-left px-3 py-2 text-sm rounded-md text-red-400 hover:bg-night-500">Clear Sort</button></li>
+                                    <li>
+                                        <button onClick={() => handleSetSort('change')} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-night-500 flex justify-between items-center">
+                                            <span>Change (H/L)</span>
+                                            {sortKey === 'change' && sortDirection === 'desc' && <SortDescIcon className="h-4 w-4" />}
+                                            {sortKey === 'change' && sortDirection === 'asc' && <SortAscIcon className="h-4 w-4" />}
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button onClick={() => handleSetSort('ticker')} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-night-500 flex justify-between items-center">
+                                            <span>Ticker (A-Z)</span>
+                                            {sortKey === 'ticker' && sortDirection === 'asc' && <SortAscIcon className="h-4 w-4" />}
+                                            {sortKey === 'ticker' && sortDirection === 'desc' && <SortDescIcon className="h-4 w-4" />}
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                        )}
 
                         {showFilters && (
                             <div className="absolute top-full right-0 mt-2 bg-night-600 p-2 rounded-md shadow-lg z-10 w-48">
@@ -356,46 +437,62 @@ const Watchlist: React.FC = () => {
                                 Filtering by: <span className="font-bold text-purple-400">{sectorFilter}</span>
                             </div>
                         )}
+                        {/* ADDITION: Display current sort status */}
+                        {sortKey && (
+                            <div className="p-2 text-sm text-center bg-night-700 rounded-md mb-2">
+                                Sorting by: <span className="font-bold text-green-400">{sortKey === 'ticker' ? 'Ticker' : 'Change'} ({sortDirection === 'desc' ? 'High-Low' : 'Low-High'})</span>
+                            </div>
+                        )}
                         <table className="w-full text-left">
                             <thead className="border-b border-night-600">
                                 <tr>
-                                    <th className="p-3 w-8"></th>
-                                    <th className="p-3">Ticker</th>
+                                    {/* MODIFICATION: Only show drag handle column if not sorted */}
+                                    <th className="p-3 w-8">
+                                        {sortKey ? '' : <GripVerticalIcon className="h-5 w-5 text-night-500" />}
+                                    </th>
+                                    <th className="p-3 cursor-pointer hover:text-brand-blue" onClick={() => handleSetSort('ticker')}>
+                                        Ticker {sortKey === 'ticker' && renderSortIcon(sortKey)}
+                                    </th>
                                     <th className="p-3">Price</th>
-                                    <th className="p-3">Change</th>
+                                    <th className="p-3 cursor-pointer hover:text-brand-blue" onClick={() => handleSetSort('change')}>
+                                        Change {sortKey === 'change' && renderSortIcon(sortKey)}
+                                    </th>
                                     <th className="p-3">AI Rec</th>
                                     <th className="p-3"></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredWatchlist.length === 0 ? (
+                                {/* MODIFICATION: Iterate over displayedWatchlist */}
+                                {displayedWatchlist.length === 0 ? (
                                     <tr><td colSpan={6} className="text-center p-6 text-night-500">{sectorFilter ? `No stocks in this watchlist match the filter.` : `Your watchlist is empty.`}</td></tr>
                                 ) : (
-                                    filteredWatchlist.map((item, index) => {
+                                    displayedWatchlist.map((item, index) => {
                                         const priceChangeColor = item.change >= 0 ? 'text-brand-green' : 'text-brand-red';
-                                        const smartRec = localRecs[item.ticker]; // FIX: Read from local state
+                                        const smartRec = localRecs[item.ticker];
                                         const isGeneratingRec = individualRecLoading.has(item.ticker);
                                         
                                         return (
                                             <tr 
                                                 key={item.ticker}
                                                 className="border-b border-night-700 hover:bg-night-700"
-                                                draggable
+                                                draggable={!sortKey} // MODIFICATION: Only draggable if not sorted
                                                 onDragStart={() => dragItem.current = index}
                                                 onDragEnter={() => dragOverItem.current = index}
                                                 onDragEnd={handleDragEnd}
                                                 onDragOver={(e) => e.preventDefault()}
                                             >
                                                 <td className="p-3 text-night-500 cursor-grab">
-                                                    <GripVerticalIcon className="h-5 w-5" />
+                                                    {sortKey ? '' : <GripVerticalIcon className="h-5 w-5" />}
                                                 </td>
                                                 <td className="p-3 font-bold">
                                                     <Link to={`/stock/${item.ticker}`} className="text-brand-blue hover:underline">{item.ticker}</Link>
                                                 </td>
+                                                {/* ... rest of the row data ... */}
                                                 <td className="p-3 font-semibold">{formatCurrency(item.price)}</td>
                                                 <td className={`p-3 font-semibold ${priceChangeColor}`}>
                                                     {formatCurrency(item.change)} ({formatPercentage(item.changesPercentage)})
                                                 </td>
+                                                {/* ... AI Rec column data ... */}
                                                 <td className="p-3 text-xs">
                                                     <div className="flex items-center gap-2">
                                                         {isGeneratingRec ? (
@@ -409,7 +506,6 @@ const Watchlist: React.FC = () => {
                                                                 <BrainCircuitIcon className="h-5 w-5" />
                                                             </button>
                                                         )}
-                                                        {/* FIX: Add Regenerate Button */}
                                                         {smartRec && !isGeneratingRec && (
                                                             <button onClick={() => handleGenerateRec(item.ticker)} className="text-night-500 hover:text-yellow-400" title="Regenerate Recommendation">
                                                                 <RegenerateIcon className="h-4 w-4" />
