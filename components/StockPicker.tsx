@@ -6,6 +6,7 @@ import type { QuestionnaireAnswers, StockPick } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { BrainCircuitIcon } from './common/Icons';
+import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities"];
 
@@ -135,6 +136,7 @@ const StockPicker: React.FC = () => {
 
                     <div className="text-center">
                         <button type="submit" disabled={isLoading} className="bg-brand-green text-white font-bold py-3 px-8 rounded-md hover:bg-green-600 transition-colors disabled:bg-night-600">
+                            <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                             {isLoading ? 'Thinking...' : 'Get My Picks'}
                         </button>
                     </div>

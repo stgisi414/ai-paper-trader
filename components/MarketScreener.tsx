@@ -5,6 +5,7 @@ import Spinner from './common/Spinner';
 import { BrainCircuitIcon } from './common/Icons';
 import * as geminiService from '../services/geminiService';
 import type { AiScreener } from '../types';
+import { SignatexMaxIcon } from './common/Icons';
 
 interface ScreenerOption {
     id: string;
@@ -48,6 +49,9 @@ const MarketScreener: React.FC = () => {
             <div className="flex items-center gap-2 mb-6">
                 <BrainCircuitIcon className="h-6 w-6 text-yellow-400" />
                 <h2 className="text-2xl font-bold text-yellow-400">AI Market Screener</h2>
+                <SignatexMaxIcon 
+                    className="h-5 w-5 text-yellow-500 ml-1" 
+                />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

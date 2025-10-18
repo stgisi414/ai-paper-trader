@@ -15,6 +15,7 @@ import * as optionsProxyService from '../services/optionsProxyService';
 import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import { useAuth } from '../src/hooks/useAuth.tsx';
+import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 
 type OptionsSortKey = 'strike_price' | 'close_price' | 'impliedVolatility' | 'volume' | 'delta' | 'gamma' | 'theta' | 'vega' | null;
 type SortDirection = 'asc' | 'desc';
@@ -603,6 +604,7 @@ const StockView: React.FC = () => {
                     {/* FIX: Add Regenerate Button */}
                     {combinedRec && !isAiLoading && (
                          <button onClick={handleAdvancedRecommendations} className="text-night-500 hover:text-yellow-400" title="Regenerate Recommendation">
+                            <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                             <RegenerateIcon className="h-5 w-5" />
                         </button>
                     )}
@@ -622,6 +624,7 @@ const StockView: React.FC = () => {
                     <div className="mt-2 text-center">
                         <p className="text-sm text-night-100 mb-3">Synthesize fundamental, technical, and analyst data into a single actionable strategy.</p>
                         <button onClick={handleAdvancedRecommendations} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600 text-sm">
+                            <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                             {isAiLoading ? 'Analyzing...' : 'Generate Strategy'}
                         </button>
                     </div>
@@ -636,6 +639,7 @@ const StockView: React.FC = () => {
                          <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold">Key Statistics</h2>
                             <button onClick={handleKeyMetricsAnalysis} disabled={isKeyMetricsLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isKeyMetricsLoading ? 'Analyzing...' : 'Analyze'}
                             </button>
                         </div>
@@ -665,6 +669,7 @@ const StockView: React.FC = () => {
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold">Latest News</h2>
                             <button onClick={handleAiAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run AI Sentiment Analysis'}
                             </button>
                         </div>
@@ -700,6 +705,7 @@ const StockView: React.FC = () => {
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Financial Summary</h2>
                             <button onClick={handleFinancialAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                <SignatexMaxIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
                         </div>
@@ -804,6 +810,7 @@ const StockView: React.FC = () => {
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Technical Analysis</h2>
                             <button onClick={handleTechnicalAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
                         </div>

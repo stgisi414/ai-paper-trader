@@ -5,6 +5,7 @@ import type { FmpNews, AiAnalysis, TradeAllocationRecommendation, FmpQuote } fro
 import Spinner from './common/Spinner';
 import { BrainCircuitIcon } from './common/Icons';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
+import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 
 interface WatchlistNewsProps {
     tickers: string[];
@@ -127,7 +128,7 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
                             disabled={isAnalyzing || news.length === 0}
                             className="w-full bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600 flex items-center justify-center gap-2 mb-4"
                         >
-                            <BrainCircuitIcon className="h-5 w-5" />
+                            <BrainCircuitIcon className="h-5 w-5" />&nbsp;<SignatexLiteIcon className="h-5 w-5" />
                             {isAnalyzing ? 'Analyzing...' : 'Analyze All News with AI'}
                         </button>
 
@@ -187,6 +188,7 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
                                                 disabled={isAllocating}
                                                 className="w-full bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition-colors disabled:bg-night-600"
                                             >
+                                                <SignatexMaxIcon className="h-5 w-5" />
                                                 {isAllocating ? 'Calculating...' : 'Get Allocation'}
                                             </button>
                                         </div>

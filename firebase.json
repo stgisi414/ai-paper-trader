@@ -54,5 +54,8 @@
     "functions": {
       "port": 5000
     }
+  },
+  "extensions": {
+    "firestore-stripe-payments": "invertase/firestore-stripe-payments@0.3.12"
   }
 }

@@ -26,6 +26,7 @@ dist-ssr
 # env vars
 .env.local
 .env
+extensions/firestore-stripe-payments.env
 
 # todo
 todo.txt

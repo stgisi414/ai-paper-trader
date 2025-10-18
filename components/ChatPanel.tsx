@@ -13,6 +13,7 @@ import { useNotification } from '../hooks/useNotification';
 import { collection, onSnapshot, query, orderBy, addDoc, limit } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig';
 import { nanoid } from 'nanoid';
+import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 
 const CHAT_PANEL_OPEN_KEY = 'signatexChatOpen';
 

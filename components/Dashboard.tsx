@@ -13,6 +13,7 @@ import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
 import ActiveUsers from './ActiveUsers';
 import { useAuth } from '../src/hooks/useAuth.tsx';
+import { SignatexMaxIcon } from './common/Icons';
 
 const Dashboard: React.FC = () => {
     const { user } = useAuth();
@@ -221,6 +222,7 @@ const Dashboard: React.FC = () => {
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
                                 <button onClick={handlePortfolioAnalysis} disabled={isAnalyzing} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                    <SignatexMaxIcon className="h-5 w-5 inline mb-1 mr-1" />
                                     {isAnalyzing ? 'Analyzing...' : 'Run Risk Analysis'}
                                 </button>
                             </div>
