@@ -1,19 +1,18 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useParams, Link } from 'react-router-dom';
-import { getWorkflowFromPrompt, WorkflowStep, AppContext } from '../services/signatexFlowService';
+import { getWorkflowFromPrompt, AppContext } from '../services/signatexFlowService';
 import { executeStep, cleanupHighlight } from '../utils/workflowExecutor';
-import { MessageSquareIcon, BrainCircuitIcon, UsersIcon, MicrophoneIcon, SendIcon, SearchIcon, TrashIcon } from './common/Icons';
+import { MessageSquareIcon, BrainCircuitIcon, UsersIcon, MicrophoneIcon, SendIcon, TrashIcon } from './common/Icons';
 import Spinner from './common/Spinner';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useAuth } from '../src/hooks/useAuth';
 import { subscribeToChat, sendMessage, ChatMessage, clearUnreadMessage, clearAiChatHistory } from '../services/chatService';
-import { User, AiChatMessage } from '../types';
+import { User, AiChatMessage, WorkflowStep } from '../types';
 import { useNotification } from '../hooks/useNotification';
 import { collection, onSnapshot, query, orderBy, addDoc, limit } from 'firebase/firestore';
 import { db } from '../src/firebaseConfig';
 import { nanoid } from 'nanoid';
-import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 
 const CHAT_PANEL_OPEN_KEY = 'signatexChatOpen';
 
@@ -31,7 +30,9 @@ const MIN_HEIGHT = 200;
 const HANDLE_SIZE = 16;
 
 const ChatPanel: React.FC = () => {
-    const { user } = useAuth();
+    const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+
     const navigate = useNavigate();
     const location = useLocation();
     const params = useParams();
@@ -128,16 +129,11 @@ const ChatPanel: React.FC = () => {
     const AI_CHAT_COLLECTION = 'aiChatMessages';
 
     // Function to save a message to AI Chat history
-    const saveAiMessage = async (sender: AiChatMessage['sender'], text: string) => {
+    const saveAiMessage = async (sender: 'user' | 'bot' | 'system', text: string) => {
         if (!user) return;
-        const messagesRef = collection(db, 'users', user.uid, AI_CHAT_COLLECTION);
+        const messagesRef = collection(db, 'users', user.uid, 'aiChatMessages');
         try {
-             await addDoc(messagesRef, {
-                id: nanoid(),
-                sender,
-                text,
-                timestamp: Date.now(),
-            });
+            await addDoc(messagesRef, { id: nanoid(), sender, text, timestamp: Date.now() });
         } catch (error) {
             console.error("Error saving AI chat message:", error);
         }
@@ -508,11 +504,11 @@ const ChatPanel: React.FC = () => {
         e.preventDefault();
         if (!inputValue.trim() || isLoading) return;
 
-        const userMessage = inputValue; // Line 467: userMessage is defined here
+        const userMessage = inputValue;
         setInputValue('');
         
         if (mode === 'ai') {
-             const tempUserMessage: AiChatMessage = {
+            const tempUserMessage: AiChatMessage = {
                 id: nanoid(), // Use nanoid for temporary local ID
                 sender: 'user',
                 text: userMessage,
@@ -528,13 +524,16 @@ const ChatPanel: React.FC = () => {
             setIsAwaitingContinue(false);
             
             try {
-                const response = await getWorkflowFromPrompt(userMessage, context);
+                const response = await getWorkflowFromPrompt(userMessage, context, authFunctions);
                 setWorkflow(response.steps);
                 // The next bot message is added inside runNextStep
                 runNextStep(response.steps, 0); 
             } catch (error) {
                 console.error(error);
-                saveAiMessage('bot', "Sorry, I couldn't figure out how to do that. Can you try rephrasing your request?");
+                if ((error as Error).message !== 'Usage limit exceeded') {
+                    saveAiMessage('bot', "Sorry, I couldn't figure out how to do that. Can you try rephrasing your request?");
+                }
+            } finally {
                 setIsLoading(false);
             }
         } else if (mode === 'private' && privateChatTarget && user) {

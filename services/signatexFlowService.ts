@@ -1,33 +1,17 @@
-import { GEMINI_BASE_URL } from '../constants';
+import { AppContext, WorkflowStep } from '../types';
 import { NavigateFunction } from 'react-router-dom';
 import * as fmpService from './fmpService';
 import { formatCurrency } from '../utils/formatters';
-import { callGeminiProxyWithSchema, getStockPicks } from './geminiService';
+import { callGeminiProxyWithSchema, getStockPicks, getOptionsStrategy, getPortfolioRecommendation, AuthFunctions } from './geminiService';
 
 // Defines the structure of a single step in the workflow
-export interface WorkflowStep {
-    action: 'navigate' | 'type' | 'click' | 'wait' | 'say' | 'select' | 'open_stock' | 'research' | 'change_chart_view' | 'recommend_stocks' | 'plan_options_strategy' | 'get_portfolio_rec';
-    selector?: string; // CSS selector for 'type', 'click', and 'select'
-    value?: string | number; // Value for 'type', 'select', or 'open_stock' action
-    path?: string; // URL path for 'navigate' action
-    message?: string; // Message for 'say' action
-    duration?: number; // Duration in ms for 'wait' action
-    comment: string; // AI's thought process for this step
-}
+// Note: These are also exported from types.ts now for consistency
+// export interface WorkflowStep { ... }
+// export interface AppContext { ... }
 
 // Defines the expected JSON response from the AI
 interface SignatexFlowResponse {
     steps: WorkflowStep[];
-}
-
-export interface AppContext {
-    currentPage: string;
-    currentTicker?: string;
-    portfolio?: {
-        cash: number;
-        holdings: { ticker: string; shares: number }[];
-    };
-    watchlist?: string[];
 }
 
 const buildContextPrompt = (context: AppContext): string => {
@@ -90,7 +74,7 @@ const pickCriteriaSchema = {
  * @param prompt The user's command (e.g., "Buy 10 shares of AAPL").
  * @returns A promise that resolves to an object containing an array of workflow steps.
  */
-export const getWorkflowFromPrompt = async (prompt: string, context: AppContext): Promise<SignatexFlowResponse> => {
+export const getWorkflowFromPrompt = async (prompt: string, context: AppContext, auth: AuthFunctions): Promise<SignatexFlowResponse> => {
     const contextPrompt = buildContextPrompt(context);
 
     // Prompt for the "Planner" AI. Its only job is to create a JSON workflow.
@@ -146,13 +130,24 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
         const cleanedText = planData.text.replace(/^```json\s*|\s*```$/g, '').trim();
         const workflow = JSON.parse(cleanedText) as SignatexFlowResponse;
 
-        // --- Step 2: Check if the plan requires research ---
+        // --- Step 2: Determine model, check usage, and log it ---
+        const firstStep = workflow.steps[0];
+        const isMaxAction = firstStep && ['plan_options_strategy', 'get_portfolio_rec'].includes(firstStep.action);
+        const modelToCharge = isMaxAction ? 'max' : 'lite';
+
+        if (!auth.checkUsage(modelToCharge)) {
+            auth.onLimitExceeded(modelToCharge);
+            throw new Error('Usage limit exceeded');
+        }
+        
+        // Log usage for the entire operation before proceeding.
+        await auth.logUsage(modelToCharge);
+
+        // --- Step 3: Check if the plan requires an immediate AI action (research, recs, etc.) ---
         const researchStep = workflow.steps.find(step => step.action === 'research');
         if (researchStep && researchStep.message) {
             console.log("Research step found. Executing with actor AI...");
 
-            // Prompt for the "Actor" AI. Its only job is to use tools to answer a question.
-            // MODIFICATION: The prompt needs to be highly directive to avoid conversational fillers.
             const actorPrompt = `
                 Your only task is to fulfill the user's Request by calling the appropriate tool(s) and summarizing the results into a single, concise, human-readable sentence or paragraph.
                 Do not add conversational filler, do not include code, and do not ask if you should proceed. 
@@ -188,32 +183,29 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
              console.log("Recommend stocks step found. Executing client-side AI picks...");
              
              try {
-                 // NEW STEP: Use the AI to extract structured criteria from the user's free-form prompt
+                 // Use the AI to extract structured criteria from the user's free-form prompt
                  const criteriaPrompt = `Analyze the user request: "${recommendStocksStep.message}". Extract the user's implied stock criteria, defaulting to 'medium' risk, 'growth' strategy, and 'few' count if not explicitly mentioned. Return a JSON object strictly conforming to the pickCriteriaSchema.`;
                  
-                 // MODIFICATION: Call the imported function, fixing the ReferenceError
-                 const extractedCriteria = await callGeminiProxyWithSchema(criteriaPrompt, "gemini-2.5-flash", pickCriteriaSchema) as typeof pickCriteriaSchema.properties;
+                 const extractedCriteria = await callGeminiProxyWithSchema(criteriaPrompt, "gemini-2.5-flash", pickCriteriaSchema, auth) as typeof pickCriteriaSchema.properties;
                  
                  const finalAnswers = {
-                    risk: extractedCriteria.risk || 'medium',
-                    strategy: extractedCriteria.strategy || 'growth',
-                    sectors: extractedCriteria.sectors || [],
-                    stockCount: extractedCriteria.stockCount || 'few', 
+                     risk: extractedCriteria.risk || 'medium',
+                     strategy: extractedCriteria.strategy || 'growth',
+                     sectors: extractedCriteria.sectors || [],
+                     stockCount: extractedCriteria.stockCount || 'few', 
                  };
                  
                  console.log("Extracted stock pick criteria:", finalAnswers);
                  
-                 // MODIFICATION: Use the directly imported function
-                 const picksResult = await getStockPicks(finalAnswers);
+                 const picksResult = await getStockPicks(finalAnswers, auth);
                  
                  const symbols = picksResult.stocks.map(p => p.symbol).join(',');
-                 // fmpService is imported as namespace
                  const quotes = await fmpService.getQuote(symbols);
                  
                  const picksList = picksResult.stocks.map(p => {
-                    const quote = quotes.find(q => q.symbol === p.symbol);
-                    const name = quote?.name || 'N/A'; 
-                    return `${p.symbol} (${name}) - Rationale: ${p.reason}`;
+                     const quote = quotes.find(q => q.symbol === p.symbol);
+                     const name = quote?.name || 'N/A'; 
+                     return `${p.symbol} (${name}) - Rationale: ${p.reason}`;
                  }).join('\n');
                  
                  const resultText = picksList.length > 0 
@@ -247,29 +239,23 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                     throw new Error("Could not determine stock ticker for options strategy.");
                 }
 
-                const { getOptionsStrategy } = await import('./geminiService');
-                const strategyRecResponse: any = await getOptionsStrategy(planOptionsStrategyStep.message, stockTicker);
+                const strategyRecResponse: any = await getOptionsStrategy(planOptionsStrategyStep.message, stockTicker, auth);
 
-                // MODIFICATION: Parse the JSON string from the 'text' property
                 const strategyRec = JSON.parse(strategyRecResponse.text.replace(/^```json\s*|\s*```$/g, ''));
 
-                // MODIFICATION: More robustly format the structured recommendation into a human-readable message, checking for all new fields.
                 let strategyText = `**Strategy: ${strategyRec.strategyName || 'N/A'} for ${stockTicker}**\n\n`;
                 strategyText += `**Market Outlook:** ${strategyRec.marketOutlook || 'N/A'}\n`;
                 
-                // FIX 1: Explicitly check for string type and provide fallback for riskProfile/profitProfile
                 const riskProfile = typeof strategyRec.riskProfile === 'string' ? strategyRec.riskProfile : 'N/A (AI Error)';
                 const profitProfile = typeof strategyRec.profitProfile === 'string' ? strategyRec.profitProfile : 'N/A (AI Error)';
                 strategyText += `**Risk/Profit:** ${riskProfile} / ${profitProfile}\n\n`;
                 
-                // FIX 2: Ensure description is handled gracefully.
                 strategyText += `**Description:** ${strategyRec.description || 'N/A'}\n\n`;
 
                 if (strategyRec.keyMetrics) {
                     const metrics = strategyRec.keyMetrics;
                     strategyText += `**Key Metrics:**\n`;
                     strategyText += `- Underlying Price: ${formatCurrency(metrics.underlyingPrice)}\n`;
-                    // Calls to formatCurrency now handle nulls and undefined values thanks to the fix in formatters.ts
                     strategyText += `- Max Profit: ${formatCurrency(metrics.maxProfit)}\n`; 
                     strategyText += `- Max Loss: ${formatCurrency(metrics.maxLoss)}\n`;
                     strategyText += `- Breakeven: ${formatCurrency(metrics.breakevenPrice)}\n\n`; 
@@ -282,11 +268,9 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
                         const strikePrice = c.strikePrice || c.strike;
                         const premium = c.premium;
                         const expiration = c.expirationDate || c.expiry;
-
                         const formattedStrike = typeof strikePrice === 'number' ? formatCurrency(strikePrice) : 'N/A';
                         const formattedPremium = typeof premium === 'number' ? formatCurrency(premium) : 'N/A';
                         
-                        // FIX 3: Add fallback to 'N/A' inside template to prevent 'undefined' string
                         strategyText += `- **${c.action.toUpperCase()} ${c.type.toUpperCase()}** @ ${formattedStrike} (Exp: ${expiration || 'N/A'})\n`;
                         strategyText += `  - Premium: ${formattedPremium}\n`;
                         strategyText += `  - Rationale: *${c.rationale}*\n`;
@@ -297,8 +281,6 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
 
                 strategyText += `\n**Commentary:** ${strategyRec.commentary || 'N/A'}`;
 
-
-                // Replace the plan_options_strategy step with a 'say' step.
                 return {
                     steps: [{
                         action: 'say',
@@ -309,7 +291,6 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
 
             } catch (error) {
                 console.error("Error executing options strategy planning:", error);
-                // Ensure a string is returned for the error message
                 const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during strategy planning.";
                 return { steps: [{ action: 'say', message: `Sorry, I failed to plan the options strategy: ${errorMessage}`, comment: 'Options planning failed.' }] };
             }
@@ -320,15 +301,13 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
             console.log("Portfolio recommendation step found. Executing client-side AI...");
             
             try {
-                const { getPortfolioRecommendation } = await import('./geminiService');
-                // Pass the current user prompt, the full portfolio, and the current stock ticker
                 const recommendation: any = await getPortfolioRecommendation(
                     portfolioRecStep.message, 
                     context.portfolio as any,
+                    auth,
                     context.currentTicker
                 );
 
-                // Format the structured recommendation into a human-readable message
                 let recText = `**Recommendation:** ${recommendation.recommendationType || 'N/A'}\n`;
                 recText += `**Target Ticker:** ${recommendation.targetTicker || 'General Market'}\n`;
                 
@@ -341,7 +320,6 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
 
                 recText += `\n**Justification:** ${recommendation.actionJustification || 'N/A'}`;
 
-                // Replace the get_portfolio_rec step with a 'say' step.
                 return {
                     steps: [{
                         action: 'say',
@@ -357,11 +335,15 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext)
             }
         }
 
-        // If no research was needed, return the original workflow.
+        // If no special AI action was needed, return the original workflow.
         return workflow;
 
     } catch (error) {
         console.error("Error in getWorkflowFromPrompt:", error);
+        if ((error as Error).message === 'Usage limit exceeded') {
+            throw error;
+        }
         return { steps: [{ action: 'say', message: 'Sorry, I ran into a critical error.', comment: 'Workflow generation failed.' }] };
     }
 };
+

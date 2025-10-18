@@ -102,7 +102,8 @@ const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
     const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist();
-    const { user } = useAuth();
+    const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
 
     const formatGreek = useCallback((value: number | null): string => {
         if (value === null) return 'N/A';
@@ -337,30 +338,30 @@ const StockView: React.FC = () => {
         setIsKeyMetricsLoading(true);
         setKeyMetricsAnalysis(null);
         try {
-            const analysis = await geminiService.analyzeKeyMetrics(quote, profile);
+            const analysis = await geminiService.analyzeKeyMetrics(quote, profile, authFunctions);
             setKeyMetricsAnalysis(analysis);
         } catch (error) {
             console.error("AI Key Metrics Analysis failed:", error);
-            alert("The AI key metrics analysis could not be completed.");
+            // Error is handled by onLimitExceeded, no user alert needed
         } finally {
             setIsKeyMetricsLoading(false);
         }
-    }, [quote, profile]);
+    }, [quote, profile, authFunctions]);
 
     const handleAiAnalysis = useCallback(async () => {
         if (!profile || news.length === 0) return;
         setIsAiLoading(true);
         setAiAnalysis(null);
         try {
-            const analysis = await geminiService.analyzeNewsSentiment(profile.companyName, news);
+            const analysis = await geminiService.analyzeNewsSentiment(profile.companyName, news, authFunctions);
             setAiAnalysis(analysis);
         } catch (error) {
             console.error("AI Analysis failed:", error);
-            alert("The AI analysis could not be completed.");
+            // Error is handled by onLimitExceeded
         } finally {
             setIsAiLoading(false);
         }
-    }, [profile, news]);
+    }, [profile, news, authFunctions]);
 
     const handleFinancialAnalysis = useCallback(async () => {
         if (!incomeStatement || !balanceSheet || !cashFlowStatement) return;
@@ -368,15 +369,15 @@ const StockView: React.FC = () => {
         setHasRunFinancialAnalysis(true);
         setFinancialStatementAnalysis(null);
         try {
-            const analysis = await geminiService.analyzeFinancialStatements(incomeStatement, balanceSheet, cashFlowStatement);
+            const analysis = await geminiService.analyzeFinancialStatements(incomeStatement, balanceSheet, cashFlowStatement, authFunctions);
             setFinancialStatementAnalysis(analysis);
         } catch (error) {
             console.error("AI Financial Analysis failed:", error);
-            alert("The AI financial analysis could not be completed.");
+            // Error is handled by onLimitExceeded
         } finally {
             setIsAiLoading(false);
         }
-    }, [incomeStatement, balanceSheet, cashFlowStatement]);
+    }, [incomeStatement, balanceSheet, cashFlowStatement, authFunctions]);
 
     const handleTechnicalAnalysis = useCallback(async () => {
         if (historicalData.length === 0) return;
@@ -384,40 +385,41 @@ const StockView: React.FC = () => {
         setHasRunTechnicalAnalysis(true);
         setTechnicalAnalysis(null);
         try {
-            const analysis = await geminiService.getTechnicalAnalysis(historicalData);
+            const analysis = await geminiService.getTechnicalAnalysis(historicalData, authFunctions);
             setTechnicalAnalysis(analysis);
         } catch (error) {
             console.error("AI Technical Analysis failed:", error);
-            alert("The AI technical analysis could not be completed.");
+            // Error is handled by onLimitExceeded
         } finally {
             setIsAiLoading(false);
         }
-    }, [historicalData]);
+    }, [historicalData, authFunctions]);
 
     const handleAdvancedRecommendations = useCallback(async () => {
-        // FIX: Remove the strict check for analystRatings to allow analysis for ETFs and other assets.
         if (!profile || historicalData.length === 0) {
             alert("Not enough data to generate a recommendation. Please ensure the profile and price chart have loaded.");
             return;
         }
         setIsAiLoading(true);
         setHasRunAdvancedRecs(true);
-        setCombinedRec(null); // This correctly clears the previous state to prevent stale data.
+        setCombinedRec(null);
         try {
-            const technicals = await geminiService.getTechnicalAnalysis(historicalData);
+            // Note: This action makes two separate AI calls which will count as two usage events.
+            const technicals = await geminiService.getTechnicalAnalysis(historicalData, authFunctions);
             setTechnicalAnalysis(technicals);
-            // The analystRatings array will now be passed, even if it's empty. The updated AI service will handle it.
-            const recommendation = await geminiService.getCombinedRecommendations(profile, analystRatings, technicals);
+            const recommendation = await geminiService.getCombinedRecommendations(profile, analystRatings, technicals, authFunctions);
             setCombinedRec(recommendation);
 
         } catch (error) {
             console.error("AI Advanced Recommendations failed:", error);
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            alert(`The AI recommendation could not be completed. Reason: ${errorMessage}`);
+            if ((error as Error).message !== 'Usage limit exceeded') {
+                const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+                alert(`The AI recommendation could not be completed. Reason: ${errorMessage}`);
+            }
         } finally {
             setIsAiLoading(false);
         }
-    }, [profile, historicalData, analystRatings, setCombinedRec]);
+    }, [profile, historicalData, analystRatings, setCombinedRec, authFunctions]);
 
     // ADDITION: Helper function to calculate the strict minimum intrinsic value
     const calculateIntrinsicValueFloor = (stockPrice: number, strikePrice: number, optionType: 'call' | 'put'): number => {

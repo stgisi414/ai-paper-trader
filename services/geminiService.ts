@@ -1,9 +1,15 @@
-// stgisi414/ai-paper-trader/ai-paper-trader-94da2b93daad8e32642263a52b2c29d9df880b75/services/geminiService.ts
-
 import { GEMINI_BASE_URL } from '../constants';
 import * as fmpService from './fmpService';
 import { formatCurrency } from '../utils/formatters';
 import type { AiAnalysis, FmpNews, QuestionnaireAnswers, StockPick, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FinancialStatementAnalysis, FmpHistoricalData, TechnicalAnalysis, Portfolio, PortfolioRiskAnalysis, FmpQuote, FmpProfile, KeyMetricsAnalysis, AiScreener, AiWatchlistRecs, CombinedRec, FmpAnalystRating, OptionsStrategyRec, PortfolioRec, TradeAllocationRecommendation } from '../types';
+
+// Interface for auth functions passed from useAuth
+
+export interface AuthFunctions {
+  checkUsage: (model: 'max' | 'lite') => boolean;
+  logUsage: (model: 'max' | 'lite') => Promise<void>;
+  onLimitExceeded: (model: 'max' | 'lite') => void;
+}
 
 const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any): Promise<any> => {
     try {
@@ -276,111 +282,137 @@ export const callGeminiProxyWithSchema = async (prompt: string, model: string, s
     return callGeminiProxy(prompt, model, false, schema); 
 };
 
-export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[]): Promise<AiAnalysis> => {
-    const prompt = `
-        Analyze the sentiment for ${companyName} based on these headlines: ${news.map(n => n.title).join('\n')}.
-        CRITICAL TASK: Output ONLY the three top-level fields: "sentiment", "confidenceScore", and "summary".
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", sentimentAnalysisSchema);
+// --- EXPORTED FUNCTIONS WITH USAGE METERING ---
+
+const withUsageCheck = async <T,>(model: 'lite' | 'max', auth: AuthFunctions, fn: () => Promise<T>): Promise<T> => {
+    if (!auth.checkUsage(model)) {
+        auth.onLimitExceeded(model);
+        throw new Error('Usage limit exceeded');
+    }
+    const result = await fn();
+    await auth.logUsage(model);
+    return result;
 };
 
-export const getStockPicks = async (answers: QuestionnaireAnswers): Promise<{stocks: StockPick[]}> => {
-    const prompt = `
-        Recommend stocks based on these preferences: ${JSON.stringify(answers)}.
-        CRITICAL TASK: Output ONLY the single top-level field: "stocks" (containing the array).
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", stockPickingSchema);
+export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[], auth: AuthFunctions): Promise<AiAnalysis> => {
+    return withUsageCheck('lite', auth, () => {
+        const prompt = `
+            Analyze the sentiment for ${companyName} based on these headlines: ${news.map(n => n.title).join('\n')}.
+            CRITICAL TASK: Output ONLY the three top-level fields: "sentiment", "confidenceScore", and "summary".
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", sentimentAnalysisSchema);
+    });
 };
 
-export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeStatement, balanceSheet: FmpBalanceSheet, cashFlow: FmpCashFlowStatement): Promise<FinancialStatementAnalysis> => {
-    const prompt = `
+export const getStockPicks = async (answers: QuestionnaireAnswers, auth: AuthFunctions): Promise<{stocks: StockPick[]}> => {
+     return withUsageCheck('lite', auth, () => {
+        const prompt = `
+            Recommend stocks based on these preferences: ${JSON.stringify(answers)}.
+            CRITICAL TASK: Output ONLY the single top-level field: "stocks" (containing the array).
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", stockPickingSchema);
+    });
+};
+
+export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeStatement, balanceSheet: FmpBalanceSheet, cashFlow: FmpCashFlowStatement, auth: AuthFunctions): Promise<FinancialStatementAnalysis> => {
+    return withUsageCheck('max', auth, () => {
+        const prompt = `
         Analyze these financial statements: Income=${JSON.stringify(incomeStatement)}, BalanceSheet=${JSON.stringify(balanceSheet)}, CashFlow=${JSON.stringify(cashFlow)}.
         CRITICAL TASK: Output ONLY the three top-level fields: "strengths", "weaknesses", and "summary".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", financialStatementAnalysisSchema);
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", financialStatementAnalysisSchema);
+    });
 };
 
-export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[]): Promise<TechnicalAnalysis> => {
-    const prompt = `
-        Provide a technical analysis on this historical data: ${JSON.stringify(historicalData.slice(-90))}.
-        CRITICAL TASK: Output ONLY the four top-level fields: "trend", "support", "resistance", and "summary".
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", technicalAnalysisSchema);
+export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[], auth: AuthFunctions): Promise<TechnicalAnalysis> => {
+    return withUsageCheck('lite', auth, () => {
+        const prompt = `
+            Provide a technical analysis on this historical data: ${JSON.stringify(historicalData.slice(-90))}.
+            CRITICAL TASK: Output ONLY the four top-level fields: "trend", "support", "resistance", and "summary".
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", technicalAnalysisSchema);
+    });
 };
 
-export const analyzePortfolioRisk = async (portfolio: Portfolio): Promise<PortfolioRiskAnalysis> => {
-    const allTickers = new Set<string>();
-    portfolio.holdings.forEach(h => allTickers.add(h.ticker));
-    portfolio.optionHoldings.forEach(o => allTickers.add(o.underlyingTicker));
-    
-    const tickerArray = Array.from(allTickers);
-    let sectorsInfo = {};
+export const analyzePortfolioRisk = async (portfolio: Portfolio, auth: AuthFunctions): Promise<PortfolioRiskAnalysis> => {
+    return withUsageCheck('max', auth, async () => {
+        const allTickers = new Set<string>();
+        portfolio.holdings.forEach(h => allTickers.add(h.ticker));
+        portfolio.optionHoldings.forEach(o => allTickers.add(o.underlyingTicker));
+        
+        const tickerArray = Array.from(allTickers);
+        let sectorsInfo = {};
 
-    if (tickerArray.length > 0) {
-        try {
-            // Fetch profiles for all relevant tickers
-            const profiles = await fmpService.getProfile(tickerArray.join(','));
-            profiles.forEach(p => {
-                if (p.symbol && p.sector) {
-                    // Map ticker to its sector
-                    sectorsInfo[p.symbol] = p.sector;
-                }
-            });
-        } catch (e) {
-            console.error("Failed to fetch sector data for risk analysis:", e);
+        if (tickerArray.length > 0) {
+            try {
+                // Fetch profiles for all relevant tickers
+                const profiles = await fmpService.getProfile(tickerArray.join(','));
+                profiles.forEach(p => {
+                    if (p.symbol && p.sector) {
+                        // Map ticker to its sector
+                        sectorsInfo[p.symbol] = p.sector;
+                    }
+                });
+            } catch (e) {
+                console.error("Failed to fetch sector data for risk analysis:", e);
+            }
         }
-    }
 
-    const prompt = `
-        You are an expert financial risk analyst.
-        Analyze the portfolio data provided below. 
-        
-        CRITICAL TASK: Generate a JSON object that STRICTLY conforms to the following requirements:
-        1. The entire JSON must ONLY contain the three top-level keys: "riskLevel", "concentration", and "suggestions".
-        2. The "concentration" field MUST be a nested JSON object.
-        3. Calculate the highest sector exposure based on the 'Stock Sectors' provided and fill the "concentration" object. 
-           (e.g., {"highestSector": "Healthcare", "percentage": 100}).
+        const prompt = `
+            You are an expert financial risk analyst.
+            Analyze the portfolio data provided below. 
+            
+            CRITICAL TASK: Generate a JSON object that STRICTLY conforms to the following requirements:
+            1. The entire JSON must ONLY contain the three top-level keys: "riskLevel", "concentration", and "suggestions".
+            2. The "concentration" field MUST be a nested JSON object.
+            3. Calculate the highest sector exposure based on the 'Stock Sectors' provided and fill the "concentration" object. 
+               (e.g., {"highestSector": "Healthcare", "percentage": 100}).
 
-        Portfolio data: ${JSON.stringify(portfolio)}
-        Stock Sectors: ${JSON.stringify(sectorsInfo)} 
-        
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms exactly to the provided schema.
-    `;
+            Portfolio data: ${JSON.stringify(portfolio)}
+            Stock Sectors: ${JSON.stringify(sectorsInfo)} 
+            
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms exactly to the provided schema.
+        `;
 
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", portfolioRiskAnalysisSchema);
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", portfolioRiskAnalysisSchema);
+    });
 };
 
-export const getCombinedRecommendations = async (profile: FmpProfile, ratings: FmpAnalystRating[], technicals: TechnicalAnalysis): Promise<CombinedRec> => {
-    // FIX: Make the prompt resilient to missing analyst ratings for ETFs/composites.
-    const ratingsData = ratings.length > 0 ? JSON.stringify(ratings[0]) : "No analyst ratings available for this asset.";
-    
-    const prompt = `
-        As an expert financial analyst, generate a trading recommendation for ${profile.companyName} (${profile.symbol}).
-        Synthesize the following information:
-        - Profile: ${JSON.stringify(profile)}
-        - Analyst Ratings: ${ratingsData}
-        - Technical Analysis: ${JSON.stringify(technicals)}
+export const getCombinedRecommendations = async (profile: FmpProfile, ratings: FmpAnalystRating[], technicals: TechnicalAnalysis, auth: AuthFunctions): Promise<CombinedRec> => {
+    return withUsageCheck('max', auth, () => {
+        // FIX: Make the prompt resilient to missing analyst ratings for ETFs/composites.
+        const ratingsData = ratings.length > 0 ? JSON.stringify(ratings[0]) : "No analyst ratings available for this asset.";
+        
+        const prompt = `
+            As an expert financial analyst, generate a trading recommendation for ${profile.companyName} (${profile.symbol}).
+            Synthesize the following information:
+            - Profile: ${JSON.stringify(profile)}
+            - Analyst Ratings: ${ratingsData}
+            - Technical Analysis: ${JSON.stringify(technicals)}
 
-        If Analyst Ratings are not available, you MUST rely more heavily on the technical analysis and the asset's description/sector.
-        For ETFs, commodities, or funds, focus on the technical trend and the description of the underlying assets instead of traditional stock metrics.
+            If Analyst Ratings are not available, you MUST rely more heavily on the technical analysis and the asset's description/sector.
+            For ETFs, commodities, or funds, focus on the technical trend and the description of the underlying assets instead of traditional stock metrics.
 
-        CRITICAL TASK: Output ONLY the four top-level fields: "sentiment", "confidence", "strategy", and "justification".
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", combinedRecSchema);
+            CRITICAL TASK: Output ONLY the four top-level fields: "sentiment", "confidence", "strategy", and "justification".
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", combinedRecSchema);
+    });
 };
 
-export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile): Promise<KeyMetricsAnalysis> => {
-    const prompt = `
-        Provide a friendly, multi-faceted summary for ${profile.companyName} based on these key metrics: ${JSON.stringify(quote)}.
-        CRITICAL TASK: Output ONLY the single top-level field: "summary".
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", keyMetricsAnalysisSchema);
+export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile, auth: AuthFunctions): Promise<KeyMetricsAnalysis> => {
+    return withUsageCheck('lite', auth, () => {
+        const prompt = `
+            Provide a friendly, multi-faceted summary for ${profile.companyName} based on these key metrics: ${JSON.stringify(quote)}.
+            CRITICAL TASK: Output ONLY the single top-level field: "summary".
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-flash", keyMetricsAnalysisSchema);
+    });
 };
 
 export const getMarketScreenerPicks = async (userPrompt: string): Promise<AiScreener> => {
@@ -394,15 +426,17 @@ export const getMarketScreenerPicks = async (userPrompt: string): Promise<AiScre
     return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", marketScreenerSchema);
 };
 
-export const getWatchlistPicks = async (holdings: { ticker: string, shares: number }[], watchlist: string[], news: string): Promise<AiWatchlistRecs> => {
-    const prompt = `
-        Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}.
-        CRITICAL: The objects in the "picks" array MUST use the exact property names: "symbol" (the ticker), "name" (the company name), and "reason" (the rationale). 
-        DO NOT use "ticker", "company_name", or "rationale" in the final JSON.
-        CRITICAL TASK: Output ONLY the single top-level field: "picks" (containing the array).
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", watchlistRecsSchema);
+export const getMarketScreenerPicks = async (userPrompt: string, auth: AuthFunctions): Promise<AiScreener> => {
+    return withUsageCheck('max', auth, () => {
+        const prompt = `
+            Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}.
+            CRITICAL: The objects in the "picks" array MUST use the exact property names: "symbol" (the ticker), "name" (the company name), and "reason" (the rationale). 
+            DO NOT use "ticker", "company_name", or "rationale" in the final JSON.
+            CRITICAL TASK: Output ONLY the single top-level field: "picks" (containing the array).
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", watchlistRecsSchema);
+    });
 };
 
 // --- Test Function with Forceful Prompt ---
@@ -419,75 +453,81 @@ export const runToolCallingTest = async (testName: string, prompt: string): Prom
     }
 };
 
-export const getOptionsStrategy = async (userPrompt: string, stockTicker: string): Promise<OptionsStrategyRec> => {
-    const prompt = `
-        As an expert options strategist, analyze the current market data for ${stockTicker} and devise a concrete options strategy based on the user's request: "${userPrompt}". 
-        
-        Use the 'get_fmp_quote' and 'get_options_chain' tools to retrieve necessary data. When retrieving options data, fetch contracts expiring closest to 30-60 days out. 
-        
-        CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. The 'suggestedContracts' array MUST contain the specific legs of the proposed strategy.
-    `;
-    // We use gemini-2.5-pro for its better reasoning and tool-use
-    return callGeminiProxy(prompt, "gemini-2.5-pro", true, optionsStrategySchema); 
+export const getWatchlistPicks = async (holdings: { ticker: string, shares: number }[], watchlist: string[], news: string, auth: AuthFunctions): Promise<AiWatchlistRecs> => {
+    return withUsageCheck('max', auth, () => {
+        const prompt = `Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}. Output ONLY JSON.`;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", watchlistRecsSchema);
+    });
 };
 
-export const getPortfolioRecommendation = async (userPrompt: string, portfolio: Portfolio, currentTicker?: string): Promise<PortfolioRec> => {
-    
-    let currentTickerProfile: FmpProfile | null = null;
-    if (currentTicker) {
-        try {
-            // Fetch profile for context (sector, industry)
-            const profiles = await fmpService.getProfile(currentTicker);
-            currentTickerProfile = profiles[0] || null;
-        } catch (e) {
-            console.error(`Failed to fetch profile for ${currentTicker}:`, e);
+export const getOptionsStrategy = async (userPrompt: string, stockTicker: string, auth: AuthFunctions): Promise<OptionsStrategyRec> => {
+    return withUsageCheck('max', auth, () => {
+        const prompt = `
+            As an expert options strategist, analyze the current market data for ${stockTicker} and devise a concrete options strategy based on the user's request: "${userPrompt}". 
+            
+            Use the 'get_fmp_quote' and 'get_options_chain' tools to retrieve necessary data. When retrieving options data, fetch contracts expiring closest to 30-60 days out. 
+            
+            CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. The 'suggestedContracts' array MUST contain the specific legs of the proposed strategy.
+        `;
+        // We use gemini-2.5-pro for its better reasoning and tool-use
+        return callGeminiProxy(prompt, "gemini-2.5-pro", true, optionsStrategySchema); 
+    });
+};
+
+export const getPortfolioRecommendation = async (userPrompt: string, portfolio: Portfolio, auth: AuthFunctions, currentTicker?: string): Promise<PortfolioRec> => {
+    return withUsageCheck('max', auth, async () => {    
+        let currentTickerProfile: FmpProfile | null = null;
+        if (currentTicker) {
+            try {
+                // Fetch profile for context (sector, industry)
+                const profiles = await fmpService.getProfile(currentTicker);
+                currentTickerProfile = profiles[0] || null;
+            } catch (e) {
+                console.error(`Failed to fetch profile for ${currentTicker}:`, e);
+            }
         }
-    }
-    
-    const prompt = `
-        You are an expert portfolio manager. Your task is to provide a single, actionable investment recommendation based on the user's explicit request and their current portfolio risk context.
-
-        **User Request:** "${userPrompt}"
         
-        **Current Portfolio Summary:** ${JSON.stringify({
-            cash: portfolio.cash,
-            // Keep holdings simple to reduce prompt size
-            holdings: portfolio.holdings.map(h => ({ ticker: h.ticker, shares: h.shares, value: h.shares * h.currentPrice })),
-            optionHoldings: portfolio.optionHoldings.map(o => ({ symbol: o.symbol, underlying: o.underlyingTicker })),
-        })}
-        
-        ${currentTickerProfile ? `**Current Stock Context (${currentTicker}):** ${JSON.stringify({ sector: currentTickerProfile.sector, industry: currentTickerProfile.industry, description: currentTickerProfile.description.substring(0, 100) + '...' })}` : ''}
+        const prompt = `
+            You are an expert portfolio manager. Your task is to provide a single, actionable investment recommendation based on the user's explicit request and their current portfolio risk context.
 
-        CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. Analyze the portfolio for over/under-exposure and suggest a definitive action (Buy, Sell, Hold, Rebalance, or New Idea).
-    `;
-    // Use gemini-2.5-pro for complex reasoning. Set enableTools to false as the data is provided in the prompt.
-    return callGeminiProxy(prompt, "gemini-2.5-pro", false, portfolioRecSchema); 
+            **User Request:** "${userPrompt}"
+            
+            **Current Portfolio Summary:** ${JSON.stringify({
+                cash: portfolio.cash,
+                // Keep holdings simple to reduce prompt size
+                holdings: portfolio.holdings.map(h => ({ ticker: h.ticker, shares: h.shares, value: h.shares * h.currentPrice })),
+                optionHoldings: portfolio.optionHoldings.map(o => ({ symbol: o.symbol, underlying: o.underlyingTicker })),
+            })}
+            
+            ${currentTickerProfile ? `**Current Stock Context (${currentTicker}):** ${JSON.stringify({ sector: currentTickerProfile.sector, industry: currentTickerProfile.industry, description: currentTickerProfile.description.substring(0, 100) + '...' })}` : ''}
+
+            CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. Analyze the portfolio for over/under-exposure and suggest a definitive action (Buy, Sell, Hold, Rebalance, or New Idea).
+        `;
+        // Use gemini-2.5-pro for complex reasoning. Set enableTools to false as the data is provided in the prompt.
+        return callGeminiProxy(prompt, "gemini-2.5-pro", false, portfolioRecSchema); 
+    });
 };
 
-export const getTradeAllocation = async (
-    newsAnalysis: AiAnalysis,
-    riskTolerance: string,
-    investmentGoal: string,
-    quotes: FmpQuote[],
-    amountToAllocate: number
-): Promise<TradeAllocationRecommendation> => {
-    const prompt = `
-        As an expert portfolio manager, create a trade allocation recommendation based on the following data.
+export const getTradeAllocation = async (newsAnalysis: AiAnalysis, riskTolerance: string, investmentGoal: string, quotes: FmpQuote[], amountToAllocate: number, auth: AuthFunctions): Promise<TradeAllocationRecommendation> => {
+    return withUsageCheck('max', auth, () => {
+        const prompt = `
+            As an expert portfolio manager, create a trade allocation recommendation based on the following data.
 
-        **CONTEXT:**
-        - **Available Cash for Investment:** ${formatCurrency(amountToAllocate)}
-        - **User's Stated Risk Tolerance:** "${riskTolerance}"
-        - **User's Stated Investment Goal:** "${investmentGoal}"
-        - **Recent News Sentiment Analysis:** - Sentiment: ${newsAnalysis.sentiment}
-          - Confidence: ${newsAnalysis.confidenceScore.toFixed(2)}
-          - Summary: "${newsAnalysis.summary}"
-        - **Current Stock Data for Watchlist:**
-          ${quotes.map(q => `- ${q.symbol}: Price=${formatCurrency(q.price)}, Change=${q.change.toFixed(2)} (${q.changesPercentage.toFixed(2)}%)`).join('\n')}
+            **CONTEXT:**
+            - **Available Cash for Investment:** ${formatCurrency(amountToAllocate)}
+            - **User's Stated Risk Tolerance:** "${riskTolerance}"
+            - **User's Stated Investment Goal:** "${investmentGoal}"
+            - **Recent News Sentiment Analysis:** - Sentiment: ${newsAnalysis.sentiment}
+              - Confidence: ${newsAnalysis.confidenceScore.toFixed(2)}
+              - Summary: "${newsAnalysis.summary}"
+            - **Current Stock Data for Watchlist:**
+              ${quotes.map(q => `- ${q.symbol}: Price=${formatCurrency(q.price)}, Change=${q.change.toFixed(2)} (${q.changesPercentage.toFixed(2)}%)`).join('\n')}
 
-        **CRITICAL TASK:**
-        Generate a JSON object that provides a clear investment allocation plan. The 'reasoning' must explain how the allocation aligns with the user's goals, risk tolerance, and the provided market data. The 'allocations' should break down how to distribute the specified "Available Cash for Investment". Do not recommend allocating more than this amount.
-        
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms exactly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", tradeAllocationSchema);
+            **CRITICAL TASK:**
+            Generate a JSON object that provides a clear investment allocation plan. The 'reasoning' must explain how the allocation aligns with the user's goals, risk tolerance, and the provided market data. The 'allocations' should break down how to distribute the specified "Available Cash for Investment". Do not recommend allocating more than this amount.
+            
+            YOU MUST RESPOND ONLY with a valid JSON object that conforms exactly to the provided schema.
+        `;
+        return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", tradeAllocationSchema);
+    });
 };

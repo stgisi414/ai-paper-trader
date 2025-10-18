@@ -8,9 +8,9 @@ import type { FmpSearchResult, CombinedRec, WatchlistPick, FmpHistoricalData, Te
 import { WatchlistSortKey } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
-import { formatCurrency, formatPercentage, formatNumber } from '../utils/formatters';
 import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, BrainCircuitIcon, SaveIcon, FilterIcon, NewspaperIcon, RegenerateIcon, SettingsIcon, EditIcon, SortIcon, SortAscIcon, SortDescIcon } from './common/Icons';
 import WatchlistNews from './WatchlistNews';
+import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
 
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities", "Basic Materials"];
 
@@ -111,6 +111,9 @@ const Watchlist: React.FC = () => {
     } = useWatchlist();
     
     const { portfolio } = usePortfolio();
+    const { checkUsage, logUsage, onLimitExceeded } = useAuth(); // Metering functions
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
@@ -143,12 +146,10 @@ const Watchlist: React.FC = () => {
     const sortedAndFilteredWatchlist = useMemo(() => {
         let sortedList = [...watchlist]; // Start with the raw watchlist data
         
-        // 1. Apply Filter
         if (sectorFilter) {
             sortedList = sortedList.filter(item => item.sector === sectorFilter);
         }
 
-        // 2. Apply Sort
         if (sortKey) {
             sortedList.sort((a, b) => {
                 let aValue: string | number;
@@ -170,7 +171,6 @@ const Watchlist: React.FC = () => {
                     return (aValue - bValue) * modifier;
                 }
                 
-                // String comparison for 'ticker'
                 if (String(aValue) < String(bValue)) return -1 * modifier;
                 if (String(aValue) > String(bValue)) return 1 * modifier;
                 return 0;
@@ -215,7 +215,6 @@ const Watchlist: React.FC = () => {
     };
 
     const handleDragEnd = () => {
-        // DRAGGING ONLY APPLIES IF NOT SORTED
         if (dragItem.current !== null && dragOverItem.current !== null && !sortKey) {
             reorderWatchlistItems(dragItem.current, dragOverItem.current);
         }
@@ -224,9 +223,9 @@ const Watchlist: React.FC = () => {
     };
 
     const handleSetSort = (key: WatchlistSortKey | null) => {
-        setSort(key); // Use the hook's setter to manage key and direction
-        setShowSorts(false); // Close the menu
-        setShowFilters(false); // Close filters too
+        setSort(key);
+        setShowSorts(false);
+        setShowFilters(false);
     };
     
     const handleSmartRecs = useCallback(async () => {
@@ -238,21 +237,20 @@ const Watchlist: React.FC = () => {
             const newsSummary = generalNews.map(n => n.title).join('. ');
             const holdings = portfolio.holdings.map(h => ({ ticker: h.ticker, shares: h.shares }));
             const watchlistTickers = watchlist.map(w => w.ticker);
-            const result = await geminiService.getWatchlistPicks(holdings, watchlistTickers, newsSummary);
+            const result = await geminiService.getWatchlistPicks(holdings, watchlistTickers, newsSummary, authFunctions);
             setRecommendations(result.picks);
         } catch (error) {
             console.error("Smart Picker failed:", error);
-            setRecError("Could not generate recommendations at this time.");
+            if ((error as Error).message !== 'Usage limit exceeded') {
+                setRecError("Could not generate recommendations at this time.");
+            }
         } finally {
             setIsRecLoading(false);
         }
-    }, [portfolio.holdings, watchlist]);
+    }, [portfolio.holdings, watchlist, authFunctions]);
 
     const handleGenerateRec = useCallback(async (ticker: string) => {
         setIndividualRecLoading(prev => new Set(prev).add(ticker));
-        
-        // FIX: Explicitly clear the old recommendation *before* fetching the new one.
-        // This prevents the stale data bug if the API call fails.
         setLocalRecs(prev => {
             const newState = { ...prev };
             delete newState[ticker];
@@ -272,20 +270,24 @@ const Watchlist: React.FC = () => {
                  throw new Error("Missing essential profile or historical data for analysis.");
             }
 
-            const technicals: TechnicalAnalysis = await geminiService.getTechnicalAnalysis(historical);
+            // This counts as one "Lite" usage
+            const technicals: TechnicalAnalysis = await geminiService.getTechnicalAnalysis(historical, authFunctions);
+            // This counts as one "Pro" usage
             const recommendation: CombinedRec = await geminiService.getCombinedRecommendations(
                 profileData, 
                 ratingsData,
-                technicals
+                technicals,
+                authFunctions
             );
 
-            // Update state with the new, correct recommendation. It will be saved automatically.
             setLocalRecs(prev => ({ ...prev, [ticker]: recommendation }));
 
         } catch (error) {
             console.error(`AI Recommendation failed for ${ticker}:`, error);
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            alert(`The AI recommendation for ${ticker} could not be completed. Reason: ${errorMessage}`);
+            if ((error as Error).message !== 'Usage limit exceeded') {
+                const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+                alert(`The AI recommendation for ${ticker} could not be completed. Reason: ${errorMessage}`);
+            }
         } finally {
             setIndividualRecLoading(prev => {
                 const newSet = new Set(prev);
@@ -293,7 +295,7 @@ const Watchlist: React.FC = () => {
                 return newSet;
             });
         }
-    }, []);
+    }, [authFunctions]);
 
     return (
         <>
@@ -337,7 +339,7 @@ const Watchlist: React.FC = () => {
                             <FilterIcon className="h-6 w-6" />
                         </button>
 
-                        {showSorts && ( // ADDITION: Sort Menu Pop-up
+                        {showSorts && (
                             <div className="absolute top-full right-0 mt-2 bg-night-600 p-2 rounded-md shadow-lg z-10 w-48">
                                 <ul className="space-y-1">
                                     <li><button onClick={() => handleSetSort(null)} className="w-full text-left px-3 py-2 text-sm rounded-md text-red-400 hover:bg-night-500">Clear Sort</button></li>
@@ -418,7 +420,7 @@ const Watchlist: React.FC = () => {
                 {recommendations.length > 0 && (
                     <div className="mb-4 p-4 bg-night-700 rounded-lg space-y-3">
                         <h3 className="font-bold text-yellow-400">AI Suggestions</h3>
-                        {recommendations.map((rec, index) => ( // <-- ADD 'index' argument here
+                        {recommendations.map((rec, index) => (
                             <div key={rec.symbol || index} className="text-sm">
                                 <div className="flex justify-between items-center">
                                     <span className="font-bold">{rec.symbol} - {rec.name}</span>
@@ -437,7 +439,6 @@ const Watchlist: React.FC = () => {
                                 Filtering by: <span className="font-bold text-purple-400">{sectorFilter}</span>
                             </div>
                         )}
-                        {/* ADDITION: Display current sort status */}
                         {sortKey && (
                             <div className="p-2 text-sm text-center bg-night-700 rounded-md mb-2">
                                 Sorting by: <span className="font-bold text-green-400">{sortKey === 'ticker' ? 'Ticker' : 'Change'} ({sortDirection === 'desc' ? 'High-Low' : 'Low-High'})</span>
@@ -446,7 +447,6 @@ const Watchlist: React.FC = () => {
                         <table className="w-full text-left">
                             <thead className="border-b border-night-600">
                                 <tr>
-                                    {/* MODIFICATION: Only show drag handle column if not sorted */}
                                     <th className="p-3 w-8">
                                         {sortKey ? '' : <GripVerticalIcon className="h-5 w-5 text-night-500" />}
                                     </th>
@@ -462,7 +462,6 @@ const Watchlist: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {/* MODIFICATION: Iterate over displayedWatchlist */}
                                 {displayedWatchlist.length === 0 ? (
                                     <tr><td colSpan={6} className="text-center p-6 text-night-500">{sectorFilter ? `No stocks in this watchlist match the filter.` : `Your watchlist is empty.`}</td></tr>
                                 ) : (
@@ -475,7 +474,7 @@ const Watchlist: React.FC = () => {
                                             <tr 
                                                 key={item.ticker}
                                                 className="border-b border-night-700 hover:bg-night-700"
-                                                draggable={!sortKey} // MODIFICATION: Only draggable if not sorted
+                                                draggable={!sortKey}
                                                 onDragStart={() => dragItem.current = index}
                                                 onDragEnter={() => dragOverItem.current = index}
                                                 onDragEnd={handleDragEnd}
@@ -487,12 +486,10 @@ const Watchlist: React.FC = () => {
                                                 <td className="p-3 font-bold">
                                                     <Link to={`/stock/${item.ticker}`} className="text-brand-blue hover:underline">{item.ticker}</Link>
                                                 </td>
-                                                {/* ... rest of the row data ... */}
                                                 <td className="p-3 font-semibold">{formatCurrency(item.price)}</td>
                                                 <td className={`p-3 font-semibold ${priceChangeColor}`}>
                                                     {formatCurrency(item.change)} ({formatPercentage(item.changesPercentage)})
                                                 </td>
-                                                {/* ... AI Rec column data ... */}
                                                 <td className="p-3 text-xs">
                                                     <div className="flex items-center gap-2">
                                                         {isGeneratingRec ? (

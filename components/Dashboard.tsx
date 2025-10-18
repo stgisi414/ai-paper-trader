@@ -12,11 +12,13 @@ import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
 import ActiveUsers from './ActiveUsers';
-import { useAuth } from '../src/hooks/useAuth.tsx';
+import { useAuth } from '../src/hooks/useAuth';
 import { SignatexMaxIcon } from './common/Icons';
 
 const Dashboard: React.FC = () => {
-    const { user } = useAuth();
+    const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+
     const { portfolio, totalValue, isLoading: isPortfolioLoading, manualSellOption, sellAllStock } = usePortfolio();
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
@@ -36,7 +38,7 @@ const Dashboard: React.FC = () => {
         setIsTesting(true);
         setTestResult(null);
         try {
-            const result = await geminiService.runToolCallingTest(testName, prompt, ticker);
+            const result = await geminiService.runToolCallingTest(testName, prompt, authFunctions);
             console.log(`Gemini Tool Test [${testName}] successful:`, result);
             setTestResult({ name: testName, result: result.text });
         } catch (error) {
@@ -45,7 +47,7 @@ const Dashboard: React.FC = () => {
         } finally {
             setIsTesting(false);
         }
-    }, []);
+    }, [authFunctions, testTicker]);
 
     const handleSearch = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -72,15 +74,15 @@ const Dashboard: React.FC = () => {
         setIsAnalyzing(true);
         setPortfolioAnalysis(null);
         try {
-            const analysis = await geminiService.analyzePortfolioRisk(portfolio);
+            const analysis = await geminiService.analyzePortfolioRisk(portfolio, authFunctions);
             setPortfolioAnalysis(analysis);
         } catch (error) {
             console.error("Portfolio analysis failed:", error);
-            console.error("The AI portfolio analysis could not be completed.");
+            // Error is handled by onLimitExceeded, no need for user alert here
         } finally {
             setIsAnalyzing(false);
         }
-    }, [portfolio]);
+    }, [portfolio, authFunctions]);
     
     const holdingsValue = totalValue - portfolio.cash;
     const totalGain = totalValue - portfolio.initialValue;
@@ -319,13 +321,11 @@ const Dashboard: React.FC = () => {
                                             <tr><td colSpan={8} className="text-center p-6 text-night-500">You do not own any stocks.</td></tr>
                                         ) : (
                                             portfolio.holdings.map(h => {
-                                                // FIX START: Define the missing variables here
                                                 const totalValue = h.shares * h.currentPrice;
                                                 const openGain = (h.currentPrice - h.purchasePrice) * h.shares;
                                                 const openGainPercent = h.purchasePrice > 0 ? (openGain / (h.purchasePrice * h.shares)) * 100 : 0;
                                                 const dayGain = h.shares * (h.change || 0);
                                                 const dayGainPercent = h.changesPercentage || 0;
-                                                // FIX END
                                                 return (
                                                     <tr key={h.ticker} className="border-b border-night-700 hover:bg-night-700">
                                                         <td className="p-3 font-bold"><Link to={`/stock/${h.ticker}`} className="text-brand-blue hover:underline">{h.ticker}</Link></td>

@@ -6,6 +6,7 @@ import Spinner from './common/Spinner';
 import { BrainCircuitIcon } from './common/Icons';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
 import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
+import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
 
 interface WatchlistNewsProps {
     tickers: string[];
@@ -14,6 +15,9 @@ interface WatchlistNewsProps {
 }
 
 const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnHand }) => {
+    const { checkUsage, logUsage, onLimitExceeded } = useAuth(); // Metering functions
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+
     const [news, setNews] = useState<FmpNews[]>([]);
     const [quotes, setQuotes] = useState<FmpQuote[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -59,15 +63,17 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
         setAnalysis(null);
         try {
             const companyName = tickers.length > 1 ? `the companies in the watchlist (${tickers.join(', ')})` : tickers[0];
-            const analysisResult = await geminiService.analyzeNewsSentiment(companyName, news);
+            const analysisResult = await geminiService.analyzeNewsSentiment(companyName, news, authFunctions);
             setAnalysis(analysisResult);
         } catch (error) {
             console.error("Watchlist news analysis failed:", error);
-            alert("The AI news analysis could not be completed at this time.");
+            if ((error as Error).message !== 'Usage limit exceeded') {
+                alert("The AI news analysis could not be completed at this time.");
+            }
         } finally {
             setIsAnalyzing(false);
         }
-    }, [news, tickers]);
+    }, [news, tickers, authFunctions]);
 
     const handleGenerateAllocation = useCallback(async () => {
         if (!analysis) return;
@@ -85,22 +91,24 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
         setIsAllocating(true);
         setAllocationResult(null);
         try {
-            // FIX: Ensure all three parameters are passed to the service
             const result = await geminiService.getTradeAllocation(
                 analysis,
                 riskTolerance,
                 investmentGoal,
                 quotes,
-                Number(amountToAllocate)
+                Number(amountToAllocate),
+                authFunctions
             );
             setAllocationResult(result);
         } catch (error) {
             console.error("Trade allocation failed:", error);
-            alert("The AI trade allocation could not be completed.");
+            if ((error as Error).message !== 'Usage limit exceeded') {
+                alert("The AI trade allocation could not be completed.");
+            }
         } finally {
             setIsAllocating(false);
         }
-    }, [analysis, riskTolerance, investmentGoal, quotes, cashOnHand, amountToAllocate]);
+    }, [analysis, riskTolerance, investmentGoal, quotes, cashOnHand, amountToAllocate, authFunctions]);
 
     return (
         <div className="fixed inset-0 bg-night-900 bg-opacity-80 flex justify-center items-center z-50 p-4">
@@ -119,9 +127,7 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
                     </button>
                 </div>
 
-                {/* FIX: This is the main scrolling container. Added `min-h-0` to constrain its height properly. */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-                    {/* Top-level container for analysis and news list */}
                     <div>
                         <button
                             onClick={handleAnalyzeNews}
@@ -150,7 +156,6 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
 
                                     {showAllocationForm && (
                                         <div className="space-y-4">
-                                            {/* FIX START: Restore the missing UI for risk and goal */}
                                             <div>
                                                 <label className="block text-sm font-medium text-night-100 mb-2">What is your risk tolerance?</label>
                                                 <div className="flex gap-2">
@@ -167,7 +172,6 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
                                                     ))}
                                                 </div>
                                             </div>
-                                            {/* FIX END */}
                                             
                                             <div>
                                                 <label htmlFor="allocation-amount" className="block text-sm font-medium text-night-100 mb-2">

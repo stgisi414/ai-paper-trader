@@ -6,6 +6,7 @@ import { BrainCircuitIcon } from './common/Icons';
 import * as geminiService from '../services/geminiService';
 import type { AiScreener } from '../types';
 import { SignatexMaxIcon } from './common/Icons';
+import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
 
 interface ScreenerOption {
     id: string;
@@ -21,6 +22,9 @@ const screenerOptions: ScreenerOption[] = [
 ];
 
 const MarketScreener: React.FC = () => {
+    const { checkUsage, logUsage, onLimitExceeded } = useAuth(); // Get auth functions
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+
     const [activeScreen, setActiveScreen] = useState<string | null>(null);
     const [screenerResult, setScreenerResult] = useState<AiScreener | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -30,27 +34,30 @@ const MarketScreener: React.FC = () => {
         setActiveScreen(option.id);
         setIsLoading(true);
         setError(null);
-        setScreenerResult(null); // Ensure it's null before starting
+        setScreenerResult(null);
 
         try {
-            const result = await geminiService.getMarketScreenerPicks(option.prompt);
+            const result = await geminiService.getMarketScreenerPicks(option.prompt, authFunctions);
             setScreenerResult(result);
         } catch (err) {
             console.error(err);
-            // FIX: Explicitly set result to null on failure to prevent render crashes
-            setScreenerResult(null); 
-            setError("Failed to run AI screener. Please check your API keys or try again.");
+            // Don't set a generic error if the modal was opened by onLimitExceeded
+            if ((err as Error).message !== 'Usage limit exceeded') {
+                setError("Failed to run AI screener. Please try again.");
+            }
+            setScreenerResult(null);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [authFunctions]);
+
     return (
         <Card>
             <div className="flex items-center gap-2 mb-6">
                 <BrainCircuitIcon className="h-6 w-6 text-yellow-400" />
                 <h2 className="text-2xl font-bold text-yellow-400">AI Market Screener</h2>
-                <SignatexMaxIcon 
-                    className="h-5 w-5 text-yellow-500 ml-1" 
+                <SignatexMaxIcon
+                    className="h-5 w-5 text-yellow-500 ml-1"
                 />
             </div>
 

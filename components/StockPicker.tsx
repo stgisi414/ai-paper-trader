@@ -6,11 +6,15 @@ import type { QuestionnaireAnswers, StockPick } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { BrainCircuitIcon } from './common/Icons';
+import { useAuth } from '../src/hooks/useAuth';
 import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities"];
 
 const StockPicker: React.FC = () => {
+    const { checkUsage, logUsage, onLimitExceeded } = useAuth();
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+
     const [answers, setAnswers] = useState<QuestionnaireAnswers>({
         risk: 'medium',
         strategy: 'growth',
@@ -41,7 +45,7 @@ const StockPicker: React.FC = () => {
         setStockPicks([]);
 
         try {
-            const picks = await geminiService.getStockPicks(answers);
+            const picks = await geminiService.getStockPicks(answers, authFunctions);
             
             if (picks.stocks.length > 0) {
                 const symbols = picks.stocks.map(p => p.symbol).join(',');
@@ -62,7 +66,9 @@ const StockPicker: React.FC = () => {
             }
         } catch (err) {
             console.error(err);
-            setError("An error occurred while getting stock picks. Please try again.");
+            if ((err as Error).message !== 'Usage limit exceeded') {
+                setError("An error occurred while getting stock picks. Please try again.");
+            }
         } finally {
             setIsLoading(false);
         }

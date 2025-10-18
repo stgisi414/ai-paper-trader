@@ -365,8 +365,8 @@ export interface OptionHolding {
   optionType: 'call' | 'put';
   strikePrice: number;
   expirationDate: string;
-  volume: number | null; 
-  open_interest: number | null; 
+  volume: number | null;
+  open_interest: number | null;
   delta: number | null;
   gamma: number | null;
   theta: number | null;
@@ -430,9 +430,9 @@ export interface YahooOptionContract {
         theta: number;
         vega: number;
     };
-    currency?: string; 
+    currency?: string;
     contractSize?: string;
-    lastTradeDate?: string; 
+    lastTradeDate?: string;
 }
 
 export interface WatchlistPick {
@@ -458,13 +458,20 @@ export interface TradeAllocationRecommendation {
     }>;
 }
 
+// Consolidated and updated User type
 export interface User {
   uid: string;
-  email: string | null; // Make email nullable to match Firebase Auth
-  displayName: string | null; // Make displayName nullable
-  photoURL: string | null; // Make photoURL nullable
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
   fontSize: 'small' | 'medium' | 'large';
+  // Added fields for subscription and usage
+  isPro?: boolean;
+  maxUsed?: number;
+  liteUsed?: number;
+  lastUsageReset?: import('firebase/firestore').Timestamp;
 }
+
 
 export interface AiChatMessage {
     id: string;
@@ -472,3 +479,25 @@ export interface AiChatMessage {
     text: string;
     timestamp: number;
 }
+
+// Add these new interfaces for the AI workflow context
+export interface WorkflowStep {
+    action: 'navigate' | 'type' | 'click' | 'wait' | 'say' | 'select' | 'open_stock' | 'research' | 'change_chart_view' | 'recommend_stocks' | 'plan_options_strategy' | 'get_portfolio_rec';
+    selector?: string;
+    value?: string | number;
+    path?: string;
+    message?: string;
+    duration?: number;
+    comment: string;
+}
+
+export interface AppContext {
+    currentPage: string;
+    currentTicker?: string;
+    portfolio?: {
+        cash: number;
+        holdings: { ticker: string; shares: number }[];
+    };
+    watchlist?: string[];
+}
+
