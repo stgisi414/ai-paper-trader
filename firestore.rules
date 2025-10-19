@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    match /users/{userId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth.uid == userId;
+      
+      match /data/{document=**} {
+        allow read, write: if request.auth.uid == userId;
+      }
+      
+      match /drawings/{ticker} {
+        allow read, write: if request.auth.uid == userId;
+      }
+
+      // Rule for AI Chat History
+      match /aiChatMessages/{document} {
+        allow read, write: if request.auth.uid == userId;
+      }
+
+      // FIX: Rule for Chat History
+      // Grants access to the list of recent chats
+      match /chatHistory/{otherUserId} {
+        // Only the owner (userId) can read their list
+        allow read: if request.auth.uid == userId;
+
+        // Allow write if:
+        // 1. The user is writing to their own list (userId == request.auth.uid)
+        //    OR
+        // 2. The user is writing to the *recipient's* list, AND the document being written 
+        //    (otherUserId) is the *sender's* UID (otherUserId == request.auth.uid).
+        allow write: if request.auth.uid == userId 
+                   || (request.auth.uid != null && otherUserId == request.auth.uid);
+      }
+      
+      // FIX: Adjust permissions for notifications
+      match /unreadMessages/{messageId} {
+        // Only the owner can read or delete their notifications
+        allow read, delete: if request.auth.uid == userId;
+        // Any authenticated user can write (i.e., send) a notification to another user
+        allow write: if request.auth != null;
+      }
+    }
+    
+    match /chats/{chatRoomId} {
+      function isChatParticipant(chatId) {
+        let parts = chatId.split('_');
+        return parts.size() == 2 && (request.auth.uid == parts[0] || request.auth.uid == parts[1]);
+      }
+
+      allow create: if request.auth.uid != null;
+
+      match /messages/{messageId} {
+        allow read, write: if isChatParticipant(chatRoomId);
+      }
+    }
+    
+    match /users/{userId}/aiChatMessages/{chatMessageId} {
+      allow read, create, update, delete: if request.auth.uid == userId;
+    }
+    
+    match /customers/{uid} {
+      // Allow user to read AND create their own customer document
+      allow read, create: if request.auth.uid == uid;
+
+      // This rule is correct and allows checkout
+      match /checkout_sessions/{id} {
+        allow read, write: if request.auth.uid == uid;
+      }
+      // This rule is fine
+      match /subscriptions/{id} {
+        allow read: if request.auth.uid == uid;
+      }
+      // This rule is fine
+      match /payments/{id} {
+        allow read: if request.auth.uid == uid;
+      }
+
+      // ADD THIS RULE: Allow user to write to their own portal_links
+      match /portal_links/{id} {
+        allow read, write: if request.auth.uid == uid;
+      }
+    }
+
+    match /subscriptions/{id} {
+      allow read: if true;
+
+      match /prices/{id} {
+        allow read: if true;
+      }
+
+      match /tax_rates/{id} {
+        allow read: if true;
+      }
+    }
+  }
+}

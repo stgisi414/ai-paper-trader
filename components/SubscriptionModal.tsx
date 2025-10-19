@@ -50,25 +50,49 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
     const [isLoadingPortal, setIsLoadingPortal] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleSubscribe = async (priceId: string) => {
+    const handleSubscribeWrapper = (priceId: string, planName: string) => (event: React.MouseEvent) => {
+        // Prevent default button behavior if any, and stop propagation
+        event.preventDefault();
+        event.stopPropagation();
+        // Call the actual async handler
+        handleSubscribe(priceId, planName);
+    };
+
+    const handleSubscribe = async (priceId: string, planName: string) => {
+        console.log(`[handleSubscribe] Attempting subscription for plan: ${planName}, priceId: ${priceId}`); // Log entry
         if (!user) {
+            console.error("[handleSubscribe] Error: User not logged in.");
             setError("You must be logged in to subscribe.");
             return;
         }
+        console.log(`[handleSubscribe] User ID: ${user.uid}`); // Log user ID
         setError(null);
-        setIsLoading(prev => ({ ...prev, [priceId]: true })); // Set loading for specific priceId
+        setIsLoading(prev => ({ ...prev, [priceId]: true }));
 
         try {
+            console.log("[handleSubscribe] Calling createStripeCheckoutSession..."); // Log before call
             await createStripeCheckoutSession(priceId);
-            // Redirect happens in stripeService
+            console.log("[handleSubscribe] createStripeCheckoutSession finished (should redirect)."); // Log after call (might not be reached if redirect happens)
+            // Redirect happens in stripeService if successful
         } catch (err) {
-            console.error("Subscription failed:", err);
-            setError(err instanceof Error ? err.message : "An unexpected error occurred.");
-            setIsLoading(prev => ({ ...prev, [priceId]: false })); // Clear loading only on error
+            // Keep existing error handling
+            console.error(`[handleSubscribe] Checkout for ${planName} failed:`, err);
+            const errorMessage = (err instanceof Error && err.message) ? err.message : "An unexpected error occurred during checkout.";
+            setError(errorMessage);
+            setIsLoading(prev => ({ ...prev, [priceId]: false }));
         }
+        // No finally block needed here, loading is cleared on error or redirect happens
     };
 
-     const handleManageSubscription = async () => {
+     const handleManageSubscriptionWrapper = (event: React.MouseEvent) => {
+        // Prevent default button behavior if any, and stop propagation
+        event.preventDefault();
+        event.stopPropagation();
+        // Call the actual async handler
+        handleManageSubscription();
+     };
+
+    const handleManageSubscription = async () => {
         setError(null);
         setIsLoadingPortal(true);
         try {
@@ -76,11 +100,10 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
             // Page will redirect
         } catch (err) {
             console.error("Failed to redirect to customer portal:", err);
-            setError(err instanceof Error ? err.message : "Could not open billing portal.");
-            setIsLoadingPortal(false);
+            const errorMessage = (err instanceof Error && err.message) ? err.message : "Could not open the billing portal.";
+            setError(errorMessage);
         } finally {
-             // Ensure loading state is reset even if redirection fails immediately
-             // (though usually the page redirects before this)
+             // Ensure loading state is always reset
              setIsLoadingPortal(false);
         }
     };
@@ -92,6 +115,11 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
 
     // Determine current plan based on isPro (can be expanded later if more tiers exist)
     const currentPlanName = isPro ? "Pro" : "Basic/Free"; // Assuming non-Pro is Basic/Free
+
+    // --- ADD LOGGING HERE ---
+    console.log("[SubscriptionModal Render] Error State:", error);
+    console.log("[SubscriptionModal Render] Reason Prop:", reason);
+    // --- END LOGGING ---
 
     return (
         <div className="fixed inset-0 bg-night-900 bg-opacity-80 flex justify-center items-center z-50 p-4 transition-opacity duration-300">
@@ -117,21 +145,29 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                         Current Plan: <span className="font-semibold">{currentPlanName}</span>
                     </p>
 
+                    {/* Check 'reason' carefully */}
                     {reason && !isPro && (
                         <p className="text-center text-sm text-yellow-500 mb-4 bg-night-700 p-2 rounded">
-                            {reason}
+                            {typeof reason === 'string' ? reason : 'Invalid reason type'}
                         </p>
                     )}
 
-                    {error && (
+                    {/* Check 'error' carefully */}
+                    {error && typeof error === 'string' && (
                         <p className="text-center text-sm text-red-500 mb-4">{error}</p>
+                    )}
+                    {/* Log if error is not a string, but don't try to render it */}
+                    {error && typeof error !== 'string' && (
+                        console.error("[SubscriptionModal Render Error] 'error' state contained a non-string:", error)
+                        // Optionally render a generic static message instead of crashing
+                        // <p className="text-center text-sm text-red-500 mb-4">An unexpected error occurred.</p>
                     )}
 
                     {isPro ? (
                         <div className="text-center mt-6">
                             <p className="text-night-100 mb-6">You have unlimited access with the Pro plan!</p>
                             <button
-                                onClick={handleManageSubscription}
+                                onClick={handleManageSubscriptionWrapper}
                                 disabled={isLoadingPortal}
                                 className="w-full max-w-xs mx-auto bg-gray-600 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                             >
@@ -149,19 +185,20 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                                         <ul className="list-disc list-inside space-y-2 text-xs text-night-200 mb-4 h-32"> {/* Fixed height for alignment */}
                                              {plan.features.map((feature, index) => {
                                                   // Use icons for AI usage features
-                                                  if (feature.includes('Signatex Max')) {
+                                                  const featureContent = typeof feature === 'string' ? feature : 'Invalid feature'; // Fallback
+                                                  if (featureContent.includes('Signatex Max')) {
                                                       return (
                                                       <li key={index} className="flex items-center gap-1.5">
                                                           <SignatexMaxIcon className="h-4 w-4 text-yellow-500 flex-shrink-0" />
-                                                          <span>{feature}</span>
+                                                          <span>{featureContent}</span>
                                                       </li>
                                                       );
                                                   }
-                                                  if (feature.includes('Signatex Lite')) {
+                                                  if (featureContent.includes('Signatex Lite')) {
                                                       return (
                                                       <li key={index} className="flex items-center gap-1.5">
                                                           <SignatexLiteIcon className="h-4 w-4 text-blue-400 flex-shrink-0" />
-                                                          <span>{feature}</span>
+                                                          <span>{featureContent}</span>
                                                       </li>
                                                       );
                                                   }
@@ -170,7 +207,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                                         </ul>
                                     </div>
                                     <button
-                                        onClick={() => handleSubscribe(plan.priceId)}
+                                        onClick={() => handleSubscribeWrapper(plan.priceId, plan.name)}
                                         disabled={isLoading[plan.priceId]} // Check loading state for this specific plan
                                         className={`w-full mt-4 font-bold py-2 px-4 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
                                             plan.name === 'Pro'
@@ -188,7 +225,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                      {user && !isPro && (
                          <div className="text-center mt-6">
                             <button
-                                onClick={handleManageSubscription}
+                                onClick={handleManageSubscriptionWrapper}
                                 disabled={isLoadingPortal}
                                 className="text-sm text-gray-500 hover:text-gray-300 underline disabled:opacity-50"
                             >
@@ -199,16 +236,21 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                 </div>
             </div>
 
-            <style jsx>{`
-                /* Simple fade-in animation */
-                @keyframes fadeIn {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
+            <style dangerouslySetInnerHTML={{ __html: `
+                .plan-card {
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    height: 100%;
                 }
-                .animate-fade-in-up { /* Keep existing animation if needed */
-                    animation: fadeIn 0.3s ease-out; /* Use only fadeIn */
+                .plan-card:hover {
+                    transform: translateY(-5px);
+                    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2), 0 0 15px rgba(100, 100, 255, 0.1);
                 }
-            `}</style>
+                .plan-card ul {
+                    flex-grow: 1;
+                }
+            `}} />
         </div>
     );
 };

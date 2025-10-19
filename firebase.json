@@ -7,30 +7,12 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-      {
-        "source": "/geminiProxy",
-        "function": "geminiProxy"
-      },
-      {
-        "source": "/fmpProxy",
-        "function": "fmpProxy"
-      },
-      {
-        "source": "/alpacaProxy",
-        "function": "alpacaProxy"
-      },
-      {
-        "source": "/optionsProxy",
-        "function": "optionsProxy"
-      },
-      {
-        "source": "/userSearch",
-        "function": "userSearch"
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
+      { "source": "/geminiProxy", "function": "geminiProxy" },
+      { "source": "/fmpProxy", "function": "fmpProxy" },
+      { "source": "/alpacaProxy", "function": "alpacaProxy" },
+      { "source": "/optionsProxy", "function": "optionsProxy" },
+      { "source": "/userSearch", "function": "userSearch" },
+      { "source": "**", "destination": "/index.html" }
     ]
   },
   "functions": [
@@ -51,9 +33,14 @@
     }
   ],
   "emulators": {
-    "functions": {
-      "port": 5000
-    }
+    "auth": { "port": 9099 },
+    "firestore": {
+      "port": 8080,
+      "rules": "firestore.rules"  // <-- Keep this line INSIDE emulators.firestore
+    },
+    "functions": { "port": 5001 },
+    "hosting": { "port": 5000 },
+    "ui": { "enabled": true, "port": 4000 }
   },
   "extensions": {
     "firestore-stripe-payments": "invertase/firestore-stripe-payments@0.3.12"

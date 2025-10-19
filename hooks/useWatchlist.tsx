@@ -114,7 +114,7 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return () => unsubscribe();
     }, [user]); // Removed activeWatchlist from dep array to prevent re-subscribing on switch
 
-    useEffect(() => {
+    /* useEffect(() => {
         if (isLoading) return;
 
         const updateWatchlistPrices = async () => {
@@ -158,7 +158,7 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateWatchlistPrices();
         const interval = setInterval(updateWatchlistPrices, 300000);
         return () => clearInterval(interval);
-    }, [watchlistTickers, isLoading]);
+    }, [watchlistTickers, isLoading]); */
 
     const updateWatchlistsInDb = async (lists: WatchlistCollection) => {
         if (!user) return;

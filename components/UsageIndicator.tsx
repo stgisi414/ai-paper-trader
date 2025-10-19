@@ -1,6 +1,7 @@
     import React from 'react';
-    import { useAuth, LITE_LIMIT, MAX_LIMIT } from '@/src/hooks/useAuth';
+    import { useAuth, LITE_LIMIT, MAX_LIMIT } from '/src/hooks/useAuth.tsx';
     import { SignatexLiteIcon, SignatexMaxIcon } from './common/Icons';
+    import { usePortfolio } from '/hooks/usePortfolio.tsx';
 
     /**
      * A component that displays the user's current AI usage

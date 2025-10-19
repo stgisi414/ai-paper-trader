@@ -15,6 +15,7 @@ import ActiveUsers from './ActiveUsers';
 import { useAuth } from '../src/hooks/useAuth';
 import { SignatexMaxIcon } from './common/Icons';
 import UsageIndicator from './UsageIndicator';
+import { useAuth, LITE_LIMIT, MAX_LIMIT } from '/src/hooks/useAuth.tsx';
 
 const Dashboard: React.FC = () => {
     const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
