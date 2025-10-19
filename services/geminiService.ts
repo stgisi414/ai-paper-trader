@@ -415,17 +415,6 @@ export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile, au
     });
 };
 
-export const getMarketScreenerPicks = async (userPrompt: string): Promise<AiScreener> => {
-    const prompt = `
-        Find 5 stocks that match this request: "${userPrompt}". 
-        CRITICAL: The objects in the "picks" array MUST use the exact property names: "symbol" (the ticker), "name" (the company name), "reason" (the rationale), and "score" (a number from 1 to 10). 
-        DO NOT use "ticker", "company_name", or "rationale" in the final JSON.
-        CRITICAL TASK: Output ONLY the three top-level fields: "title", "description", and "picks".
-        YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
-    `;
-    return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", marketScreenerSchema);
-};
-
 export const getMarketScreenerPicks = async (userPrompt: string, auth: AuthFunctions): Promise<AiScreener> => {
     return withUsageCheck('max', auth, () => {
         const prompt = `

@@ -1,17 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { getAuth, onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, onSnapshot, getDoc, increment, writeBatch, Timestamp } from 'firebase/firestore';
-import { db } from '../../src/firebaseConfig';
-import { User as UserType } from '../types';
+import { db } from '../firebaseConfig';
+import { User as UserType } from '../../types';
 
-// Define usage limits for the free/basic tier
-const MAX_LITE_CALLS = 30;
-const MAX_PRO_CALLS = 3;
+// Define and export usage limits for the free/basic tier
+export const LITE_LIMIT = 30;
+export const MAX_LIMIT = 3;
 
 // Define the shape of the user data we get from Firestore
 interface UserSettings {
   fontSize: 'small' | 'medium' | 'large';
-  // AI Usage and Subscription data
   isPro: boolean;
   maxUsed: number;
   liteUsed: number;
@@ -22,6 +21,9 @@ interface AuthContextType {
   user: FirebaseAuthUser | null;
   loading: boolean;
   userSettings: UserSettings;
+  isPro: boolean;
+  liteUsed: number;
+  maxUsed: number;
   updateFontSize: (size: UserSettings['fontSize']) => Promise<void>;
   // Functions for subscription modal
   isSubscriptionModalOpen: boolean;
@@ -150,10 +152,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const subscriptions = data.subscriptions as any[];
             const isPro = subscriptions?.some(sub => ['active', 'trialing'].includes(sub.status)) ?? false;
             setUserSettings(prev => ({ ...prev, isPro }));
-            console.log(`[useAuth] User: ${user.uid} | Pro Status: ${isPro}`);
         } else {
             setUserSettings(prev => ({ ...prev, isPro: false }));
-             console.log(`[useAuth] User: ${user.uid} | No customer record found. Setting Pro status to false.`);
         }
     }, (error) => console.error("Error fetching customer subscription:", error));
 
@@ -162,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       unsubUser();
       unsubCustomer();
     };
-  }, [user]);
+  }, [user, userSettings.isPro]);
 
 
   const updateFontSize = useCallback(async (size: UserSettings['fontSize']) => {
@@ -187,10 +187,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (userSettings.isPro) return true; // Pro users have unlimited access
 
       if (model === 'lite') {
-          return userSettings.liteUsed < MAX_LITE_CALLS;
+          return userSettings.liteUsed < LITE_LIMIT;
       }
       if (model === 'max') {
-          return userSettings.maxUsed < MAX_PRO_CALLS;
+          return userSettings.maxUsed < MAX_LIMIT;
       }
       return false;
   }, [userSettings]);
@@ -216,6 +216,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     user,
     loading,
     userSettings,
+    isPro: userSettings.isPro,
+    liteUsed: userSettings.liteUsed,
+    maxUsed: userSettings.maxUsed,
     updateFontSize,
     isSubscriptionModalOpen,
     subscriptionModalReason,
@@ -240,3 +243,4 @@ export const useAuth = (): AuthContextType => {
     }
     return context;
 };
+

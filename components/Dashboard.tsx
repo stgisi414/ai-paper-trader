@@ -14,6 +14,7 @@ import MarketScreener from './MarketScreener';
 import ActiveUsers from './ActiveUsers';
 import { useAuth } from '../src/hooks/useAuth';
 import { SignatexMaxIcon } from './common/Icons';
+import UsageIndicator from './UsageIndicator';
 
 const Dashboard: React.FC = () => {
     const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
@@ -103,6 +104,11 @@ const Dashboard: React.FC = () => {
             <div className="text-center">
                 <h1 className="text-4xl font-bold">Signatex.co</h1>
                 <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
+                {user && (
+                    <div className="mt-4 max-w-xs mx-auto">
+                        <UsageIndicator />
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
