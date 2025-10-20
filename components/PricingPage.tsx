@@ -5,9 +5,9 @@ import { createStripeCheckoutSession } from '../services/stripeService';
 import Spinner from './common/Spinner';
 
 // --- Placeholder Stripe Price IDs (must match SubscriptionModal) ---
-const STRIPE_STARTER_PRICE_ID_MONTHLY = 'price_STARTER_MONTHLY_PLACEHOLDER';
-const STRIPE_STANDARD_PRICE_ID_MONTHLY = 'price_STANDARD_MONTHLY_PLACEHOLDER';
-const STRIPE_PRO_PRICE_ID_MONTHLY = 'price_PRO_MONTHLY_PLACEHOLDER';
+const STRIPE_STARTER_PRICE_ID_MONTHLY = 'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
+const STRIPE_STANDARD_PRICE_ID_MONTHLY = 'price_1SJiLUGYNyUbUaQ6SQmPLRu7';
+const STRIPE_PRO_PRICE_ID_MONTHLY = 'price_1SJiQCGYNyUbUaQ6csbXHGPM';
 // ---
 
 const plans = [
@@ -108,7 +108,7 @@ const PricingPage: React.FC = () => {
             Need more capacity or bespoke features? Contact us for a tailored package designed for advanced users and organizations.
           </p>
           <a
-            href="mailto:stefdgisi@gmail.com"
+            href="mailto:signatexco@gmail.com"
             className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition duration-300"
           >
             Contact Sales

@@ -11,6 +11,7 @@ import Spinner from './common/Spinner';
 import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, BrainCircuitIcon, SaveIcon, FilterIcon, NewspaperIcon, RegenerateIcon, SettingsIcon, EditIcon, SortIcon, SortAscIcon, SortDescIcon } from './common/Icons';
 import WatchlistNews from './WatchlistNews';
 import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
+import { formatCurrency, formatNumber, formatPercentage } from '/utils/formatters';
 
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities", "Basic Materials"];
 

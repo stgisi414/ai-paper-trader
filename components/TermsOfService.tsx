@@ -48,6 +48,10 @@ const TermsOfService: React.FC = () => {
         <p className="mb-4">
           If you request a refund for the current billing cycle, your access to the Pro features will be terminated immediately upon processing the refund. We do not offer prorated refunds or credits for any partial subscription periods or unused services. All payments for previous months are non-refundable.
         </p>
+        {/* ADDED THIS PARAGRAPH */}
+        <p className="mb-4">
+          <strong>Subscription Changes:</strong> If you choose to upgrade or downgrade your subscription plan, the change will take effect immediately. You will be charged the full price of the new plan upon changing, and you will not receive a refund or credit for any unused portion of your previous subscription plan.
+        </p>
 
         <h2 className="text-2xl font-semibold mt-6 mb-4">5. Termination</h2>
         <p className="mb-4">
@@ -56,7 +60,7 @@ const TermsOfService: React.FC = () => {
 
         <h2 className="text-2xl font-semibold mt-6 mb-4">6. Contact Us</h2>
         <p className="mb-4">
-          If you have any questions about these Terms, please contact us at: stefdgisi@gmail.com.
+          If you have any questions about these Terms, please contact us at: signatexco@gmail.com.
         </p>
 
         <div className="mt-8">

@@ -1,6 +1,9 @@
+// components/HistoryLedger.tsx
 import React, { useMemo } from 'react';
 import { usePortfolio } from '../hooks/usePortfolio';
 import Card from './common/Card';
+// Ensure formatCurrency is imported if needed elsewhere,
+// but the fix is to use the wrapper below
 import { formatCurrency } from '../utils/formatters';
 import { BriefcaseIcon } from './common/Icons';
 import ChatPanel from './ChatPanel';
@@ -8,17 +11,17 @@ import { useAuth } from '../src/hooks/useAuth.tsx';
 
 const HistoryLedger: React.FC = () => {
     const { transactions } = usePortfolio();
-    const { user } = useAuth();
+    const { user } = useAuth(); // ADDED: Destructure user from useAuth
 
-    // ADDITION: Robust check against unprotected access (even though route is protected)
-    if (!user) { 
+    // ADDITION: Robust check against unprotected access
+    if (!user) {
         return <div className="text-center text-night-500 mt-10">You must be logged in to view your transaction history.</div>;
     }
-    
+
     const realizedPnl = useMemo(() => {
         return transactions.reduce((sum, t) => sum + (t.realizedPnl || 0), 0);
     }, [transactions]);
-    
+
     // Sort transactions by timestamp descending (most recent first)
     const sortedTransactions = useMemo(() => {
         return [...transactions].sort((a, b) => b.timestamp - a.timestamp);
@@ -34,7 +37,8 @@ const HistoryLedger: React.FC = () => {
         }
         return 'text-night-100';
     };
-    
+
+    // This helper correctly uses the imported formatCurrency
     const formatPriceOrPnl = (value: number | undefined) => {
         if (value === undefined) return 'N/A';
         return formatCurrency(value);
@@ -43,7 +47,8 @@ const HistoryLedger: React.FC = () => {
 
     return (
         <>
-            <ChatPanel />
+            {/* ADDITION: Conditionally render ChatPanel if user is logged in */}
+            {user && <ChatPanel />}
             <Card>
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -82,6 +87,7 @@ const HistoryLedger: React.FC = () => {
                                         <td className={`p-3 font-semibold ${getTypeColor(t.type, t.realizedPnl)}`}>{t.type.replace('_', ' ')}</td>
                                         <td className="p-3 font-bold">{t.optionSymbol || t.ticker}</td>
                                         <td className="p-3">{t.shares}</td>
+                                        {/* FIX: Use the helper function here */}
                                         <td className="p-3">{formatPriceOrPnl(t.price)}</td>
                                         <td className="p-3">{formatPriceOrPnl(t.totalAmount)}</td>
                                         <td className={`p-3 font-bold text-right ${getTypeColor(t.type, t.realizedPnl)}`}>

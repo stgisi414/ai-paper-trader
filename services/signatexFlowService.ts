@@ -130,18 +130,28 @@ export const getWorkflowFromPrompt = async (prompt: string, context: AppContext,
         const cleanedText = planData.text.replace(/^```json\s*|\s*```$/g, '').trim();
         const workflow = JSON.parse(cleanedText) as SignatexFlowResponse;
 
-        // --- Step 2: Determine model, check usage, and log it ---
+        // --- Step 2: Determine model, check usage, and log it (if necessary) ---
         const firstStep = workflow.steps[0];
-        const isMaxAction = firstStep && ['plan_options_strategy', 'get_portfolio_rec'].includes(firstStep.action);
-        const modelToCharge = isMaxAction ? 'max' : 'lite';
-
-        if (!auth.checkUsage(modelToCharge)) {
-            auth.onLimitExceeded(modelToCharge);
-            throw new Error('Usage limit exceeded');
-        }
         
-        // Log usage for the entire operation before proceeding.
-        await auth.logUsage(modelToCharge);
+        // Define actions that handle their own usage logging inside geminiService
+        const selfLoggingActions = ['recommend_stocks', 'plan_options_strategy', 'get_portfolio_rec'];
+
+        // Only check and log usage here if the action is NOT one of the self-logging ones.
+        // This prevents double-logging for complex actions that have their own metering.
+        if (!firstStep || !selfLoggingActions.includes(firstStep.action)) {
+            const isMaxAction = firstStep && ['plan_options_strategy', 'get_portfolio_rec'].includes(firstStep.action);
+            const modelToCharge = isMaxAction ? 'max' : 'lite';
+    
+            if (!auth.checkUsage(modelToCharge)) {
+                auth.onLimitExceeded(modelToCharge);
+                throw new Error('Usage limit exceeded');
+            }
+            
+            // Log usage for the entire operation for simple actions like 'research', 'click', etc.
+            await auth.logUsage(modelToCharge);
+        }
+        // For self-logging actions, the check/log will happen within their own service calls below.
+
 
         // --- Step 3: Check if the plan requires an immediate AI action (research, recs, etc.) ---
         const researchStep = workflow.steps.find(step => step.action === 'research');

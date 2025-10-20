@@ -6,6 +6,7 @@ import {
   doc,
 } from 'firebase/firestore';
 import { getAuth, User } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 /**
  * Creates a checkout session document in Firestore which triggers the
@@ -86,9 +87,8 @@ export const createStripeCheckoutSession = async (
 };
 
 /**
- * Redirects the user to the Stripe Customer Portal.
- * This function creates a portal session document in Firestore, which the
- * Stripe Payments extension listens to.
+ * Redirects the user to the Stripe Customer Portal by calling the
+ * HTTPS Callable function provided by the Stripe Payments extension.
  */
 export const redirectToStripeCustomerPortal = async (): Promise<void> => {
     const auth = getAuth();
@@ -100,42 +100,39 @@ export const redirectToStripeCustomerPortal = async (): Promise<void> => {
         return;
     }
 
-    const db = getFirestore();
-    const userId = user.uid;
-    const portalLinkRef = collection(db, 'customers', userId, 'portal_links');
+    // Get Firebase Functions instance
+    const functions = getFunctions();
+    // Get a reference to the specific callable function deployed by the extension
+    const createPortalLink = httpsCallable(functions, 'ext-firestore-stripe-payments-createPortalLink');
 
     try {
-        const docRef = await addDoc(portalLinkRef, {
-            return_url: window.location.origin, // URL user returns to after portal
-            // locale: 'auto', // Optional: Use browser locale
-            // configuration: 'YOUR_STRIPE_PORTAL_CONFIGURATION_ID' // Optional
+        console.log("Calling createPortalLink function..."); // Add log
+        // Call the function with required parameters
+        const result = await createPortalLink({
+          returnUrl: window.location.origin + window.location.pathname, // Return to the current page (HashRouter safe)
+          // You can add locale and configuration ID here if needed later
+          // locale: "auto",
+          // configuration: "bpc_...", // Your Stripe Portal Configuration ID if you have one
         });
 
-        console.log("Portal link document created with ID:", docRef.id);
+        // The result.data should contain the URL
+        const data = result.data as { url?: string; error?: { message: string } }; // Type assertion for safety
 
-        const unsubscribe = onSnapshot(docRef, (snap) => {
-            const data = snap.data();
-            if (data) {
-                const { error, url } = data;
-                if (error) {
-                    console.error(`An error occurred creating portal link: ${error.message}`);
-                    alert(`Error accessing billing portal: ${error.message}`);
-                    unsubscribe();
-                }
-                if (url) {
-                    console.log("Redirecting to Stripe Customer Portal:", url);
-                    unsubscribe();
-                    window.location.assign(url);
-                }
-            }
-        }, (error) => {
-            console.error("Error listening to portal link document:", error);
-            alert("Failed to access billing portal. Please try again.");
-            unsubscribe();
-        });
+        if (data.url) {
+            console.log("Redirecting to Stripe Customer Portal:", data.url);
+            window.location.assign(data.url);
+        } else if (data.error) {
+             console.error(`Error creating portal link: ${data.error.message}`);
+             alert(`Error accessing billing portal: ${data.error.message}`);
+        } else {
+             console.error("createPortalLink returned unexpected data:", data);
+             alert("Failed to get billing portal link.");
+        }
 
     } catch (error) {
-        console.error("Error adding portal link document:", error);
-        alert("Could not access the billing portal. Please try again later.");
+        console.error("Error calling createPortalLink function:", error);
+        // Handle specific Firebase Functions errors if needed
+        const errorMessage = (error instanceof Error && (error as any).message) ? (error as any).message : "Could not connect to the billing portal function.";
+        alert(`Could not open the billing portal: ${errorMessage}`);
     }
 };
