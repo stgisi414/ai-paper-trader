@@ -114,7 +114,7 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return () => unsubscribe();
     }, [user]); // Removed activeWatchlist from dep array to prevent re-subscribing on switch
 
-    /* useEffect(() => {
+    useEffect(() => {
         if (isLoading) return;
 
         const updateWatchlistPrices = async () => {
@@ -125,40 +125,49 @@ export const WatchlistProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             
             try {
                 const tickers = watchlistTickers.join(',');
+                // Fetch quotes and profiles
                 const [quotes, profiles] = await Promise.all([
                     fmpService.getQuote(tickers),
-                    fmpService.getProfile(tickers)
+                    fmpService.getProfile(tickers) // Fetch profiles too
                 ]);
-                
+
+                // Create maps for efficient lookup
                 const quoteMap = new Map<string, FmpQuote>();
                 quotes.forEach(q => quoteMap.set(q.symbol, q));
 
-                const profileMap = new Map<string, FmpProfile>();
+                const profileMap = new Map<string, FmpProfile>(); // Map for profiles
                 profiles.forEach(p => profileMap.set(p.symbol, p));
 
+
+                // Map tickers to WatchlistItem including sector
                 const updatedWatchlist = watchlistTickers.map(ticker => {
                     const quote = quoteMap.get(ticker);
-                    const profile = profileMap.get(ticker);
+                    const profile = profileMap.get(ticker); // Get profile
                     return {
                         ticker: ticker,
-                        name: quote?.name || 'Loading...',
+                        name: quote?.name || 'Loading...', // Use quote name primarily
                         price: quote?.price || 0,
                         change: quote?.change || 0,
                         changesPercentage: quote?.changesPercentage || 0,
-                        sector: profile?.sector || 'N/A',
+                        sector: profile?.sector || 'N/A', // Add sector
                     };
                 });
-                
+
                 setWatchlistData(updatedWatchlist);
             } catch (error) {
                 console.error("Failed to update watchlist prices:", error);
+                // Consider setting an error state here for the UI
+                setWatchlistData([]); // Clear data on error to avoid showing stale info
             }
         };
 
         updateWatchlistPrices();
-        const interval = setInterval(updateWatchlistPrices, 300000);
+        // Consider if you really need the interval or if fetching on dependency change is enough
+        const interval = setInterval(updateWatchlistPrices, 300000); // 5 minutes
         return () => clearInterval(interval);
-    }, [watchlistTickers, isLoading]); */
+
+    // --- FIX: Add activeWatchlist to the dependency array ---
+    }, [watchlistTickers, isLoading, activeWatchlist]);
 
     const updateWatchlistsInDb = async (lists: WatchlistCollection) => {
         if (!user) return;
