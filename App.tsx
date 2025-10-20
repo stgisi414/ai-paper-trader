@@ -49,15 +49,6 @@ const MainApp: React.FC = () => {
 
     const [isFontSizeMenuOpen, setIsFontSizeMenuOpen] = useState(false);
 
-    const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-    const [subscriptionReason, setSubscriptionReason] = useState<string | null>(null);
-
-    const openModal = (reasonString: string | null = null) => { // Accept an optional string
-      console.log("Opening modal with reason:", reasonString); // Add log
-      setSubscriptionReason(reasonString);
-      setShowSubscriptionModal(true);
-    };
-
     const handleSignOut = async () => {
         await signOut(auth);
         navigate('/');
@@ -188,14 +179,7 @@ const MainApp: React.FC = () => {
             </main>
 
             {/* Pass the openSubscriptionModal function to the Footer */}
-            <Footer openSubscriptionModal={openModal} />
-            {showSubscriptionModal && (
-              <SubscriptionModal
-                isOpen={showSubscriptionModal}
-                onClose={() => setShowSubscriptionModal(false)}
-                reason={subscriptionReason} // Pass the state here
-              />
-            )}
+            <Footer openSubscriptionModal={openSubscriptionModal} />
         </div>
     );
 }

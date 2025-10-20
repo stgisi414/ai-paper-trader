@@ -51,18 +51,15 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
     const [error, setError] = useState<string | null>(null);
 
     const handleSubscribeWrapper = (priceId: string, planName: string) => (event: React.MouseEvent) => {
-        // Prevent default button behavior if any, and stop propagation
-        event.preventDefault();
-        event.stopPropagation();
-        // Call the actual async handler
         handleSubscribe(priceId, planName);
     };
 
     const handleSubscribe = async (priceId: string, planName: string) => {
-        console.log(`[handleSubscribe] Attempting subscription for plan: ${planName}, priceId: ${priceId}`); // Log entry
+        console.log(`[SubscriptionModal DEBUG] handleSubscribe called for plan: ${planName}, priceId: ${priceId}`); // DEBUG
         if (!user) {
             console.error("[handleSubscribe] Error: User not logged in.");
             setError("You must be logged in to subscribe.");
+            console.log("[SubscriptionModal DEBUG] No user found, returning."); // DEBUG
             return;
         }
         console.log(`[handleSubscribe] User ID: ${user.uid}`); // Log user ID
@@ -70,7 +67,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
         setIsLoading(prev => ({ ...prev, [priceId]: true }));
 
         try {
-            console.log("[handleSubscribe] Calling createStripeCheckoutSession..."); // Log before call
+            console.log("[SubscriptionModal DEBUG] Calling createStripeCheckoutSession..."); // DEBUG
             await createStripeCheckoutSession(priceId);
             console.log("[handleSubscribe] createStripeCheckoutSession finished (should redirect)."); // Log after call (might not be reached if redirect happens)
             // Redirect happens in stripeService if successful
@@ -79,6 +76,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
             console.error(`[handleSubscribe] Checkout for ${planName} failed:`, err);
             const errorMessage = (err instanceof Error && err.message) ? err.message : "An unexpected error occurred during checkout.";
             setError(errorMessage);
+            console.log("[SubscriptionModal DEBUG] Setting isLoading to false after error."); // DEBUG
             setIsLoading(prev => ({ ...prev, [priceId]: false }));
         }
         // No finally block needed here, loading is cleared on error or redirect happens
@@ -124,7 +122,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
     return (
         <div className="fixed inset-0 bg-night-900 bg-opacity-80 flex justify-center items-center z-50 p-4 transition-opacity duration-300">
             {/* Increased max-width for better layout with 3 plans */}
-            <div className="bg-night-800 rounded-lg shadow-2xl w-full max-w-3xl relative animate-fade-in-up max-h-[90vh] overflow-y-auto">
+            <div className="bg-night-800 rounded-lg shadow-2xl w-full max-w-4xl relative animate-fade-in-up max-h-[95vh] overflow-y-auto p-4">
                 {/* Close Button */}
                 <button
                     onClick={onClose}
@@ -137,11 +135,11 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                     </svg>
                 </button>
 
-                <div className="p-6">
-                    <h2 className="text-2xl font-bold text-center mb-2 text-yellow-400">
+                <div>
+                    <h2 className="text-3xl font-bold text-center mb-2 text-yellow-400">
                         {isPro ? 'Manage Subscription' : 'Choose Your Plan'}
                     </h2>
-                    <p className="text-center text-sm text-night-400 mb-4">
+                    <p className="text-center text-base text-night-400 mb-4">
                         Current Plan: <span className="font-semibold">{currentPlanName}</span>
                     </p>
 
@@ -165,7 +163,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
 
                     {isPro ? (
                         <div className="text-center mt-6">
-                            <p className="text-night-100 mb-6">You have unlimited access with the Pro plan!</p>
+                            <p className="text-night-100 mb-6 text-lg">You have unlimited access with the Pro plan!</p>
                             <button
                                 onClick={handleManageSubscriptionWrapper}
                                 disabled={isLoadingPortal}
@@ -180,9 +178,9 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                             {plans.map((plan) => (
                                 <div key={plan.name} className={`bg-night-700 p-4 rounded-lg shadow-lg border-t-4 ${plan.borderColor} flex flex-col justify-between`}>
                                     <div>
-                                        <h3 className="text-xl font-bold mb-1">{plan.name}</h3>
+                                        <h3 className="text-2xl font-bold mb-1">{plan.name}</h3>
                                         <p className="text-2xl font-extrabold text-blue-400 mb-3">{plan.price}</p>
-                                        <ul className="list-disc list-inside space-y-2 text-xs text-night-200 mb-4 h-32"> {/* Fixed height for alignment */}
+                                        <ul className="list-disc list-inside space-y-2 text-sm text-night-200 mb-4 min-h-[10rem]"> {/* Fixed height for alignment */}
                                              {plan.features.map((feature, index) => {
                                                   // Use icons for AI usage features
                                                   const featureContent = typeof feature === 'string' ? feature : 'Invalid feature'; // Fallback
@@ -207,8 +205,8 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
                                         </ul>
                                     </div>
                                     <button
-                                        onClick={() => handleSubscribeWrapper(plan.priceId, plan.name)}
-                                        disabled={isLoading[plan.priceId]} // Check loading state for this specific plan
+                                        onClick={handleSubscribeWrapper(plan.priceId, plan.name)} // Ensure this calls the wrapper
+                                        disabled={!!isLoading[plan.priceId]} // Check loading state for this specific plan
                                         className={`w-full mt-4 font-bold py-2 px-4 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
                                             plan.name === 'Pro'
                                             ? 'bg-yellow-500 text-night-900 hover:bg-yellow-600'
