@@ -4,6 +4,11 @@ import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 import { createStripeCheckoutSession } from '../services/stripeService';
 import Spinner from './common/Spinner';
 
+import {
+    PRO_LITE_LIMIT,
+    PRO_MAX_LIMIT
+} from '../src/hooks/useAuth';
+
 // --- Placeholder Stripe Price IDs (must match SubscriptionModal) ---
 const STRIPE_STARTER_PRICE_ID_MONTHLY = 'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
 const STRIPE_STANDARD_PRICE_ID_MONTHLY = 'price_1SJiLUGYNyUbUaQ6SQmPLRu7';
@@ -27,7 +32,14 @@ const plans = [
     name: "Pro",
     price: "$40/month",
     priceId: STRIPE_PRO_PRICE_ID_MONTHLY,
-    features: ["Unlimited Signatex Max usages", "Unlimited Signatex Lite usages", "Full paper trading access", "Advanced charting tools", "Dedicated support"]
+    features: [
+        // MODIFIED: Update Pro features
+        `${PRO_MAX_LIMIT} Signatex Max usages`,
+        `${PRO_LITE_LIMIT} Signatex Lite usages`,
+        "Full paper trading access",
+        "Advanced charting tools",
+        "Dedicated support"
+    ]
   },
 ];
 

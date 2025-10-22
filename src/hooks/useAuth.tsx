@@ -11,22 +11,25 @@ export const STARTER_LITE_LIMIT = 100;
 export const STARTER_MAX_LIMIT = 10;
 export const STANDARD_LITE_LIMIT = 250;
 export const STANDARD_MAX_LIMIT = 25;
-// Pro is unlimited
+export const PRO_LITE_LIMIT = 600;
+export const PRO_MAX_LIMIT = 60;
 
 // Placeholder Price IDs - **Make sure these match SubscriptionModal.tsx and your Stripe setup**
 export const STRIPE_STARTER_PRICE_ID_MONTHLY = 'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
 export const STRIPE_STANDARD_PRICE_ID_MONTHLY = 'price_1SJiLUGYNyUbUaQ6SQmPLRu7';
 export const STRIPE_PRO_PRICE_ID_MONTHLY = 'price_1SJiQCGYNyUbUaQ6csbXHGPM';
 
+type CustomUsageTier = 'unlimited' | 'custom_tier_1';
 
 // Define the shape of the user data we get from Firestore
 interface UserSettings {
   fontSize: 'small' | 'medium' | 'large';
-  isPro: boolean; // True if any paid plan active
-  activePriceId: string | null; // Store the active price ID
+  isPro: boolean;
+  activePriceId: string | null;
   maxUsed: number;
   liteUsed: number;
   lastUsageReset?: Timestamp;
+  usageTier?: CustomUsageTier | null;
 }
 
 interface AuthContextType {
@@ -53,6 +56,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     activePriceId: null,
     maxUsed: 0,
     liteUsed: 0,
+    usageTier: null,
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -132,16 +136,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Listen to user settings (like fontSize, usage counts)
     const unsubUser = onSnapshot(userDocRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data() as UserType;
+        const data = docSnap.data() as UserType & { usageTier?: CustomUsageTier | null }; // ADDED: Include usageTier in type assertion
         const newSettings = {
             fontSize: data.fontSize || 'medium',
             maxUsed: data.maxUsed ?? 0,
             liteUsed: data.liteUsed ?? 0,
             lastUsageReset: data.lastUsageReset,
+            usageTier: data.usageTier || null, // ADDED: Read the usageTier field
         };
          setUserSettings(prev => {
              const updated = { ...prev, ...newSettings };
-             handleUsageReset(updated);
+             handleUsageReset(updated); // handleUsageReset doesn't need changes for this
              return updated;
          });
         const root = document.documentElement;
@@ -221,30 +226,75 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const checkUsage = useCallback((model: 'max' | 'lite'): boolean => {
-      const { isPro, activePriceId, liteUsed, maxUsed } = userSettings;
+      const { isPro, activePriceId, liteUsed, maxUsed, usageTier } = userSettings;
       if (isPro && activePriceId === STRIPE_PRO_PRICE_ID_MONTHLY) return true;
+
+      if (usageTier === 'unlimited') {
+          console.log("[Usage Check] User has 'unlimited' custom tier. Access granted.");
+          return true;
+      }
+
+      // --- You could add checks for other custom tiers here if needed ---
+      // Example:
+      if (usageTier === 'custom_tier_1') {
+           const customLiteLimit = 1000;
+           const customMaxLimit = 100;
+           if (model === 'lite') return liteUsed < customLiteLimit;
+           if (model === 'max') return maxUsed < customMaxLimit;
+           return false; // Should not happen
+      }
+      
+      // 2. If no custom tier applies, fall back to Stripe plan logic
+      console.log("[Usage Check] No overriding custom tier found. Checking Stripe plan.");
+      if (isPro && activePriceId === STRIPE_PRO_PRICE_ID_MONTHLY) {
+          console.log("[Usage Check] User has Stripe Pro plan (unlimited). Access granted.");
+          return true; // Stripe Pro plan is also unlimited
+      }
 
       let liteLimit = FREE_LITE_LIMIT;
       let maxLimit = FREE_MAX_LIMIT;
 
       if (isPro) {
-            if (activePriceId === STRIPE_STARTER_PRICE_ID_MONTHLY) {
-                liteLimit = STARTER_LITE_LIMIT;
-                maxLimit = STARTER_MAX_LIMIT;
-            } else if (activePriceId === STRIPE_STANDARD_PRICE_ID_MONTHLY) {
-                liteLimit = STANDARD_LITE_LIMIT;
-                maxLimit = STANDARD_MAX_LIMIT;
-            }
-        }
+          if (activePriceId === STRIPE_PRO_PRICE_ID_MONTHLY) {
+              // MODIFIED: Apply Pro limits instead of returning true
+              liteLimit = PRO_LITE_LIMIT;
+              maxLimit = PRO_MAX_LIMIT;
+              planType = 'Pro';
+          } else if (activePriceId === STRIPE_STANDARD_PRICE_ID_MONTHLY) {
+              liteLimit = STANDARD_LITE_LIMIT;
+              maxLimit = STANDARD_MAX_LIMIT;
+              planType = 'Standard';
+          } else if (activePriceId === STRIPE_STARTER_PRICE_ID_MONTHLY) {
+              liteLimit = STARTER_LITE_LIMIT;
+              maxLimit = STARTER_MAX_LIMIT;
+              planType = 'Starter';
+          } else {
+              planType = 'Unknown Paid'; // Gets Free limits
+          }
+      }
 
-      if (model === 'lite') return liteUsed < liteLimit;
-      if (model === 'max') return maxUsed < maxLimit;
+      // 3. Check usage against the determined limit
+      if (model === 'lite') {
+          const allowed = liteUsed < liteLimit;
+          console.log(`[Usage Check - ${planType}] Lite usage: ${liteUsed}/${liteLimit}. Allowed: ${allowed}`);
+          return allowed;
+      }
+      if (model === 'max') {
+          const allowed = maxUsed < maxLimit;
+          console.log(`[Usage Check - ${planType}] Max usage: ${maxUsed}/${maxLimit}. Allowed: ${allowed}`);
+          return allowed;
+      }
+
+      console.log("[Usage Check] Invalid model type specified.");
       return false;
   }, [userSettings]);
 
 
   const logUsage = useCallback(async (model: 'max' | 'lite') => {
-       if (!user || (userSettings.isPro && userSettings.activePriceId === STRIPE_PRO_PRICE_ID_MONTHLY)) return;
+      // MODIFICATION: Add check for custom 'unlimited' tier
+      if (!user || userSettings.usageTier === 'unlimited') {
+            return; // Don't log for custom unlimited users
+      } 
 
       const userDocRef = doc(db, 'users', user.uid);
       const fieldToIncrement = model === 'lite' ? 'liteUsed' : 'maxUsed';
@@ -260,13 +310,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } catch (error) {
           console.error(`Failed to log usage for ${model} model:`, error);
       }
-  }, [user, userSettings.isPro, userSettings.activePriceId]);
+  }, [user, userSettings.usageTier]);
 
 
   const value = useMemo(() => ({
     user,
     loading,
-    userSettings,
+    userSettings, // This now includes usageTier
     isPro: userSettings.isPro,
     activePriceId: userSettings.activePriceId,
     liteUsed: userSettings.liteUsed,
@@ -282,14 +332,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }), [
       user,
       loading,
-      userSettings,
+      userSettings, // Includes usageTier
       updateFontSize,
       isSubscriptionModalOpen,
       subscriptionModalReason,
       openSubscriptionModal,
       closeSubscriptionModal,
-      checkUsage,
-      logUsage,
+      checkUsage, // Now uses usageTier
+      logUsage,   // Now uses usageTier
       onLimitExceeded
     ]);
 
