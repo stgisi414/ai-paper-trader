@@ -10,9 +10,9 @@ import {
 } from '../src/hooks/useAuth';
 
 // --- Placeholder Stripe Price IDs (must match SubscriptionModal) ---
-const STRIPE_STARTER_PRICE_ID_MONTHLY = 'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
-const STRIPE_STANDARD_PRICE_ID_MONTHLY = 'price_1SJiLUGYNyUbUaQ6SQmPLRu7';
-const STRIPE_PRO_PRICE_ID_MONTHLY = 'price_1SJiQCGYNyUbUaQ6csbXHGPM';
+const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SL54vDWUolxMnmeBHf64yN6"; //'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
+const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SL55ZDWUolxMnmenZwS0uEP"; //'price_1SL4zLDWUolxMnme4oYkY7sz';
+const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SL56QDWUolxMnmeg4rKU5oM"; //'price_1SL50GDWUolxMnmeI9lRU9jD';
 // ---
 
 const plans = [
@@ -26,19 +26,18 @@ const plans = [
     name: "Standard",
     price: "$20/month",
     priceId: STRIPE_STANDARD_PRICE_ID_MONTHLY,
-    features: ["25 Signatex Max usages", "250 Signatex Lite usages", "Full paper trading access", "Priority market data"]
+    features: ["25 Signatex Max usages", "250 Signatex Lite usages", "Full paper trading access"]
   },
   {
     name: "Pro",
     price: "$40/month",
     priceId: STRIPE_PRO_PRICE_ID_MONTHLY,
     features: [
-        // MODIFIED: Update Pro features
         `${PRO_MAX_LIMIT} Signatex Max usages`,
         `${PRO_LITE_LIMIT} Signatex Lite usages`,
         "Full paper trading access",
         "Advanced charting tools",
-        "Dedicated support"
+        "Priority support"
     ]
   },
 ];

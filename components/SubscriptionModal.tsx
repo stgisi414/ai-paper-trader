@@ -31,7 +31,7 @@ const plans = [
     name: "Standard",
     price: "$20/mo",
     priceId: STRIPE_STANDARD_PRICE_ID_MONTHLY, // Use imported constant
-    features: ["25 Signatex Max usages", "250 Signatex Lite usages", "Full paper trading access", "Priority market data"],
+    features: ["25 Signatex Max usages", "250 Signatex Lite usages", "Full paper trading access"],
     borderColor: 'border-blue-500'
   },
   {
@@ -39,12 +39,11 @@ const plans = [
     price: "$40/mo",
     priceId: STRIPE_PRO_PRICE_ID_MONTHLY,
     features: [
-        // MODIFIED: Update Pro features
         `60 Signatex Max usages`,
         `600 Signatex Lite usages`,
         "Full paper trading access",
         "Advanced charting tools",
-        "Dedicated support"
+        "Priority support"
     ],
     borderColor: 'border-yellow-500'
   },

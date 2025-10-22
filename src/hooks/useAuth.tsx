@@ -15,9 +15,9 @@ export const PRO_LITE_LIMIT = 600;
 export const PRO_MAX_LIMIT = 60;
 
 // Placeholder Price IDs - **Make sure these match SubscriptionModal.tsx and your Stripe setup**
-export const STRIPE_STARTER_PRICE_ID_MONTHLY = 'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
-export const STRIPE_STANDARD_PRICE_ID_MONTHLY = 'price_1SJiLUGYNyUbUaQ6SQmPLRu7';
-export const STRIPE_PRO_PRICE_ID_MONTHLY = 'price_1SJiQCGYNyUbUaQ6csbXHGPM';
+export const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SL54vDWUolxMnmeBHf64yN6"; //'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
+export const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SL55ZDWUolxMnmenZwS0uEP"; //'price_1SL4zLDWUolxMnme4oYkY7sz';
+export const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SL56QDWUolxMnmeg4rKU5oM"; //'price_1SL50GDWUolxMnmeI9lRU9jD';
 
 type CustomUsageTier = 'unlimited' | 'custom_tier_1';
 
