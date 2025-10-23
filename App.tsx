@@ -51,12 +51,6 @@ const MainApp: React.FC = () => {
     useUnreadListener();
     const location = useLocation();
 
-    useEffect(() => {
-        // This runs every time the route changes.
-        console.log(`[ROUTE DEBUG] Route changed to: ${location.pathname}. Triggering processHelpAction...`);
-        processHelpAction(); 
-    }, [location]); // Depend on location to re-run after navigation
-
     const [isFontSizeMenuOpen, setIsFontSizeMenuOpen] = useState(false);
 
     const handleSignOut = async () => {

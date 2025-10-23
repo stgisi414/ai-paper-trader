@@ -157,19 +157,39 @@ const HelpMenu: React.FC = () => {
                         </div>
                         
                         {func.action !== 'open_chat' && (
-                            <Link 
+                            <Link
                                 to={func.linkPath.includes(':ticker') ? func.linkPath.replace(':ticker', 'AAPL') : func.linkPath}
                                 className="mt-4 text-center text-sm font-bold bg-brand-blue text-white py-2 rounded-md hover:bg-blue-600 transition-colors"
-                                onClick={() => {
-                                    // For simplicity in a static menu, we'll rely on the target page logic 
-                                    // for scrolling/opening tabs in the next step, but here's the nav.
-                                    if (func.action === 'navigate' || func.action === 'scroll_to' || func.action === 'click' || func.action === 'open_tab') {
-                                        // Store the intended action and target ID in localStorage before navigating
-                                        localStorage.setItem('signatex_help_action', JSON.stringify({
-                                            action: func.action,
-                                            elementId: func.elementId,
-                                        }));
+                                onClick={(e) => { // Keep the event argument if needed, though not used here
+                                    // --- ADDED DEBUG LOGGING ---
+                                    console.log(`[HelpMenu CLICK DEBUG] Link clicked for: ${func.name}`);
+                                    console.log(`[HelpMenu CLICK DEBUG] Action: ${func.action}, Element ID: ${func.elementId}`);
+                                    // --- END ADDED DEBUG LOGGING ---
+
+                                    // Check if the action requires setting localStorage
+                                    if (func.action === 'navigate' || func.action === 'scroll_to' || func.action === 'click' || func.action === 'show_element') {
+                                        try {
+                                            const actionData = JSON.stringify({
+                                                action: func.action,
+                                                elementId: func.elementId,
+                                            });
+                                            console.log(`[HelpMenu CLICK DEBUG] Attempting to set localStorage item:`, actionData);
+                                            localStorage.setItem('signatex_help_action', actionData);
+                                            // --- ADDED CONFIRMATION LOG ---
+                                            console.log(`[HelpMenu CLICK DEBUG] localStorage item set (check Application tab).`);
+                                            // --- END CONFIRMATION LOG ---
+                                        } catch (error) {
+                                            // --- ADDED ERROR LOGGING ---
+                                            console.error('[HelpMenu CLICK DEBUG] Error setting localStorage:', error);
+                                            // --- END ERROR LOGGING ---
+                                            // Optionally prevent navigation if setting fails critically
+                                            // e.preventDefault();
+                                            // alert("Failed to prepare navigation action. Please try again.");
+                                        }
+                                    } else {
+                                         console.log(`[HelpMenu CLICK DEBUG] Action type "${func.action}" does not require localStorage.`);
                                     }
+                                    // Note: Navigation proceeds automatically unless e.preventDefault() is called
                                 }}
                             >
                                 {func.action === 'navigate' ? 'Go to Page' : 'See Where to Use'}

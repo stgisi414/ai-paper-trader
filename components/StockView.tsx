@@ -198,9 +198,16 @@ const StockView: React.FC = () => {
         return filtered;
     }, [options, tradeTab, selectedExpiry, optionsSort]);
 
+    console.log(`[StockView RENDER DEBUG] Component rendering for ticker: ${ticker}.`);
+
     useEffect(() => {
-        processHelpAction();
-    }, [ticker]);
+        // ... (console logs before this) ...
+        console.log('[StockView MOUNT EFFECT DEBUG] Scheduling processHelpAction with setTimeout(0)...');
+        setTimeout(() => {
+            console.log('[StockView MOUNT EFFECT DEBUG] setTimeout callback executing, calling processHelpAction...');
+            processHelpAction();
+        }, 0); // Timeout of 0ms defers execution slightly
+    }, []);
 
     useEffect(() => {
         if (!ticker) return;
@@ -876,6 +883,8 @@ const StockView: React.FC = () => {
                 return null;
         }
     };
+
+    console.log(`[StockView RENDER DEBUG] Finishing render for ticker: ${ticker}.`);
 
     return (
         <div className="space-y-6">

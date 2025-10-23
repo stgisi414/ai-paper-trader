@@ -175,13 +175,23 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
  * Main function to process a help action. Executed post-navigation.
  */
 export const processHelpAction = async () => {
-    const actionJson = localStorage.getItem('signatex_help_action');
-    if (!actionJson) return;
+    // --- ADD UNCONDITIONAL ENTRY LOG ---
+    console.log('[processHelpAction ENTRY DEBUG] Function called.');
+    // --- END UNCONDITIONAL ENTRY LOG ---
 
+    const actionJson = localStorage.getItem('signatex_help_action');
+    // Log the value *immediately* after getting it
+    console.log('[processHelpAction DEBUG] localStorage check:', actionJson);
+
+    if (!actionJson) {
+        console.log('[processHelpAction DEBUG] No action found in localStorage. Exiting.');
+        return; // Exit if no action item
+    }
+
+    // Moved logging here to ensure it only happens if actionJson is found
+    console.log('--- [DEBUG] STARTING processHelpAction (Help Menu Trigger) ---');
     localStorage.removeItem('signatex_help_action');
     cleanupHighlight();
-
-    console.log('--- [DEBUG] STARTING processHelpAction ---');
 
     try {
         const { action, elementId } = JSON.parse(actionJson);
@@ -189,19 +199,21 @@ export const processHelpAction = async () => {
 
         // Force scroll to the top of the page immediately after navigation completes.
         window.scrollTo({ top: 0, behavior: 'instant' });
-        await delay(100); 
+        await delay(100);
 
         // Actions that involve scrolling/highlighting/clicking/showing
         if (action === 'scroll_to' || action === 'click' || action === 'show_element') {
-            
+
             // --- STAGE 1: TAB ACTIVATION (Only runs if target is inside a tab) ---
             const requiresTabActivation = action === 'show_element' && (elementId.endsWith('-analyze-button') || elementId.endsWith('-tab-button'));
-            
+
             if (requiresTabActivation) {
+
                 let tabButtonSelector = '';
                 if (elementId.endsWith('-analyze-button')) {
                     tabButtonSelector = `#${elementId.replace('-analyze-button', '-tab-button')}`;
                 } else {
+                    // If the target IS the tab button itself
                     tabButtonSelector = `#${elementId}`;
                 }
 
@@ -209,39 +221,59 @@ export const processHelpAction = async () => {
 
                 if (tabButton) {
                     console.log(`[DEBUG] Activating tab: ${tabButtonSelector}`);
-                    tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    await delay(300); // Wait for the scroll
-                    tabButton.click();
-                    // No need for further delay, waitForElement handles the rest
+                    // Check if tab is already active to avoid unnecessary click/scroll
+                    const isActive = tabButton.getAttribute('aria-selected') === 'true' || tabButton.classList.contains('border-brand-blue'); // Adapt based on actual active class
+                    if (!isActive) {
+                        tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await delay(300); // Wait for scroll if needed
+                        tabButton.click();
+                        await delay(100); // Small delay for tab content to potentially render
+                    } else {
+                         console.log(`[DEBUG] Tab ${tabButtonSelector} is already active.`);
+                         // Still scroll to it if the action is just 'show_element' targeting the tab itself
+                         if (action === 'show_element' && elementId.endsWith('-tab-button')) {
+                             tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                             await delay(300);
+                         }
+                    }
                 } else {
                     console.warn(`[DEBUG] Tab header button not found: ${tabButtonSelector}.`);
                 }
             }
-            
+
             // --- STAGE 2: FIND FINAL TARGET, SCROLL, AND HIGHLIGHT ---
-            const selector = `#${elementId}`; 
-            
+            // Ensure we target the original elementId even after potential tab activation
+            const selector = `#${elementId}`;
+
             const element = await waitForElement(selector);
-            
+
             if (!element) {
-                console.error(`[DEBUG] FINAL FAILURE: Element "${selector}" not found after tab activation.`);
-                await delay(2000); 
+                console.error(`[DEBUG] FINAL FAILURE: Element "${selector}" not found after potential tab activation.`);
+                await delay(2000);
+                cleanupHighlight(); // Clean up if element not found
                 return;
             }
-            
+
             // Scroll, wait, and highlight
-            console.log(`[DEBUG] Element found. Scrolling to view.`);
+            console.log(`[DEBUG] Final element found. Scrolling to view.`);
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await delay(700); // CRITICAL: Wait for smooth scroll animation to settle
-            
-            highlightElement(element); 
-            
+            // Increased delay slightly to ensure visibility after scroll/tab switch
+            await delay(800);
+
+            highlightElement(element);
+
+            // ONLY click if the action is explicitly 'click'
             if (action === 'click') {
                 console.log(`[DEBUG] Executing final click for action: ${action}`);
                 element.click();
+                 await delay(500); // Delay after click
+                 cleanupHighlight(); // Clean up faster after a click action
+            } else {
+                // For 'show_element' and 'scroll_to', keep highlight longer
+                await delay(2500);
+                cleanupHighlight();
             }
 
-            await delay(2000); 
 
         } else if (action === 'open_chat') {
             const chatButton = document.querySelector('.fixed.bottom-6.right-6 > button') as HTMLElement;
@@ -251,6 +283,9 @@ export const processHelpAction = async () => {
         }
     } catch (e) {
         console.error("[DEBUG] A critical error occurred during execution:", e);
+        cleanupHighlight(); // Ensure cleanup on error
+    } finally {
+         setTimeout(cleanupHighlight, 500);
     }
     console.log('--- [DEBUG] ENDING processHelpAction ---');
 };
