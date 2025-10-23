@@ -16,6 +16,7 @@ import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import { useAuth } from '../src/hooks/useAuth.tsx';
 import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
+import { processHelpAction } from '../utils/workflowExecutor';
 
 type OptionsSortKey = 'strike_price' | 'close_price' | 'impliedVolatility' | 'volume' | 'delta' | 'gamma' | 'theta' | 'vega' | null;
 type SortDirection = 'asc' | 'desc';
@@ -192,6 +193,10 @@ const StockView: React.FC = () => {
 
         return filtered;
     }, [options, tradeTab, selectedExpiry, optionsSort]);
+
+    useEffect(() => {
+        processHelpAction();
+    }, [ticker]);
 
     useEffect(() => {
         if (!ticker) return;
@@ -625,7 +630,7 @@ const StockView: React.FC = () => {
                 ) : (
                     <div className="mt-2 text-center">
                         <p className="text-sm text-night-100 mb-3">Synthesize fundamental, technical, and analyst data into a single actionable strategy.</p>
-                        <button onClick={handleAdvancedRecommendations} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600 text-sm">
+                        <button id="summary-analyze-button" onClick={handleAdvancedRecommendations} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600 text-sm">
                             <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                             {isAiLoading ? 'Analyzing...' : 'Generate Strategy'}
                         </button>
@@ -706,7 +711,7 @@ const StockView: React.FC = () => {
                     <Card>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Financial Summary</h2>
-                            <button onClick={handleFinancialAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                            <button id="financials-analyze-button" onClick={handleFinancialAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
                                 <SignatexMaxIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
@@ -811,7 +816,7 @@ const StockView: React.FC = () => {
                     <Card>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Technical Analysis</h2>
-                            <button onClick={handleTechnicalAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                            <button id="technical-analyze-button" onClick={handleTechnicalAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
                                 <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
                             </button>
@@ -859,7 +864,9 @@ const StockView: React.FC = () => {
                         <img src={profile.image} alt={profile.companyName} className="h-16 w-16 rounded-full"/>
                         <div>
                             <h1 className="text-3xl font-bold">{profile.companyName} ({profile.symbol})</h1>
-                            <p className="text-night-500">{quote.exchange}</p>
+                            <p className="text-night-500">
+                                {quote.exchange} &bull; {profile.industry} &bull; {profile.sector}
+                            </p>
                         </div>
                     </div>
                     {user && 
@@ -876,6 +883,7 @@ const StockView: React.FC = () => {
                         </button>
                     }
                 </div>
+                <p className="mt-4 text-night-100 text-sm">{profile.description}</p>
                 <div className="mt-4 flex items-baseline gap-4">
                     <span className="text-5xl font-bold">{formatCurrency(quote.price)}</span>
                     <span className={`text-2xl font-semibold ${priceChangeColor}`}>

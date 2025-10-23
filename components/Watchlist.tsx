@@ -301,44 +301,59 @@ const Watchlist: React.FC = () => {
     return (
         <>
             <Card>
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-2">
-                        <EyeIcon className="h-6 w-6 text-brand-blue" />
-                        <select
-                            value={activeWatchlist}
-                            onChange={(e) => {
-                                setActiveWatchlist(e.target.value);
-                                setSectorFilter(null);
-                            }}
-                            className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none text-lg font-bold"
-                        >
-                            {allWatchlists.map(wl => (
-                                <option key={wl.name} value={wl.name}>{wl.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="flex items-center gap-2 relative">
+                <div className="space-y-4">
+                    {/* Row 1: Watchlist Selector and Menu Icon */}
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <EyeIcon className="h-6 w-6 text-brand-blue" />
+                            <select
+                                value={activeWatchlist}
+                                onChange={(e) => {
+                                    setActiveWatchlist(e.target.value);
+                                    setSectorFilter(null);
+                                }}
+                                className="bg-night-700 border border-night-600 rounded-md py-1 px-2 focus:ring-2 focus:ring-brand-blue focus:outline-none text-lg font-bold"
+                            >
+                                {allWatchlists.map(wl => (
+                                    <option key={wl.name} value={wl.name}>{wl.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        {/* New Menu Button to manage the Watchlists */}
                         <button onClick={() => setIsManageModalOpen(true)} className="text-night-100 hover:text-gray-400" title="Manage Watchlists">
                             <SettingsIcon className="h-6 w-6" />
                         </button>
-                        <button onClick={() => setShowWatchlistNews(true)} className="text-night-100 hover:text-blue-400" title="Get Watchlist News">
-                            <NewspaperIcon className="h-6 w-6" />
-                        </button>
-                        <button onClick={handleSmartRecs} disabled={isRecLoading} className="text-night-100 hover:text-yellow-400" title="Get AI Recommendations">
-                            <LightbulbIcon className="h-6 w-6" />
-                        </button>
-                        <button onClick={() => setIsSearchOpen(!isSearchOpen)} className="text-night-100 hover:text-brand-blue" title="Add to Watchlist">
-                            <PlusIcon className="h-6 w-6" />
-                        </button>
-                        <button onClick={() => setShowNewWatchlistInput(!showNewWatchlistInput)} className="text-night-100 hover:text-brand-green" title="Create New Watchlist">
-                            <SaveIcon className="h-6 w-6" />
-                        </button>
-                        <button onClick={() => setShowSorts(!showSorts)} className="text-night-100 hover:text-green-400" title="Sort Watchlist">
-                            <SortIcon className="h-6 w-6" />
-                        </button>
-                        <button onClick={() => setShowFilters(!showFilters)} className="text-night-100 hover:text-purple-400" title="Filter by Sector">
-                            <FilterIcon className="h-6 w-6" />
-                        </button>
+                    </div>
+                    {/* MODIFICATION: Row 2: All Utility Icons and Toggles. Use flex-wrap and space-x-2 to make it responsive. */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-2 relative border-t border-night-700 pt-3">
+                        {/* Action Buttons Grouped to be responsive/move to second line if needed */}
+                        <div className="flex gap-x-3 items-center">
+                            <button id="watchlist-news-button" onClick={() => setShowWatchlistNews(true)} className="text-night-100 hover:text-blue-400" title="Get Watchlist News">
+                                <NewspaperIcon className="h-6 w-6" />
+                            </button>
+                            <button id="watchlist-smart-recs-button" onClick={handleSmartRecs} disabled={isRecLoading} className="text-night-100 hover:text-yellow-400" title="Get AI Recommendations">
+                                <LightbulbIcon className="h-6 w-6" />
+                            </button>
+                            <button onClick={() => setIsSearchOpen(!isSearchOpen)} className="text-night-100 hover:text-brand-blue" title="Add to Watchlist">
+                                <PlusIcon className="h-6 w-6" />
+                            </button>
+                        </div>
+
+                        {/* Utility/Toggle Buttons */}
+                        <div className="flex gap-x-3 items-center">
+                             <button onClick={() => setShowNewWatchlistInput(!showNewWatchlistInput)} className="text-night-100 hover:text-brand-green" title="Create New Watchlist">
+                                <SaveIcon className="h-6 w-6" />
+                            </button>
+                            <button onClick={() => setShowSorts(!showSorts)} className="text-night-100 hover:text-green-400" title="Sort Watchlist">
+                                <SortIcon className="h-6 w-6" />
+                            </button>
+                            <button onClick={() => setShowFilters(!showFilters)} className="text-night-100 hover:text-purple-400" title="Filter by Sector">
+                                <FilterIcon className="h-6 w-6" />
+                            </button>
+                        </div>
+
+                        {/* REMOVAL: The original Manage Watchlists button is moved to Row 1 for visibility */}
+                        {/* REMOVAL: The original div with gap-2 relative is replaced by the new structure */}
 
                         {showSorts && (
                             <div className="absolute top-full right-0 mt-2 bg-night-600 p-2 rounded-md shadow-lg z-10 w-48">

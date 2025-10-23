@@ -1,6 +1,7 @@
 // components/UsageIndicator.tsx
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import {
     useAuth,
     FREE_LITE_LIMIT, FREE_MAX_LIMIT,
@@ -11,7 +12,7 @@ import {
     STRIPE_STANDARD_PRICE_ID_MONTHLY,
     STRIPE_PRO_PRICE_ID_MONTHLY
 } from '../src/hooks/useAuth';
-import { SignatexLiteIcon, SignatexMaxIcon } from './common/Icons';
+import { SignatexLiteIcon, SignatexMaxIcon, HelpCircleIcon } from './common/Icons';
 
 const UsageIndicator: React.FC = () => {
     // MODIFICATION: Destructure usageTier as well
@@ -64,7 +65,17 @@ const UsageIndicator: React.FC = () => {
     // Display for plans with limits (Free, Starter, Standard, Pro, or Unknown Paid)
     return (
         <div className={`bg-night-700 p-3 rounded-lg border border-night-600`}>
-            <h4 className={`font-bold ${planColor} mb-2 text-sm`}>{planName} Plan - Monthly AI Usage</h4>
+            <div className="flex justify-between items-center mb-2"> {/* ADDITION 3: New wrapper for header/button */}
+                <h4 className={`font-bold ${planColor} text-sm`}>{planName} Plan - Monthly AI Usage</h4>
+                <Link 
+                    to="/help-menu" 
+                    className="flex items-center gap-1 text-xs font-semibold text-night-400 hover:text-brand-blue"
+                    title="View AI Assistant Help Menu"
+                >
+                    <HelpCircleIcon className="h-4 w-4" />
+                    Help Menu
+                </Link>
+            </div>
             <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5 text-blue-400">

@@ -20,7 +20,9 @@ import TermsOfService from './components/TermsOfService';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import PricingPage from './components/PricingPage';
 import Footer from './components/Footer';
-import SubscriptionModal from './components/SubscriptionModal'; // Import the modal
+import SubscriptionModal from './components/SubscriptionModal';
+import ReferralModal from './components/ReferralModal';
+import HelpMenu from './components/HelpMenu';
 
 const FONT_SIZES = ['small', 'medium', 'large'] as const;
 
@@ -62,6 +64,8 @@ const MainApp: React.FC = () => {
       '/pricing'
     ].includes(window.location.hash.substring(1));
 
+    const isReferralModalOpen = !!user && userSettings.referralSource === null && !isSubscriptionModalOpen; 
+
     return (
         <div className="min-h-screen text-night-100 overflow-x-hidden flex flex-col">
             <VersionChecker />
@@ -72,6 +76,10 @@ const MainApp: React.FC = () => {
                 isOpen={isSubscriptionModalOpen}
                 onClose={closeSubscriptionModal}
                 reason={subscriptionModalReason}
+            />
+  
+            <ReferralModal
+                isOpen={isReferralModalOpen}
             />
 
             {!isSpecialPage && (
@@ -174,6 +182,7 @@ const MainApp: React.FC = () => {
                     <Route path="/terms" element={<TermsOfService />} />
                     <Route path="/privacy" element={<PrivacyPolicy />} />
                     <Route path="/pricing" element={<PricingPage />} />
+                    <Route path="/help-menu" element={<HelpMenu />} />
                     <Route path="*" element={user ? <Dashboard /> : <Login />} />
                 </Routes>
             </main>

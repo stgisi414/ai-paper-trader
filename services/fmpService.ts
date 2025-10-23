@@ -81,14 +81,27 @@ export const getHistoricalData = (ticker: string, interval: string = '1day'): Pr
     } else {
         // For daily, weekly, and monthly views, fetch daily data over different time ranges.
         const to = new Date().toISOString().split('T')[0];
+        let fromDate = new Date(); // Use a mutable Date object
         let from;
+        
+        // --- FIX: Correctly calculate the historical start date based on the desired view ---
         if (interval === '1week') {
-            from = new Date(new Date().setFullYear(new Date().getFullYear() - 2)).toISOString().split('T')[0];
+            // A common range for a '1 week' *view* on a daily chart is 3 months of data, or 1 year.
+            // Using 2 years as originally intended, which provides enough data for weekly aggregation if needed.
+            fromDate.setFullYear(fromDate.getFullYear() - 2); 
+            from = fromDate.toISOString().split('T')[0];
+            
         } else if (interval === '1month') {
-            from = new Date(new Date().setFullYear(new Date().getFullYear() - 5)).toISOString().split('T')[0];
-        } else { // '1day'
-            from = new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString().split('T')[0];
+            // Use 5 years for the '1 month' view (long-term data)
+            fromDate.setFullYear(fromDate.getFullYear() - 5);
+            from = fromDate.toISOString().split('T')[0];
+
+        } else { // '1day' default (should show around 1 year of daily data)
+            fromDate.setFullYear(fromDate.getFullYear() - 1);
+            from = fromDate.toISOString().split('T')[0];
         }
+        // --- END FIX ---
+        
         endpoint = `/v3/historical-price-full/${ticker}?from=${from}&to=${to}`;
         // Fetch and process for daily historical
         return fetchFmp<{ historical: FmpHistoricalData[] }>(endpoint); // Assuming FMP returns { historical: [...] }

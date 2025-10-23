@@ -83,14 +83,21 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
         case 'type':
         case 'click':
         case 'select':
-            if (!step.selector) throw new Error('Selector is missing for action: ' + step.action);
-            const element = document.querySelector(step.selector) as HTMLElement;
-            if (!element) throw new Error(`Element not found with selector: ${step.selector}`);
+        case 'scroll_to':
+        case 'open_tab':
+            if (!step.selector && !step.elementId) throw new Error('Selector or Element ID is missing for action: ' + step.action);
+            
+            // Use elementId if available, fall back to selector
+            const selector = step.selector || `#${step.elementId}`; 
+            const element = document.querySelector(selector) as HTMLElement;
+            
+            if (!element) throw new Error(`Element not found with selector: ${selector}`);
             
             highlightElement(element);
             await delay(1000); // Pause to show the user what's being targeted
 
-            if (step.action === 'click') {
+            if (step.action === 'click' || step.action === 'open_tab') {
+                // 'open_tab' and 'click' actions are the same at the DOM level for tabs/buttons
                 element.click();
             } else if (step.action === 'type' && typeof step.value !== 'undefined') {
                 const inputElement = element as HTMLInputElement;
@@ -101,6 +108,8 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
                 const selectElement = element as HTMLSelectElement;
                 selectElement.value = String(step.value);
                 selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+            } else if (step.action === 'scroll_to') {
+                // Scrolling and highlighting is handled by highlightElement, no extra action needed.
             }
             break;
             
@@ -122,4 +131,41 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
     }
 
     await delay(500); // Post-action delay
+};
+
+export const processHelpAction = async () => {
+    const actionJson = localStorage.getItem('signatex_help_action');
+    if (actionJson) {
+        localStorage.removeItem('signatex_help_action');
+        cleanupHighlight();
+        
+        try {
+            const { action, elementId } = JSON.parse(actionJson);
+
+            // Simple actions: scroll to element, click a button/tab
+            if (action === 'scroll_to' || action === 'click' || action === 'open_tab') {
+                const element = document.querySelector(`#${elementId}`) as HTMLElement;
+                if (element) {
+                    // For tabs, click the tab button to open the content
+                    if (action === 'open_tab' || action === 'click') {
+                        element.click();
+                        await delay(500);
+                    }
+                    
+                    // For any action, scroll it into view and highlight it
+                    highlightElement(element);
+                } else {
+                    console.warn(`Help action element not found: #${elementId}`);
+                }
+            } else if (action === 'open_chat') {
+                 // For Chat actions, we just open the chat panel
+                const chatButton = document.querySelector('.fixed.bottom-6.right-6 > button') as HTMLElement;
+                if (chatButton) {
+                    chatButton.click();
+                }
+            }
+        } catch (e) {
+            console.error("Failed to process help action from storage:", e);
+        }
+    }
 };

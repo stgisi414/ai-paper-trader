@@ -16,7 +16,9 @@ const Footer: React.FC<FooterProps> = ({ openSubscriptionModal }) => {
           &copy; {new Date().getFullYear()} Signatex. All rights reserved.
         </div>
 
-        <div className="flex space-x-4">
+        {/* MODIFICATION: Change class from 'space-x-4' to 'flex-col gap-2' for mobile,
+           and use 'sm:flex-row sm:space-x-4' to revert for small screens and up. */}
+        <div className="flex flex-col gap-2 items-start sm:flex-row sm:space-x-4 sm:items-center">
           <Link
             to="/pricing"
             className="hover:text-blue-500 dark:hover:text-blue-400 transition-colors duration-200"

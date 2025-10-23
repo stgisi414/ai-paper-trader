@@ -42,6 +42,8 @@ const PrivacyPolicy: React.FC = () => {
           The security of your data is important to us, but remember that no method of transmission over the Internet or method of electronic storage is 100% secure. While we strive to use commercially acceptable means to protect your data, we cannot guarantee its absolute security.
         </p>
 
+        <p>For any questions about the privacy policy you can contact us at support@signatex.co.</p>
+
         <div className="mt-8">
           <Link to="/" className="text-blue-500 hover:underline">
             &larr; Back to Dashboard

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../hooks/usePortfolio';
 import * as fmpService from '../services/fmpService';
@@ -15,6 +15,7 @@ import ActiveUsers from './ActiveUsers';
 import { SignatexMaxIcon } from './common/Icons';
 import UsageIndicator from './UsageIndicator';
 import { useAuth, LITE_LIMIT, MAX_LIMIT } from '/src/hooks/useAuth.tsx';
+import { processHelpAction } from '../utils/workflowExecutor';
 
 const Dashboard: React.FC = () => {
     const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
@@ -30,6 +31,10 @@ const Dashboard: React.FC = () => {
     const [testResult, setTestResult] = useState<{ name: string, result: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [testTicker, setTestTicker] = useState('AAPL');
+
+    useEffect(() => {
+        processHelpAction();
+    }, []);
 
     const handleToolTest = useCallback(async (testName: string, prompt: string, ticker: string) => {
         if (!ticker) {
@@ -229,7 +234,12 @@ const Dashboard: React.FC = () => {
                         <Card>
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
-                                <button onClick={handlePortfolioAnalysis} disabled={isAnalyzing} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
+                                <button 
+                                    onClick={handlePortfolioAnalysis} 
+                                    disabled={isAnalyzing} 
+                                    className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600"
+                                    id="risk-analysis-button" // ADDITION 4: Add ID here
+                                >
                                     <SignatexMaxIcon className="h-5 w-5 inline mb-1 mr-1" />
                                     {isAnalyzing ? 'Analyzing...' : 'Run Risk Analysis'}
                                 </button>

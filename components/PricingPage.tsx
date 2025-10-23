@@ -6,13 +6,15 @@ import Spinner from './common/Spinner';
 
 import {
     PRO_LITE_LIMIT,
-    PRO_MAX_LIMIT
+    PRO_MAX_LIMIT,
+    useAuth
 } from '../src/hooks/useAuth';
+import { redirectToStripeCustomerPortal } from '../services/stripeService';
 
 // --- Placeholder Stripe Price IDs (must match SubscriptionModal) ---
-const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SL54vDWUolxMnmeBHf64yN6"; //'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
-const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SL55ZDWUolxMnmenZwS0uEP"; //'price_1SL4zLDWUolxMnme4oYkY7sz';
-const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SL56QDWUolxMnmeg4rKU5oM"; //'price_1SL50GDWUolxMnmeI9lRU9jD';
+const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SLBfADWUolxMnme3BRCNufS"; //
+const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SLBgjDWUolxMnmedj2fTHfl"; //
+const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SLBngDWUolxMnmeYaCYXLtO"; // 
 // ---
 
 const plans = [
@@ -43,6 +45,8 @@ const plans = [
 ];
 
 const PricingPage: React.FC = () => {
+    const { isPro, activePriceId } = useAuth();
+
     const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
     const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +63,61 @@ const PricingPage: React.FC = () => {
         }
     };
 
+    //Handle redirect to manage portal
+    const handleManageSubscription = async () => {
+        setError(null);
+        setIsLoading(prev => ({ ...prev, ['portal']: true })); // Use a unique key
+        try {
+            await redirectToStripeCustomerPortal();
+        } catch (err) {
+            console.error("Failed to redirect to customer portal:", err);
+            setError(err instanceof Error ? err.message : "Could not open the billing portal.");
+            setIsLoading(prev => ({ ...prev, ['portal']: false }));
+        }
+    };
+
+    // Determine if the current plan matches the plan card
+    const isCurrentPlan = (priceId: string) => isPro && activePriceId === priceId;
+
+    // Logic for the button text and action
+    const getButton = (plan) => {
+        const loadingKey = isCurrentPlan(plan.priceId) ? 'portal' : plan.priceId;
+        const currentIsLoading = !!isLoading[loadingKey];
+        
+        if (isCurrentPlan(plan.priceId)) {
+            return (
+                <button
+                    className="mt-6 w-full py-2 px-4 bg-gray-500 text-white font-semibold rounded-lg shadow-md disabled:bg-gray-500 flex items-center justify-center cursor-default"
+                    disabled={true}
+                >
+                    Current Plan
+                </button>
+            );
+        } else if (isPro) {
+            // User is Pro, but on a different plan (e.g., Starter wants to see Standard)
+            // Render a standard Subscribe button, but indicate it's an upgrade/downgrade
+            return (
+                <button
+                    className="mt-6 w-full py-2 px-4 bg-yellow-500 text-night-900 font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-300 disabled:bg-gray-500 flex items-center justify-center"
+                    onClick={() => handleSubscribe(plan.priceId, plan.name)}
+                    disabled={currentIsLoading}
+                >
+                    {currentIsLoading ? <Spinner /> : 'Change Plan'}
+                </button>
+            );
+        } else {
+             // User is Free, render Start Trading
+            return (
+                <button
+                    className="mt-6 w-full py-2 px-4 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-300 disabled:bg-gray-500 flex items-center justify-center"
+                    onClick={() => handleSubscribe(plan.priceId, plan.name)}
+                    disabled={currentIsLoading}
+                >
+                    {currentIsLoading ? <Spinner /> : 'Start Trading'}
+                </button>
+            );
+        }
+    };
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans p-8">
@@ -72,7 +131,7 @@ const PricingPage: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {plans.map((plan) => (
-            <div key={plan.name} className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-xl border-t-4 border-blue-500 flex flex-col">
+            <div key={plan.name} className={`bg-white dark:bg-gray-700 p-6 rounded-lg shadow-xl border-t-4 border-blue-500 flex flex-col ${isCurrentPlan(plan.priceId) ? 'border-yellow-500 shadow-2xl ring-4 ring-yellow-500/50' : 'border-blue-500'}`}>
               <div className="flex-grow">
                 <h2 className="text-2xl font-bold mb-2">{plan.name}</h2>
                 <p className="text-3xl font-extrabold text-blue-500 mb-4">{plan.price}</p>
@@ -102,16 +161,26 @@ const PricingPage: React.FC = () => {
                   })}
                 </ul>
               </div>
-              <button
-                className="mt-6 w-full py-2 px-4 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-300 disabled:bg-gray-500 flex items-center justify-center"
-                onClick={() => handleSubscribe(plan.priceId, plan.name)}
-                disabled={isLoading[plan.priceId]}
-              >
-                {isLoading[plan.priceId] ? <Spinner /> : 'Start Trading'}
-              </button>
+              {getButton(plan)}
             </div>
           ))}
         </div>
+
+        {isPro && (
+             <div className="mt-8 text-center p-6 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <h3 className="text-xl font-semibold mb-3">Manage Your Subscription</h3>
+                <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    You currently have an active paid subscription. Use the portal below to update or cancel your plan.
+                </p>
+                <button
+                    onClick={handleManageSubscription}
+                    disabled={!!isLoading['portal']}
+                    className="w-full max-w-sm py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 transition duration-300 disabled:bg-gray-500 flex items-center justify-center mx-auto"
+                >
+                    {isLoading['portal'] ? <Spinner /> : 'Go to Billing Portal'}
+                </button>
+            </div>
+        )}
 
         <div className="mt-12 text-center p-6 bg-gray-50 dark:bg-gray-700 rounded-lg">
           <h3 className="text-xl font-semibold mb-3">Custom Subscription Plan</h3>
@@ -119,7 +188,7 @@ const PricingPage: React.FC = () => {
             Need more capacity or bespoke features? Contact us for a tailored package designed for advanced users and organizations.
           </p>
           <a
-            href="mailto:signatexco@gmail.com"
+            href="mailto:support@signatex.co"
             className="text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition duration-300"
           >
             Contact Sales

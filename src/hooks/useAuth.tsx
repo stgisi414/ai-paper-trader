@@ -5,19 +5,19 @@ import { db } from '../firebaseConfig';
 import { User as UserType } from '../../types';
 
 // Define and export usage limits for different tiers
-export const FREE_LITE_LIMIT = 30;
-export const FREE_MAX_LIMIT = 3;
-export const STARTER_LITE_LIMIT = 100;
-export const STARTER_MAX_LIMIT = 10;
-export const STANDARD_LITE_LIMIT = 250;
-export const STANDARD_MAX_LIMIT = 25;
-export const PRO_LITE_LIMIT = 600;
-export const PRO_MAX_LIMIT = 60;
+export const FREE_LITE_LIMIT = 20;
+export const FREE_MAX_LIMIT = 0;
+export const STARTER_LITE_LIMIT = 50;
+export const STARTER_MAX_LIMIT = 5;
+export const STANDARD_LITE_LIMIT = 500;
+export const STANDARD_MAX_LIMIT = 40;
+export const PRO_LITE_LIMIT = 1500;
+export const PRO_MAX_LIMIT = 200;
 
 // Placeholder Price IDs - **Make sure these match SubscriptionModal.tsx and your Stripe setup**
-export const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SL54vDWUolxMnmeBHf64yN6"; //'price_1SJiJfGYNyUbUaQ66dsLoGZ2';
-export const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SL55ZDWUolxMnmenZwS0uEP"; //'price_1SL4zLDWUolxMnme4oYkY7sz';
-export const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SL56QDWUolxMnmeg4rKU5oM"; //'price_1SL50GDWUolxMnmeI9lRU9jD';
+export const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SLBfADWUolxMnme3BRCNufS"; //
+export const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SLBgjDWUolxMnmedj2fTHfl"; //
+export const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SLBngDWUolxMnmeYaCYXLtO"; //
 
 type CustomUsageTier = 'unlimited' | 'custom_tier_1';
 
@@ -30,6 +30,7 @@ interface UserSettings {
   liteUsed: number;
   lastUsageReset?: Timestamp;
   usageTier?: CustomUsageTier | null;
+  referralSource: string | null;
 }
 
 interface AuthContextType {
@@ -48,6 +49,7 @@ interface AuthContextType {
   checkUsage: (model: 'max' | 'lite') => boolean;
   logUsage: (model: 'max' | 'lite') => Promise<void>;
   onLimitExceeded: (model: 'max' | 'lite') => void;
+  logReferralSource: (source: string) => Promise<void>;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -57,6 +59,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     maxUsed: 0,
     liteUsed: 0,
     usageTier: null,
+    referralSource: null,
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -95,6 +98,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             email: authUser.email,
             photoURL: authUser.photoURL,
             ...DEFAULT_SETTINGS,
+            referralSource: null,
             lastUsageReset: serverTimestamp(),
           }, { merge: true });
         }
@@ -143,6 +147,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             liteUsed: data.liteUsed ?? 0,
             lastUsageReset: data.lastUsageReset,
             usageTier: data.usageTier || null, // ADDED: Read the usageTier field
+            referralSource: data.referralSource === undefined ? null : data.referralSource,
         };
          setUserSettings(prev => {
              const updated = { ...prev, ...newSettings };
@@ -253,6 +258,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       let liteLimit = FREE_LITE_LIMIT;
       let maxLimit = FREE_MAX_LIMIT;
+      let planType = 'Free';
 
       if (isPro) {
           if (activePriceId === STRIPE_PRO_PRICE_ID_MONTHLY) {
@@ -312,6 +318,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
   }, [user, userSettings.usageTier]);
 
+  const logReferralSource = useCallback(async (source: string) => {
+    if (!user) return;
+    try {
+        const userDocRef = doc(db, 'users', user.uid);
+        // Set the field. 'Skipped' will mark it as completed so the modal doesn't show again.
+        await setDoc(userDocRef, { referralSource: source.trim() }, { merge: true }); 
+    } catch (error) {
+        console.error("Failed to log referral source:", error);
+    }
+  }, [user]);
 
   const value = useMemo(() => ({
     user,
@@ -329,6 +345,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkUsage,
     logUsage,
     onLimitExceeded,
+    logReferralSource,
   }), [
       user,
       loading,
@@ -340,7 +357,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       closeSubscriptionModal,
       checkUsage, // Now uses usageTier
       logUsage,   // Now uses usageTier
-      onLimitExceeded
+      onLimitExceeded,
+      logReferralSource,
     ]);
 
 

@@ -60,7 +60,7 @@ const TermsOfService: React.FC = () => {
 
         <h2 className="text-2xl font-semibold mt-6 mb-4">6. Contact Us</h2>
         <p className="mb-4">
-          If you have any questions about these Terms, please contact us at: signatexco@gmail.com.
+          If you have any questions about these Terms, please contact us at: support@signatex.co.
         </p>
 
         <div className="mt-8">
