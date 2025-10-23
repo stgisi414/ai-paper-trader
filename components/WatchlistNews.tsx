@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
 import type { FmpNews, AiAnalysis, TradeAllocationRecommendation, FmpQuote } from '../types';
@@ -6,7 +6,8 @@ import Spinner from './common/Spinner';
 import { BrainCircuitIcon } from './common/Icons';
 import { formatCurrency, formatPercentage } from '../utils/formatters';
 import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
-import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
+import { useAuth } from '../src/hooks/useAuth';
+import { usePersistentState } from '../utils/localStorageManager';
 
 interface WatchlistNewsProps {
     tickers: string[];
@@ -21,14 +22,21 @@ const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnH
     const [news, setNews] = useState<FmpNews[]>([]);
     const [quotes, setQuotes] = useState<FmpQuote[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [analysis, setAnalysis] = useState<AiAnalysis | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [showAllocationForm, setShowAllocationForm] = useState(false);
-    const [riskTolerance, setRiskTolerance] = useState('medium');
-    const [investmentGoal, setInvestmentGoal] = useState('growth');
-    const [amountToAllocate, setAmountToAllocate] = useState<number | string>(cashOnHand);
     const [isAllocating, setIsAllocating] = useState(false);
-    const [allocationResult, setAllocationResult] = useState<TradeAllocationRecommendation | null>(null);
+    
+    // Helper to generate a unique key based on the watchlist content
+    const watchlistKey = useMemo(() => {
+        // Sort tickers alphabetically to ensure a consistent key regardless of order
+        return tickers.slice().sort().join(',');
+    }, [tickers]);
+
+    const [analysis, setAnalysis] = usePersistentState<AiAnalysis | null>(`watchlist-news-analysis-${watchlistKey}`, null);
+    const [allocationResult, setAllocationResult] = usePersistentState<TradeAllocationRecommendation | null>(`watchlist-allocation-${watchlistKey}`, null);
+    const [showAllocationForm, setShowAllocationForm] = usePersistentState<boolean>(`watchlist-show-form-${watchlistKey}`, false);
+    const [riskTolerance, setRiskTolerance] = usePersistentState<string>(`watchlist-risk-${watchlistKey}`, 'medium');
+    const [investmentGoal, setInvestmentGoal] = usePersistentState<string>(`watchlist-goal-${watchlistKey}`, 'growth');
+    const [amountToAllocate, setAmountToAllocate] = usePersistentState<number | string>(`watchlist-allocate-amount-${watchlistKey}`, cashOnHand);
 
     useEffect(() => {
         const fetchData = async () => {

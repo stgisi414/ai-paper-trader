@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { usePortfolio } from '../hooks/usePortfolio';
 import * as fmpService from '../services/fmpService';
@@ -16,6 +16,7 @@ import { SignatexMaxIcon } from './common/Icons';
 import UsageIndicator from './UsageIndicator';
 import { useAuth, LITE_LIMIT, MAX_LIMIT } from '/src/hooks/useAuth.tsx';
 import { processHelpAction } from '../utils/workflowExecutor';
+import { usePersistentState } from '../utils/localStorageManager';
 
 const Dashboard: React.FC = () => {
     const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
@@ -26,7 +27,7 @@ const Dashboard: React.FC = () => {
     const [searchResults, setSearchResults] = useState<FmpSearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [searchAttempted, setSearchAttempted] = useState(false);
-    const [portfolioAnalysis, setPortfolioAnalysis] = useState<PortfolioRiskAnalysis | null>(null);
+    const [portfolioAnalysis, setPortfolioAnalysis] = usePersistentState<PortfolioRiskAnalysis | null>('portfolio-risk-analysis', null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [testResult, setTestResult] = useState<{ name: string, result: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);

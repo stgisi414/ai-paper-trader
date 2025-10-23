@@ -4,32 +4,42 @@ import { NavigateFunction } from 'react-router-dom';
 const HIGHLIGHT_CLASS = 'signatex-flow-highlight';
 let highlightedElement: HTMLElement | null = null;
 
-/**
- * Removes the highlight from any currently highlighted element.
- */
 export const cleanupHighlight = () => {
     if (highlightedElement) {
+        console.log('[DEBUG] Cleaning up previous highlight.');
         highlightedElement.classList.remove(HIGHLIGHT_CLASS);
         highlightedElement = null;
     }
 };
 
-/**
- * Applies a highlight effect to an element and scrolls it into view.
- * @param element The HTML element to highlight.
- */
 const highlightElement = (element: HTMLElement) => {
     cleanupHighlight();
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    console.log(`[DEBUG] Highlighting element:`, element);
     element.classList.add(HIGHLIGHT_CLASS);
     highlightedElement = element;
 };
 
-/**
- * A simple delay function.
- * @param ms Milliseconds to wait.
- */
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const MAX_RETRIES = 20;
+const RETRY_DELAY_MS = 150;
+
+/**
+ * Robust polling-based function to wait for an element using async/await.
+ */
+const waitForElement = async (selector: string): Promise<HTMLElement | null> => {
+    console.log(`[DEBUG] Starting robust waitForElement for selector: "${selector}"`);
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        const element = document.querySelector(selector) as HTMLElement;
+        if (element) {
+            console.log(`[DEBUG] SUCCESS: Found element (attempt ${i + 1}):`, element);
+            return element;
+        }
+        await delay(RETRY_DELAY_MS);
+    }
+    console.error(`[DEBUG] TIMEOUT: waitForElement could not find "${selector}" after multiple retries.`);
+    return null;
+};
 
 /**
  * Executes a single step of a workflow.
@@ -43,7 +53,6 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
 
     switch (step.action) {
         case 'open_stock':
-            // FIX: Check for 'value', 'ticker', or 'symbol' to capture all possible Planner outputs.
             const stockIdentifier = step.value || (step as any).ticker || (step as any).symbol;
 
             if (stockIdentifier) {
@@ -51,23 +60,19 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
             }
             break;
 
-        case 'change_chart_view': // NEW CASE: Handles changing the chart interval
+        case 'change_chart_view':
             if (step.value) {
-                // The select element for the chart interval is controlled via a <select> tag
-                // and should be the one element with the value set by the chart component.
-                // We assume the selector is on the <select> tag itself.
                 const selectElement = document.querySelector('#chart-interval-select');
                 
                 if (selectElement) {
                     highlightElement(selectElement as HTMLElement);
-                    await delay(1000); // Pause to show the user what's being targeted
+                    await delay(1000);
 
                     const chartSelect = selectElement as HTMLSelectElement;
                     chartSelect.value = String(step.value);
                     
-                    // Dispatch an event to update the parent component's state
                     chartSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    await delay(500); // Give component time to process change
+                    await delay(500);
                 } else {
                     console.warn("Chart interval select element not found.");
                 }
@@ -85,31 +90,66 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
         case 'select':
         case 'scroll_to':
         case 'open_tab':
+        case 'show_element': // ADDED: New action type from help menu
             if (!step.selector && !step.elementId) throw new Error('Selector or Element ID is missing for action: ' + step.action);
             
             // Use elementId if available, fall back to selector
             const selector = step.selector || `#${step.elementId}`; 
-            const element = document.querySelector(selector) as HTMLElement;
             
+            // Find element for initial processing/highlighting (no need for retries yet)
+            let element = document.querySelector(selector) as HTMLElement;
+            
+            if (step.action !== 'type' && step.action !== 'select') { 
+                // Only use waitForElement for final display or modal clicks.
+                element = await waitForElement(selector);
+            }
+
             if (!element) throw new Error(`Element not found with selector: ${selector}`);
+            
+            // Special handling for opening tabs
+            if (step.action === 'open_tab' || step.action === 'show_element') {
+                
+                // If the target is an analyze button, derive the tab button ID
+                let tabButtonSelector: string | null = null;
+                const tabIdMatch = step.elementId?.match(/^(\w+)-(analyze|tab)-button$/);
+                
+                if (tabIdMatch) {
+                    // e.g., #technical-analyze-button -> #technical-tab-button
+                    tabButtonSelector = `#${tabIdMatch[1]}-tab-button`;
+                }
+                
+                if (tabButtonSelector && tabButtonSelector !== selector) {
+                    // This means we need to click a different element (the tab header) first.
+                    const tabButton = await waitForElement(tabButtonSelector);
+
+                    if (tabButton) {
+                        tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await delay(300);
+                        tabButton.click();
+                        
+                        // We must wait for the *final* element to render inside the now-open tab
+                        element = await waitForElement(selector);
+                        if (!element) throw new Error(`Final element not found with selector: ${selector} inside opened tab.`);
+                    }
+                }
+            }
             
             highlightElement(element);
             await delay(1000); // Pause to show the user what's being targeted
 
             if (step.action === 'click' || step.action === 'open_tab') {
-                // 'open_tab' and 'click' actions are the same at the DOM level for tabs/buttons
+                // 'open_tab' is here only if triggered by the AI assistant flow
                 element.click();
             } else if (step.action === 'type' && typeof step.value !== 'undefined') {
                 const inputElement = element as HTMLInputElement;
                 inputElement.value = String(step.value);
-                // Dispatch an event to ensure React state updates
                 inputElement.dispatchEvent(new Event('input', { bubbles: true }));
             } else if (step.action === 'select' && typeof step.value !== 'undefined') {
                 const selectElement = element as HTMLSelectElement;
                 selectElement.value = String(step.value);
                 selectElement.dispatchEvent(new Event('change', { bubbles: true }));
-            } else if (step.action === 'scroll_to') {
-                // Scrolling and highlighting is handled by highlightElement, no extra action needed.
+            } else if (step.action === 'scroll_to' || step.action === 'show_element') {
+                // Do nothing more; the goal was just to highlight/scroll.
             }
             break;
             
@@ -122,8 +162,6 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
         case 'say':
         case 'plan_options_strategy':
         case 'get_portfolio_rec':
-             // 'say' action is handled in ChatPanel, no action needed here.
-             // 'research' action is pre-processed in signatexFlowService.ts and should not reach here.
              break;
         
         default:
@@ -133,39 +171,86 @@ export const executeStep = async (step: WorkflowStep, navigate: NavigateFunction
     await delay(500); // Post-action delay
 };
 
+/**
+ * Main function to process a help action. Executed post-navigation.
+ */
 export const processHelpAction = async () => {
     const actionJson = localStorage.getItem('signatex_help_action');
-    if (actionJson) {
-        localStorage.removeItem('signatex_help_action');
-        cleanupHighlight();
-        
-        try {
-            const { action, elementId } = JSON.parse(actionJson);
+    if (!actionJson) return;
 
-            // Simple actions: scroll to element, click a button/tab
-            if (action === 'scroll_to' || action === 'click' || action === 'open_tab') {
-                const element = document.querySelector(`#${elementId}`) as HTMLElement;
-                if (element) {
-                    // For tabs, click the tab button to open the content
-                    if (action === 'open_tab' || action === 'click') {
-                        element.click();
-                        await delay(500);
-                    }
-                    
-                    // For any action, scroll it into view and highlight it
-                    highlightElement(element);
+    localStorage.removeItem('signatex_help_action');
+    cleanupHighlight();
+
+    console.log('--- [DEBUG] STARTING processHelpAction ---');
+
+    try {
+        const { action, elementId } = JSON.parse(actionJson);
+        console.log(`[DEBUG] Action parsed: action="${action}", elementId="${elementId}"`);
+
+        // Force scroll to the top of the page immediately after navigation completes.
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        await delay(100); 
+
+        // Actions that involve scrolling/highlighting/clicking/showing
+        if (action === 'scroll_to' || action === 'click' || action === 'show_element') {
+            
+            // --- STAGE 1: TAB ACTIVATION (Only runs if target is inside a tab) ---
+            const requiresTabActivation = action === 'show_element' && (elementId.endsWith('-analyze-button') || elementId.endsWith('-tab-button'));
+            
+            if (requiresTabActivation) {
+                let tabButtonSelector = '';
+                if (elementId.endsWith('-analyze-button')) {
+                    tabButtonSelector = `#${elementId.replace('-analyze-button', '-tab-button')}`;
                 } else {
-                    console.warn(`Help action element not found: #${elementId}`);
+                    tabButtonSelector = `#${elementId}`;
                 }
-            } else if (action === 'open_chat') {
-                 // For Chat actions, we just open the chat panel
-                const chatButton = document.querySelector('.fixed.bottom-6.right-6 > button') as HTMLElement;
-                if (chatButton) {
-                    chatButton.click();
+
+                const tabButton = await waitForElement(tabButtonSelector);
+
+                if (tabButton) {
+                    console.log(`[DEBUG] Activating tab: ${tabButtonSelector}`);
+                    tabButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    await delay(300); // Wait for the scroll
+                    tabButton.click();
+                    // No need for further delay, waitForElement handles the rest
+                } else {
+                    console.warn(`[DEBUG] Tab header button not found: ${tabButtonSelector}.`);
                 }
             }
-        } catch (e) {
-            console.error("Failed to process help action from storage:", e);
+            
+            // --- STAGE 2: FIND FINAL TARGET, SCROLL, AND HIGHLIGHT ---
+            const selector = `#${elementId}`; 
+            
+            const element = await waitForElement(selector);
+            
+            if (!element) {
+                console.error(`[DEBUG] FINAL FAILURE: Element "${selector}" not found after tab activation.`);
+                await delay(2000); 
+                return;
+            }
+            
+            // Scroll, wait, and highlight
+            console.log(`[DEBUG] Element found. Scrolling to view.`);
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await delay(700); // CRITICAL: Wait for smooth scroll animation to settle
+            
+            highlightElement(element); 
+            
+            if (action === 'click') {
+                console.log(`[DEBUG] Executing final click for action: ${action}`);
+                element.click();
+            }
+
+            await delay(2000); 
+
+        } else if (action === 'open_chat') {
+            const chatButton = document.querySelector('.fixed.bottom-6.right-6 > button') as HTMLElement;
+            if (chatButton) {
+                chatButton.click();
+            }
         }
+    } catch (e) {
+        console.error("[DEBUG] A critical error occurred during execution:", e);
     }
+    console.log('--- [DEBUG] ENDING processHelpAction ---');
 };

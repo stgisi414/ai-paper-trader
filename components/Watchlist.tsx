@@ -12,6 +12,7 @@ import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIc
 import WatchlistNews from './WatchlistNews';
 import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
 import { formatCurrency, formatNumber, formatPercentage } from '/utils/formatters';
+import { usePersistentState } from '../utils/localStorageManager';
 
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities", "Basic Materials"];
 
@@ -122,15 +123,15 @@ const Watchlist: React.FC = () => {
     const [isRecLoading, setIsRecLoading] = useState(false);
     const [individualRecLoading, setIndividualRecLoading] = useState<Set<string>>(new Set());
     const [recError, setRecError] = useState<string | null>(null);
-    const [recommendations, setRecommendations] = useState<WatchlistPick[]>([]);
-    const [localRecs, setLocalRecs] = useState<Record<string, CombinedRec>>({});
+    const [recommendations, setRecommendations] = usePersistentState<WatchlistPick[]>(`watchlist-recs-${activeWatchlist}`, []);
+    const [localRecs, setLocalRecs] = usePersistentState<Record<string, CombinedRec>>(`watchlist-localRecs-${activeWatchlist}`, {});
     const [newWatchlistName, setNewWatchlistName] = useState('');
     const [showNewWatchlistInput, setShowNewWatchlistInput] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
-    const [sectorFilter, setSectorFilter] = useState<string | null>(null);
+    const [showFilters, setShowFilters] = usePersistentState<boolean>(`watchlist-showFilters-${activeWatchlist}`, false);
+    const [sectorFilter, setSectorFilter] = usePersistentState<string | null>(`watchlist-filter-${activeWatchlist}`, null);
     const [showWatchlistNews, setShowWatchlistNews] = useState(false);
     const [isManageModalOpen, setIsManageModalOpen] = useState(false);
-    const [showSorts, setShowSorts] = useState(false);
+    const [showSorts, setShowSorts] = usePersistentState<boolean>(`watchlist-showSorts-${activeWatchlist}`, false);
 
     const dragItem = useRef<number | null>(null);
     const dragOverItem = useRef<number | null>(null);
@@ -160,8 +161,9 @@ const Watchlist: React.FC = () => {
                     aValue = a.ticker;
                     bValue = b.ticker;
                 } else if (sortKey === 'change') {
-                    aValue = a.change;
-                    bValue = b.change;
+                    // FIX: Use changesPercentage for sorting the watchlist by change
+                    aValue = a.changesPercentage; 
+                    bValue = b.changesPercentage; 
                 } else {
                     return 0;
                 }

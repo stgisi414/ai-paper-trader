@@ -17,6 +17,8 @@ import Watchlist from './Watchlist';
 import { useAuth } from '../src/hooks/useAuth.tsx';
 import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 import { processHelpAction } from '../utils/workflowExecutor';
+import { usePersistentState } from '../utils/localStorageManager';
+import UsageIndicator from './UsageIndicator';
 
 type OptionsSortKey = 'strike_price' | 'close_price' | 'impliedVolatility' | 'volume' | 'delta' | 'gamma' | 'theta' | 'vega' | null;
 type SortDirection = 'asc' | 'desc';
@@ -111,21 +113,23 @@ const StockView: React.FC = () => {
         return value.toFixed(3);
     }, []);
 
+    const tickerRef = useRef<string | undefined>(ticker);
+
     const [quote, setQuote] = useState<FmpQuote | null>(null);
     const [profile, setProfile] = useState<FmpProfile | null>(null);
     const [historicalData, setHistoricalData] = useState<FmpHistoricalData[]>([]);
     const [chartInterval, setChartInterval] = usePersistentState<string>(`chartInterval-${ticker}`, '1day');
     const [news, setNews] = useState<FmpNews[]>([]);
-    const [aiAnalysis, setAiAnalysis] = useState<AiAnalysis | null>(null);
+    const [aiAnalysis, setAiAnalysis] = usePersistentState<AiAnalysis | null>(`aiAnalysis-${ticker}`, null);
     const [analystRatings, setAnalystRatings] = useState<FmpAnalystRating[]>([]);
     const [incomeStatement, setIncomeStatement] = useState<FmpIncomeStatement | null>(null);
     const [balanceSheet, setBalanceSheet] = useState<FmpBalanceSheet | null>(null);
     const [cashFlowStatement, setCashFlowStatement] = useState<FmpCashFlowStatement | null>(null);
     const [insiderTrades, setInsiderTrades] = useState<FmpInsiderTrading[]>([]);
-    const [financialStatementAnalysis, setFinancialStatementAnalysis] = useState<FinancialStatementAnalysis | null>(null);
-    const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
+    const [financialStatementAnalysis, setFinancialStatementAnalysis] = usePersistentState<FinancialStatementAnalysis | null>(`financials-${ticker}`, null);
+    const [technicalAnalysis, setTechnicalAnalysis] = usePersistentState<TechnicalAnalysis | null>(`technical-${ticker}`, null);
     const [combinedRec, setCombinedRec] = usePersistentState<CombinedRec | null>(`combinedRec-${ticker}`, null);
-    const [keyMetricsAnalysis, setKeyMetricsAnalysis] = useState<KeyMetricsAnalysis | null>(null);
+    const [keyMetricsAnalysis, setKeyMetricsAnalysis] = usePersistentState<KeyMetricsAnalysis | null>(`keyMetrics-${ticker}`, null);
     
     // START NEW OPTIONS STATE & LOGIC
     const [options, setOptions] = useState<AlpacaOptionContract[]>([]);
@@ -143,9 +147,9 @@ const StockView: React.FC = () => {
     const [activeTab, setActiveTab] = useState('summary');
     const [tradeTab, setTradeTab] = usePersistentState<'stock' | 'calls' | 'puts'>(`tradeTab-${ticker}`, 'stock');
     
-    const [hasRunFinancialAnalysis, setHasRunFinancialAnalysis] = useState(false);
-    const [hasRunTechnicalAnalysis, setHasRunTechnicalAnalysis] = useState(false);
-    const [hasRunAdvancedRecs, setHasRunAdvancedRecs] = useState(false);
+    const [hasRunFinancialAnalysis, setHasRunFinancialAnalysis] = usePersistentState<boolean>(`hasRunFinancials-${ticker}`, false);
+    const [hasRunTechnicalAnalysis, setHasRunTechnicalAnalysis] = usePersistentState<boolean>(`hasRunTechnical-${ticker}`, false);
+    const [hasRunAdvancedRecs, setHasRunAdvancedRecs] = usePersistentState<boolean>(`hasRunAdvancedRecs-${ticker}`, false);
 
     const [optionsSort, setOptionsSort] = useState<{ key: OptionsSortKey, direction: SortDirection }>({ key: null, direction: 'asc' });
 
@@ -203,27 +207,33 @@ const StockView: React.FC = () => {
         const fetchData = async () => {
             setIsLoading(true);
 
-            // Clear out old data when a new ticker is loaded
+            // ADDED CLEAR LOGIC: Clear AI state if the ticker has changed
+            if (ticker !== tickerRef.current) {
+                // Clear AI analysis states using their set functions
+                setAiAnalysis(null);
+                setFinancialStatementAnalysis(null);
+                setTechnicalAnalysis(null);
+                setCombinedRec(null);
+                setKeyMetricsAnalysis(null);
+                setHasRunFinancialAnalysis(false);
+                setHasRunTechnicalAnalysis(false);
+                setHasRunAdvancedRecs(false);
+            }
+            tickerRef.current = ticker;
+
+            // Clear out old data when a new ticker is loaded (non-persistent data)
             setQuote(null);
             setProfile(null);
             setHistoricalData([]);
             setNews([]);
-            setAiAnalysis(null);
             setAnalystRatings([]);
             setIncomeStatement(null);
             setBalanceSheet(null);
             setCashFlowStatement(null);
             setInsiderTrades([]);
-            setFinancialStatementAnalysis(null);
-            setTechnicalAnalysis(null);
-            setCombinedRec(null);
-            setKeyMetricsAnalysis(null);
             setOptions([]);
             setAvailableExpirationDates([]);
             setSelectedExpiry('');
-            setHasRunFinancialAnalysis(false);
-            setHasRunTechnicalAnalysis(false);
-            setHasRunAdvancedRecs(false);
 
             // ADDITION: Helper function to safely extract fulfilled promise values (for Promise.allSettled)
             const extractValue = <T,>(result: PromiseSettledResult<T>, defaultValue: T): T => {
@@ -511,10 +521,9 @@ const StockView: React.FC = () => {
             const optionToBuy: OptionHolding = {
                 symbol: selectedOption.symbol,
                 underlyingTicker: selectedOption.underlying_symbol,
-                shares: shares,
+                shares: contractsToBuy,
                 purchasePrice: marketPremium, 
                 currentPrice: marketPremium,
-                // FIX: Add change and changesPercentage when buying a new option
                 change: selectedOption.change || 0,
                 changesPercentage: selectedOption.changesPercentage || 0,
                 optionType: selectedOption.type,
@@ -722,6 +731,11 @@ const StockView: React.FC = () => {
                                 The model will identify key financial strengths and weaknesses to give you a quick overview of the company's health.
                             </p>
                         )}
+                        {financialStatementAnalysis && (
+                            <p className="text-xs text-night-500 mb-2">
+                                *Analyses and recommendations are locally stored for one week.
+                            </p>
+                        )}
                         {isAiLoading && <Spinner />}
                         {financialStatementAnalysis && (
                             <div className="bg-night-700 p-4 rounded-lg">
@@ -826,6 +840,11 @@ const StockView: React.FC = () => {
                                 Let the AI analyze the historical price chart to identify the current trend, key support and resistance levels, and provide a summary of the technical outlook.
                             </p>
                         )}
+                        {technicalAnalysis && (
+                            <p className="text-xs text-night-500 mb-2">
+                                *Analyses and recommendations are locally stored for one week.
+                            </p>
+                        )}
                         {isAiLoading && <Spinner />}
                         {technicalAnalysis && (
                             <div className="bg-night-700 p-4 rounded-lg">
@@ -845,6 +864,11 @@ const StockView: React.FC = () => {
                             <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Synthesized Strategy</h2>
                             {/* This button is now redundant but kept for the dedicated tab */}
                         </div>
+                        {combinedRec && (
+                            <p className="text-xs text-night-500 mb-2">
+                                *Analyses and recommendations are locally stored for one week.
+                            </p>
+                        )}
                          {smartRecSection}
                     </Card>
                 );
@@ -897,6 +921,7 @@ const StockView: React.FC = () => {
                 
                 {/* LEFT COLUMN (lg:col-span-2) - Only contains Watchlist now */}
                 <div className="lg:col-span-2 space-y-6"> 
+                    {user && <UsageIndicator />}
                     {user && <Watchlist />}
                 </div>
 
@@ -1126,11 +1151,23 @@ const StockView: React.FC = () => {
                         <nav className="-mb-px flex space-x-8 whitespace-nowrap" aria-label="Tabs">
                             <button onClick={() => setActiveTab('summary')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'summary' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Summary</button>
                             <button onClick={() => setActiveTab('news')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'news' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>News</button>
-                            <button onClick={() => setActiveTab('financials')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'financials' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Financials</button>
+                            <button 
+                                id="financials-tab-button" // ADDED ID
+                                onClick={() => setActiveTab('financials')} 
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'financials' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}
+                            >Financials</button>
                             <button onClick={() => setActiveTab('ratings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'ratings' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Analyst Ratings</button>
                             <button onClick={() => setActiveTab('insider')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'insider' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Insider Trades</button>
-                            <button onClick={() => setActiveTab('technical')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'technical' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>AI Technical Analysis</button>
-                            <button onClick={() => setActiveTab('advanced')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'advanced' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}>Advanced Recs</button>
+                            <button 
+                                id="technical-tab-button" // ADDED ID
+                                onClick={() => setActiveTab('technical')} 
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'technical' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}
+                            >AI Technical Analysis</button>
+                            <button 
+                                id="advanced-tab-button" // ADDED ID
+                                onClick={() => setActiveTab('advanced')} 
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'advanced' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-night-500 hover:text-night-100 hover:border-night-100'}`}
+                            >Advanced Recs</button>
                         </nav>
                     </div>
                     

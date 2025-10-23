@@ -73,40 +73,20 @@ export const getProfile = (ticker: string): Promise<FmpProfile[]> => {
 export const getHistoricalData = (ticker: string, interval: string = '1day'): Promise<{ historical: FmpHistoricalData[] }> => {
     let endpoint = ''; // Initialize endpoint variable
 
-    if (['15min', '1hour', '4hour'].includes(interval)) {
-        // Use the intraday endpoint for these intervals
+    // MODIFICATION: Consolidate all chart types to consistently use the
+    // /v3/historical-chart/ endpoint. This removes the need for complex, and buggy,
+    // manual date calculations for daily, weekly, and monthly views.
+    if (['15min', '1hour', '4hour', '1day', '1week', '1month'].includes(interval)) {
+        // Use the common historical chart endpoint for all intervals, relying on FMP to aggregate.
         endpoint = `/v3/historical-chart/${interval}/${ticker}`;
-        // Fetch and process directly for intraday
+        
+        // Fetch and process directly from the array response
         return fetchFmp<FmpHistoricalData[]>(endpoint).then(data => ({ historical: data }));
     } else {
-        // For daily, weekly, and monthly views, fetch daily data over different time ranges.
-        const to = new Date().toISOString().split('T')[0];
-        let fromDate = new Date(); // Use a mutable Date object
-        let from;
-        
-        // --- FIX: Correctly calculate the historical start date based on the desired view ---
-        if (interval === '1week') {
-            // A common range for a '1 week' *view* on a daily chart is 3 months of data, or 1 year.
-            // Using 2 years as originally intended, which provides enough data for weekly aggregation if needed.
-            fromDate.setFullYear(fromDate.getFullYear() - 2); 
-            from = fromDate.toISOString().split('T')[0];
-            
-        } else if (interval === '1month') {
-            // Use 5 years for the '1 month' view (long-term data)
-            fromDate.setFullYear(fromDate.getFullYear() - 5);
-            from = fromDate.toISOString().split('T')[0];
-
-        } else { // '1day' default (should show around 1 year of daily data)
-            fromDate.setFullYear(fromDate.getFullYear() - 1);
-            from = fromDate.toISOString().split('T')[0];
-        }
-        // --- END FIX ---
-        
-        endpoint = `/v3/historical-price-full/${ticker}?from=${from}&to=${to}`;
-        // Fetch and process for daily historical
-        return fetchFmp<{ historical: FmpHistoricalData[] }>(endpoint); // Assuming FMP returns { historical: [...] }
+        // Fallback for unsupported intervals.
+        return Promise.resolve({ historical: [] });
     }
-}
+};
 
 
 export const getNews = (ticker: string, limit: number = 20): Promise<FmpNews[]> => {

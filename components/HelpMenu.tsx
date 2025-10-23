@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Card from './common/Card';
 import { BrainCircuitIcon, SignatexLiteIcon, SignatexMaxIcon, SearchIcon, EyeIcon, BriefcaseIcon, DollarSignIcon, NewspaperIcon } from './common/Icons';
@@ -21,7 +21,7 @@ const aiFunctions = [
         description: "Analyzes the combined news headlines for all stocks in your active watchlist to generate a single BULLISH/BEARISH/NEUTRAL sentiment score and summary.",
         linkPath: "/",
         elementId: 'watchlist-news-button',
-        action: 'click'
+        action: 'click' // This remains 'click' because it opens a non-tab modal
     },
     {
         name: "Technical Chart Analysis",
@@ -29,8 +29,8 @@ const aiFunctions = [
         function: "getTechnicalAnalysis",
         description: "Analyzes historical price data to identify the current trend, key support, and resistance levels for any selected stock.",
         linkPath: "/stock/:ticker",
-        elementId: 'technical-tab-button',
-        action: 'open_tab'
+        elementId: 'technical-analyze-button', // Corrected target to the button ID
+        action: 'show_element' // CHANGED to show_element
     },
     {
         name: "Key Stock Metrics Summary",
@@ -39,7 +39,7 @@ const aiFunctions = [
         description: "Generates a plain-language summary of a stock's valuation and market data (P/E, Market Cap, Volume).",
         linkPath: "/stock/:ticker",
         elementId: 'summary-analyze-button',
-        action: 'click'
+        action: 'show_element' // CHANGED to show_element
     },
     {
         name: "Stock Picker Questionnaire",
@@ -56,8 +56,8 @@ const aiFunctions = [
         function: "analyzeFinancialStatements",
         description: "Performs a deep audit of the company's Income, Balance Sheet, and Cash Flow statements, detailing financial strengths and weaknesses.",
         linkPath: "/stock/:ticker",
-        elementId: 'financials-tab-button',
-        action: 'open_tab'
+        elementId: 'financials-analyze-button', // Corrected target to the button ID
+        action: 'show_element' // CHANGED to show_element
     },
     {
         name: "Advanced Trading Strategy Recs",
@@ -65,8 +65,8 @@ const aiFunctions = [
         function: "getCombinedRecommendations",
         description: "Synthesizes market data, technical analysis, and analyst ratings into a single, actionable trading strategy (e.g., Buy Stock, Covered Call).",
         linkPath: "/stock/:ticker",
-        elementId: 'advanced-tab-button',
-        action: 'open_tab'
+        elementId: 'advanced-tab-button', 
+        action: 'show_element' // CHANGED to show_element (targets the tab itself, where content is)
     },
     {
         name: "Options Strategy Planner",
@@ -84,7 +84,7 @@ const aiFunctions = [
         description: "Allocates available cash across multiple watchlist stocks based on your risk profile and AI news sentiment analysis.",
         linkPath: "/",
         elementId: 'watchlist-news-button',
-        action: 'click'
+        action: 'click' // This remains 'click' because it opens a modal
     },
     {
         name: "Portfolio Risk Analysis",
@@ -128,9 +128,12 @@ const HelpMenu: React.FC = () => {
                     <BrainCircuitIcon className="h-8 w-8 text-brand-blue" />
                     <h1 className="text-3xl font-bold">AI Assistant Help Menu</h1>
                 </div>
-                <p className="text-night-500">
+                <p className="text-night-200">
                     A comprehensive list of all Signatex AI capabilities and how they are categorized. 
                     <span className="font-bold">Lite</span> models are for quick tasks; <span className="font-bold">Max</span> models are for deep analysis and complex reasoning.
+                </p>
+                <p className="text-sm text-night-100 mt-4 p-3 bg-night-700 rounded-md border border-night-600">
+                    <strong className="text-yellow-400">Note:</strong> AI analyses and recommendations (e.g., Financial Summary, Technical Analysis) are temporarily stored on your device for one week to preserve your work if you navigate away. After one week, they will be purged and must be regenerated.
                 </p>
             </Card>
 
@@ -151,9 +154,6 @@ const HelpMenu: React.FC = () => {
                                 </span>
                             </div>
                             <p className="text-night-100 text-sm">{func.description}</p>
-                            <p className="text-xs text-night-500 mt-2">
-                                *Function: {func.function}
-                            </p>
                         </div>
                         
                         {func.action !== 'open_chat' && (

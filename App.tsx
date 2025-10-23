@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { HashRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
+import { processHelpAction } from './utils/workflowExecutor';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
 import { PortfolioProvider } from './hooks/usePortfolio';
 import { WatchlistProvider } from './hooks/useWatchlist';
@@ -48,6 +49,13 @@ const MainApp: React.FC = () => {
     const auth = getAuth();
     const navigate = useNavigate();
     useUnreadListener();
+    const location = useLocation();
+
+    useEffect(() => {
+        // This runs every time the route changes.
+        console.log(`[ROUTE DEBUG] Route changed to: ${location.pathname}. Triggering processHelpAction...`);
+        processHelpAction(); 
+    }, [location]); // Depend on location to re-run after navigation
 
     const [isFontSizeMenuOpen, setIsFontSizeMenuOpen] = useState(false);
 
