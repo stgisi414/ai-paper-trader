@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Card from './common/Card';
-import { BrainCircuitIcon, SignatexLiteIcon, SignatexMaxIcon, SearchIcon, EyeIcon, BriefcaseIcon, DollarSignIcon, NewspaperIcon } from './common/Icons';
+import { LightbulbIcon, BrainCircuitIcon, SignatexLiteIcon, SignatexMaxIcon, SearchIcon, EyeIcon, BriefcaseIcon, DollarSignIcon, NewspaperIcon, AnalysisIcon, RecommendationIcon, StrategyIcon, ScreenerIcon, AssistantIcon } from './common/Icons';
 
 // Define the data structure for the menu
 const aiFunctions = [
@@ -104,17 +104,32 @@ const aiFunctions = [
         elementId: 'ai-chat-open-button',
         action: 'open_chat'
     },
+    {
+        name: "AI Watchlist Recommendations", // Clarified name based on functionality
+        model: "Max",                        // Uses gemini-2.5-pro
+        function: "getWatchlistPicks",
+        description: "Generates 3 new stock recommendations based on current portfolio, watchlist, and general market news.",
+        linkPath: "/",                       // Action is on the Dashboard
+        elementId: 'watchlist-smart-recs-button', // ID of the lightbulb button
+        action: 'show_element'                      // Triggers the recommendation generation
+    },
 ];
 
 const getIcon = (name: string) => {
     switch(name) {
-        case "Trade Flow Automation": return <BrainCircuitIcon className="h-6 w-6" />;
+        case "Trade Flow Automation": return <AssistantIcon className="h-6 w-6" />; // Use AssistantIcon for chat flow
         case "Watchlist News Sentiment": return <NewspaperIcon className="h-6 w-6" />;
-        case "Technical Chart Analysis": return <SearchIcon className="h-6 w-6" />;
-        case "Key Stock Metrics Summary": return <DollarSignIcon className="h-6 w-6" />;
-        case "Stock Picker Questionnaire": return <EyeIcon className="h-6 w-6" />;
-        case "Financial Statement Analysis": return <BriefcaseIcon className="h-6 w-6" />;
-        default: return <BrainCircuitIcon className="h-6 w-6" />;
+        case "Technical Chart Analysis": return <AnalysisIcon className="h-6 w-6" />; // Use AnalysisIcon
+        case "Key Stock Metrics Summary": return <AnalysisIcon className="h-6 w-6" />; // Use AnalysisIcon
+        case "Stock Picker Questionnaire": return <RecommendationIcon className="h-6 w-6" />; // Use RecommendationIcon
+        case "Financial Statement Analysis": return <BriefcaseIcon className="h-6 w-6" />; // Keep Briefcase? Or use AnalysisIcon? Let's keep Briefcase for financials.
+        case "Advanced Trading Strategy Recs": return <StrategyIcon className="h-6 w-6" />; // Use StrategyIcon
+        case "Options Strategy Planner": return <StrategyIcon className="h-6 w-6" />; // Use StrategyIcon
+        case "Trade Allocation Planner": return <StrategyIcon className="h-6 w-6" />; // Use StrategyIcon
+        case "Portfolio Risk Analysis": return <AnalysisIcon className="h-6 w-6" />; // Use AnalysisIcon
+        case "Portfolio Recommendation": return <RecommendationIcon className="h-6 w-6" />; // Use RecommendationIcon
+        case "AI Watchlist Recommendations": return <LightbulbIcon className="h-6 w-6" />; // Add this case
+        default: return <BrainCircuitIcon className="h-6 w-6" />; // Keep as default fallback
     }
 };
 

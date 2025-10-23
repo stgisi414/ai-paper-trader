@@ -7,7 +7,7 @@ import type { FmpSearchResult, PortfolioRiskAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, BrainCircuitIcon } from './common/Icons';
+import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, AnalysisIcon } from './common/Icons';
 import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
@@ -109,7 +109,7 @@ const Dashboard: React.FC = () => {
             {user && <ChatPanel />}
             <div className="text-center">
                 <h1 className="text-4xl font-bold">Signatex.co</h1>
-                <p className="text-night-500 mt-2">Make smarter trades with the power of AI.</p>
+                <p className="text-blue-200 mt-2">Make smarter trades with the power of AI.</p>
                 {user && (
                     <div className="mt-4 max-w-xs mx-auto">
                         <UsageIndicator />
@@ -234,7 +234,7 @@ const Dashboard: React.FC = () => {
                     {user ? (
                         <Card>
                             <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-2xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
+                                <h2 className="text-2xl font-bold flex items-center gap-2"><AnalysisIcon className="h-6 w-6 text-brand-blue" /> AI Portfolio Risk Analysis</h2>
                                 <button 
                                     onClick={handlePortfolioAnalysis} 
                                     disabled={isAnalyzing} 
@@ -274,7 +274,7 @@ const Dashboard: React.FC = () => {
                                     <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
                                         <BriefcaseIcon className="h-8 w-8 text-brand-blue" />
                                         <div>
-                                            <div className="text-sm text-night-500">Total Value</div>
+                                            <div className="text-sm text-blue-200">Total Value</div>
                                             <div className="text-3xl font-bold">{formatCurrency(totalValue)}</div>
                                         </div>
                                     </div>
@@ -282,13 +282,13 @@ const Dashboard: React.FC = () => {
                                         <GainLossIcon className={`h-8 w-8 ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`} />
                                         <div className="flex flex-col">
                                             <div>
-                                                <div className="text-xs text-night-500">Open G/L</div>
+                                                <div className="text-xs text-blue-200">Open G/L</div>
                                                 <div className={`text-lg font-bold ${totalGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
                                                     {formatCurrency(totalGain)} ({formatPercentage(totalGainPercent)})
                                                 </div>
                                             </div>
                                             <div className="mt-1">
-                                                <div className="text-xs text-night-500">Day's G/L</div>
+                                                <div className="text-xs text-blue-200">Day's G/L</div>
                                                 <div className={`text-lg font-bold ${totalDailyGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
                                                     {formatCurrency(totalDailyGain)} ({formatPercentage(totalDailyGainPercent)})
                                                 </div>
@@ -298,14 +298,14 @@ const Dashboard: React.FC = () => {
                                     <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
                                         <DollarSignIcon className="h-8 w-8 text-brand-green" />
                                         <div>
-                                            <div className="text-sm text-night-500">Cash Balance</div>
+                                            <div className="text-sm text-blue-200">Cash Balance</div>
                                             <div className="text-2xl font-bold">{formatCurrency(portfolio.cash)}</div>
                                         </div>
                                     </div>
                                     <div className="bg-night-700 p-4 rounded-lg flex items-center gap-4">
                                         <BriefcaseIcon className="h-8 w-8 text-night-100 opacity-50" />
                                         <div>
-                                            <div className="text-sm text-night-500">Holdings Value</div>
+                                            <div className="text-sm text-blue-200">Holdings Value</div>
                                             <div className="text-2xl font-bold">{formatCurrency(holdingsValue)}</div>
                                         </div>
                                     </div>

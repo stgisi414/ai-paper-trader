@@ -73,7 +73,7 @@ const MarketScreener: React.FC = () => {
                     >
                         <option.icon className={`w-6 h-6 ${activeScreen === option.id ? 'text-night-900' : 'text-brand-blue'}`} />
                         <span className="font-bold text-lg">{option.title}</span>
-                        <p className={`text-sm ${activeScreen === option.id ? 'text-night-900' : 'text-night-500'}`}>{option.prompt.split('.')[0]}</p>
+                        <p className={`text-sm ${activeScreen === option.id ? 'text-night-900' : 'text-night-300'}`}>{option.prompt.split('.')[0]}</p>
                     </button>
                 ))}
             </div>

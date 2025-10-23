@@ -9,7 +9,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { BrainCircuitIcon, StarIcon, HelpCircleIcon, RegenerateIcon } from './common/Icons';
+import { StarIcon, HelpCircleIcon, RegenerateIcon, RecommendationIcon, AnalysisIcon, StrategyIcon, NewspaperIcon, ClipboardCheckIcon, UserStarIcon, KeyIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as optionsProxyService from '../services/optionsProxyService';
 import ChatPanel from './ChatPanel';
@@ -622,7 +622,7 @@ const StockView: React.FC = () => {
             <div className="bg-night-700 p-4 rounded-lg mt-6 border-l-4 border-brand-blue">
                 <div className="flex justify-between items-center">
                     <h3 className="text-lg font-bold flex items-center gap-2">
-                        <BrainCircuitIcon className="h-5 w-5 text-brand-blue" /> AI Smart Recommendation
+                        <RecommendationIcon className="h-5 w-5 text-brand-blue" /> AI Smart Recommendation
                     </h3>
                     {/* FIX: Add Regenerate Button */}
                     {combinedRec && !isAiLoading && (
@@ -660,7 +660,7 @@ const StockView: React.FC = () => {
                 return (
                     <Card>
                          <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold">Key Statistics</h2>
+                            <h2 className="text-xl font-bold"><KeyIcon className="h-6 w-6 text-brand-blue inline" /> Key Statistics</h2>
                             <button onClick={handleKeyMetricsAnalysis} disabled={isKeyMetricsLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
                                 <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isKeyMetricsLoading ? 'Analyzing...' : 'Analyze'}
@@ -690,7 +690,7 @@ const StockView: React.FC = () => {
                 return (
                     <Card>
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold">Latest News</h2>
+                            <h2 className="text-xl font-bold"><NewspaperIcon className="h-6 w-6 text-brand-blue inline" /> Latest News</h2>
                             <button onClick={handleAiAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
                                 <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run AI Sentiment Analysis'}
@@ -726,7 +726,7 @@ const StockView: React.FC = () => {
                  return (
                     <Card>
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Financial Summary</h2>
+                            <h2 className="text-xl font-bold flex items-center gap-2"><AnalysisIcon className="h-6 w-6 text-brand-blue" /> AI Financial Summary</h2>
                             <button id="financials-analyze-button" onClick={handleFinancialAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
                                 <SignatexMaxIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
@@ -765,7 +765,7 @@ const StockView: React.FC = () => {
             case 'ratings':
                  return (
                     <Card>
-                        <h2 className="text-xl font-bold mb-4">Analyst Ratings</h2>
+                        <h2 className="text-xl font-bold mb-4"><ClipboardCheckIcon className="h-6 w-6 text-brand-blue inline" /> Analyst Ratings</h2>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead className="border-b border-night-600">
@@ -801,7 +801,7 @@ const StockView: React.FC = () => {
             case 'insider':
                 return (
                     <Card>
-                        <h2 className="text-xl font-bold mb-4">Insider Trades</h2>
+                        <h2 className="text-xl font-bold mb-4"><UserStarIcon className="h-6 w-6 text-brand-blue inline" /> Insider Trades</h2>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead className="border-b border-night-600">
@@ -836,7 +836,7 @@ const StockView: React.FC = () => {
                 return (
                     <Card>
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Technical Analysis</h2>
+                            <h2 className="text-xl font-bold flex items-center gap-2"><AnalysisIcon className="h-6 w-6 text-brand-blue" /> AI Technical Analysis</h2>
                             <button id="technical-analyze-button" onClick={handleTechnicalAnalysis} disabled={isAiLoading} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:bg-night-600">
                                 <SignatexLiteIcon className="h-5 w-5 inline mr-1 mb-1" />
                                 {isAiLoading ? 'Analyzing...' : 'Run Analysis'}
@@ -868,7 +868,7 @@ const StockView: React.FC = () => {
                 return (
                      <Card>
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold flex items-center gap-2"><BrainCircuitIcon className="h-6 w-6 text-brand-blue" /> AI Synthesized Strategy</h2>
+                            <h2 className="text-xl font-bold flex items-center gap-2"><StrategyIcon className="h-6 w-6 text-brand-blue" /> AI Synthesized Strategy</h2>
                             {/* This button is now redundant but kept for the dedicated tab */}
                         </div>
                         {combinedRec && (

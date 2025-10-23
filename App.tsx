@@ -6,7 +6,7 @@ import { PortfolioProvider } from './hooks/usePortfolio';
 import { WatchlistProvider } from './hooks/useWatchlist';
 import Dashboard from './components/Dashboard';
 import StockView from './components/StockView';
-import { BrainCircuitIcon, BriefcaseIcon } from './components/common/Icons';
+import { RecommendationIcon, BriefcaseIcon } from './components/common/Icons';
 import StockPicker from './components/StockPicker';
 import HistoryLedger from './components/HistoryLedger';
 import Login from './src/components/Login';
@@ -58,7 +58,7 @@ const MainApp: React.FC = () => {
         navigate('/');
     };
 
-    const logoClassName = 'h-10 w-8 bg-white transition-all duration-300';
+    const logoClassName = 'h-10 w-8 transition-all duration-300';
 
     const isSpecialPage = [
       '/terms',
@@ -87,9 +87,9 @@ const MainApp: React.FC = () => {
             {!isSpecialPage && (
               <header className="bg-night-800 shadow-md p-4 sticky top-0 z-10">
                   <nav className="container mx-auto flex justify-between items-center">
-                      <Link to="/" className="flex items-center pl-4 pr-4 gap-2 text-xl font-bold text-blue-500 rounded-md bg-white border border-night-400 border-4 p-1">
+                      <Link to="/" className="flex items-center pl-4 pr-4 gap-2 text-xl font-bold text-blue-200 rounded-md bg-night-400 border border-night-700 border-4 p-1">
                           <img
-                              src="/logo.jpg"
+                              src="/logo_no_bg.png"
                               alt="Signatex Logo"
                               className={logoClassName}
                               style={{ objectFit: 'contain' }}
@@ -155,7 +155,7 @@ const MainApp: React.FC = () => {
                                       <span className="hidden sm:inline">History</span>
                                   </Link>
                                   <Link to="/picker" className="flex items-center gap-2 text-md font-bold text-white bg-brand-blue px-3 py-2 rounded-md hover:bg-blue-600 transition-colors" title="AI Stock Picker">
-                                      <BrainCircuitIcon className="h-5 w-5" />
+                                      <RecommendationIcon className="h-5 w-5" />
                                       <span className="hidden sm:inline">AI Stock Picker</span>
                                   </Link>
                                   <button onClick={handleSignOut} className="text-md font-bold text-white p-2 rounded-md hover:bg-night-700" title="Sign Out">

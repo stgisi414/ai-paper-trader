@@ -8,7 +8,7 @@ import type { FmpSearchResult, CombinedRec, WatchlistPick, FmpHistoricalData, Te
 import { WatchlistSortKey } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
-import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, BrainCircuitIcon, SaveIcon, FilterIcon, NewspaperIcon, RegenerateIcon, SettingsIcon, EditIcon, SortIcon, SortAscIcon, SortDescIcon } from './common/Icons';
+import { EyeIcon, TrashIcon, PlusIcon, SearchIcon, GripVerticalIcon, LightbulbIcon, AtomIcon, SaveIcon, FilterIcon, NewspaperIcon, RegenerateIcon, SettingsIcon, EditIcon, SortIcon, SortAscIcon, SortDescIcon } from './common/Icons';
 import WatchlistNews from './WatchlistNews';
 import { useAuth } from '../src/hooks/useAuth'; // Import useAuth
 import { formatCurrency, formatNumber, formatPercentage } from '/utils/formatters';
@@ -518,7 +518,7 @@ const Watchlist: React.FC = () => {
                                                             </div>
                                                         ) : (
                                                             <button onClick={() => handleGenerateRec(item.ticker)} className="text-brand-blue hover:text-yellow-400" title="Generate AI Recommendation">
-                                                                <BrainCircuitIcon className="h-5 w-5" />
+                                                                <AtomIcon className="h-5 w-5" />
                                                             </button>
                                                         )}
                                                         {smartRec && !isGeneratingRec && (

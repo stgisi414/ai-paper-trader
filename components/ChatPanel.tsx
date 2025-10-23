@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation, useParams, Link } from 'react-router-dom';
 import { getWorkflowFromPrompt, AppContext } from '../services/signatexFlowService';
 import { executeStep, cleanupHighlight } from '../utils/workflowExecutor';
-import { MessageSquareIcon, BrainCircuitIcon, UsersIcon, MicrophoneIcon, SendIcon, TrashIcon } from './common/Icons';
+import { MessageSquareIcon, UsersIcon, MicrophoneIcon, SendIcon, TrashIcon, AssistantIcon } from './common/Icons';
 import Spinner from './common/Spinner';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useWatchlist } from '../hooks/useWatchlist';
@@ -597,7 +597,7 @@ const ChatPanel: React.FC = () => {
                 <div className="space-y-1"> 
                     <div className="flex justify-between items-center"> {/* NEW ROW to hold header and button */}
                         <h3 className="text-lg font-bold text-yellow-400 flex items-center gap-2">
-                            <BrainCircuitIcon className="w-6 h-6"/> AI Trading Assistant
+                            <AssistantIcon className="w-6 h-6"/> AI Trading Assistant
                         </h3>
                         {/* ADDITION: Clear Chat Button */}
                         <button 
@@ -749,7 +749,7 @@ const ChatPanel: React.FC = () => {
                                 onClick={() => { setMode('ai'); setLocalMessages([]); setIsAwaitingContinue(false); cleanupHighlight(); setPrivateChatTarget(null); setPrivateChatMessages([]); }}
                                 className={`w-1/2 py-1.5 rounded-full text-sm font-bold transition-colors flex items-center justify-center gap-1 ${mode === 'ai' ? 'bg-yellow-400 text-night-900' : 'text-night-100 hover:bg-night-600'}`}
                             >
-                                <BrainCircuitIcon className="w-4 h-4"/> AI Assistant
+                                <AssistantIcon className="w-4 h-4"/> AI Assistant
                             </button>
                             <button 
                                 onClick={() => { setMode('private'); setLocalMessages([]); setIsAwaitingContinue(false); cleanupHighlight(); }}
