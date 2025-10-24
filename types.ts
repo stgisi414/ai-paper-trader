@@ -470,7 +470,7 @@ export interface User {
   maxUsed?: number;
   liteUsed?: number;
   lastUsageReset?: import('firebase/firestore').Timestamp;
-  referralSource?: string | null; // ADD THIS FIELD
+  referralSource?: string | null;   
 }
 
 

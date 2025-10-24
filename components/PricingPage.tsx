@@ -20,19 +20,19 @@ const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SLVdfDWUolxMnmeJJOS0rD2"; //
 const plans = [
   {
     name: "Starter",
-    price: "$10/month",
+    price: "$35/month",
     priceId: STRIPE_STARTER_PRICE_ID_MONTHLY,
-    features: ["10 Signatex Max usages", "100 Signatex Lite usages", "Full paper trading access"]
+    features: ["5 Signatex Max usages", "50 Signatex Lite usages", "Full paper trading access"]
   },
   {
     name: "Standard",
-    price: "$20/month",
+    price: "$60/month",
     priceId: STRIPE_STANDARD_PRICE_ID_MONTHLY,
-    features: ["25 Signatex Max usages", "250 Signatex Lite usages", "Full paper trading access"]
+    features: ["40 Signatex Max usages", "500 Signatex Lite usages", "Full paper trading access"]
   },
   {
     name: "Pro",
-    price: "$40/month",
+    price: "$120/month",
     priceId: STRIPE_PRO_PRICE_ID_MONTHLY,
     features: [
         `${PRO_MAX_LIMIT} Signatex Max usages`,

@@ -22,25 +22,25 @@ interface SubscriptionModalProps {
 const plans = [
   {
     name: "Starter",
-    price: "$10/mo",
+    price: "$35/mo",
     priceId: STRIPE_STARTER_PRICE_ID_MONTHLY, // Use imported constant
-    features: ["10 Signatex Max usages", "100 Signatex Lite usages", "Full paper trading access"],
+    features: ["5 Signatex Max usages", "50 Signatex Lite usages", "Full paper trading access"],
     borderColor: 'border-green-500' // Changed color for distinction
   },
   {
     name: "Standard",
-    price: "$20/mo",
+    price: "$60/mo",
     priceId: STRIPE_STANDARD_PRICE_ID_MONTHLY, // Use imported constant
-    features: ["25 Signatex Max usages", "250 Signatex Lite usages", "Full paper trading access"],
+    features: ["40 Signatex Max usages", "500 Signatex Lite usages", "Full paper trading access"],
     borderColor: 'border-blue-500'
   },
   {
     name: "Pro",
-    price: "$40/mo",
+    price: "$120/mo",
     priceId: STRIPE_PRO_PRICE_ID_MONTHLY,
     features: [
-        `60 Signatex Max usages`,
-        `600 Signatex Lite usages`,
+        `200 Signatex Max usages`,
+        `1500 Signatex Lite usages`,
         "Full paper trading access",
         "Advanced charting tools",
         "Priority support"
