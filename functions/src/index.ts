@@ -872,7 +872,7 @@ export const geminiProxy = onRequest(
         // Determine if grounding should be used based on the prompt
         // Simple check for explanatory questions
         // eslint-disable-next-line max-len
-        const groundingKeywords = /^(what|who|when|where|why|explain|define|how\s+(do|does|is|are))\s/i;
+        const groundingKeywords = /^\b(what'?s?|who'?s?|when'?s?|where'?s?|why'?s?|explain|define|how\s+(do|does|is|are))\b/i;
         const requiresGrounding = groundingKeywords.test(prompt);
 
         // Combine grounding tool with function declarations if needed
