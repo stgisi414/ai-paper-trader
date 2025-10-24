@@ -2,16 +2,18 @@ import {onRequest} from "firebase-functions/v2/https";
 import {Request, Response} from "express";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
+import {getFirestore, FieldValue,
+  DocumentSnapshot} from "firebase-admin/firestore";
 import {defineString} from "firebase-functions/params";
 import {
   GoogleGenAI,
   FunctionDeclaration,
   Content,
+  Tool,
   Type,
 } from "@google/genai";
-import { onDocumentWritten, Change, FirestoreEvent } from "firebase-functions/v2/firestore";
-import { FieldValue, DocumentSnapshot } from "firebase-admin/firestore";
+import {onDocumentWritten,
+  Change, FirestoreEvent} from "firebase-functions/v2/firestore";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ToolFunction = (args: any) => Promise<any>;
@@ -381,15 +383,248 @@ const tools: FunctionDeclaration[] = [
       required: ["symbol"],
     },
   },
+  // --- START: New Tool Declarations ---
+  {
+    name: "find_competitors",
+    description: `Find a list of competitor or
+     peer companies for a given stock symbol.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        symbol: {
+          type: Type.STRING,
+          description: "The stock ticker symbol (e.g., 'AAPL').",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "get_historical_dividends",
+    description: `Get the recent historical dividend payment
+      amounts and dates for a stock symbol.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        symbol: {
+          type: Type.STRING,
+          description: "The stock ticker symbol (e.g., 'MSFT').",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "get_insider_transactions",
+    description: `Get recent insider trading activity (purchases and sales 
+    by executives and large shareholders) for a stock symbol.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        symbol: {
+          type: Type.STRING,
+          description: "The stock ticker symbol (e.g., 'TSLA').",
+        },
+        limit: {
+          type: Type.NUMBER,
+          description: "Maximum number of transactions to return (default 10).",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "get_sec_filings",
+    description: `Get recent SEC filings (like 10-K, 10-Q, 8-K)
+     for a stock symbol.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        symbol: {
+          type: Type.STRING,
+          description: "The stock ticker symbol (e.g., 'GOOGL').",
+        },
+        type: {
+          type: Type.STRING,
+          description: "Optional: Filter by filing type (e.g., '10-K', '8-K').",
+        },
+        limit: {
+          type: Type.NUMBER,
+          description: "Maximum number of filings to return (default 5).",
+        },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "get_market_movers",
+    description: `Get the top market movers based on activity type:
+      most active stocks ('actives'), top gainers ('gainers'),
+       or top losers ('losers').`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        type: {
+          type: Type.STRING,
+          description: `The type of movers to fetch: 'actives',
+            'gainers', or 'losers'. Defaults to 'actives'.`,
+          enum: ["actives", "gainers", "losers"],
+        },
+      },
+      // No required parameters, defaults to 'actives'
+    },
+  },
 ];
 
+// Fetch Competitors using FMP API
+const findFmpCompetitors = async ({symbol}: {symbol: string}) => {
+  logger.info(`AI Tool: Calling findFmpCompetitors for ${symbol}`);
+  // Correct endpoint for stock peers
+  const endpoint = `/v4/stock_peers?symbol=${symbol.toUpperCase()}`;
+  const {data, error} = await fetchFmpApi(endpoint);
+  if (error) {
+    return {error};
+  }
+  // FMP returns an array, the first element
+  // contains the symbol and its peers list
+  if (Array.isArray(data) && data.length > 0 && data[0].peersList) {
+    // Limit the number of peers returned for context window
+    const MAX_PEERS = 10;
+    const peers = data[0].peersList;
+    logger.info(`Found ${peers.length} peers for ${symbol}.
+      Returning top ${Math.min(peers.length, MAX_PEERS)}.`);
+    return {
+      symbol: data[0].symbol,
+      peers: peers.slice(0, MAX_PEERS),
+    };
+  }
+  return {symbol: symbol, peers: [], message: "No competitor data found."};
+};
 
+// Fetch Historical Dividends using FMP API
+// eslint-disable-next-line max-len
+const getHistoricalDividends = async ({symbol}: {symbol: string}) => {
+  logger.info(`AI Tool: Calling getHistoricalDividends for ${symbol}`);
+  // Endpoint for historical dividends
+  const endpoint = `/v3/historical-price-full/stock_dividend/
+  ${symbol.toUpperCase()}`;
+  const {data, error} = await fetchFmpApi(endpoint);
+  if (error) {
+    return {error};
+  }
+  // The relevant data is usually nested under 'historical'
+  if (data && data.historical && Array.isArray(data.historical)) {
+    // Return the 5 most recent dividend payouts
+    const MAX_DIVIDENDS = 5;
+    const dividends = data.historical;
+    logger.info(`Found ${dividends.length} historical dividends for ${symbol}.
+      Returning most recent ${Math.min(dividends.length, MAX_DIVIDENDS)}.`);
+    // Simplify the structure for the AI
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return dividends.slice(0, MAX_DIVIDENDS).map((div: any) => ({
+      date: div.date,
+      dividend: div.dividend,
+    }));
+  }
+  return []; // Return empty array if no historical data found
+};
+
+// Fetch Insider Transactions using FMP API
+const getInsiderTransactions = async ({symbol, limit = 10}:
+  {symbol: string, limit?: number}) => {
+  logger.info(`AI Tool: Calling getInsiderTransactions
+   for ${symbol} with limit ${limit}`);
+  const actualLimit = Math.min(limit || 10, 20); // Keep limit reasonable
+  // Endpoint for insider trading
+  const endpoint = `/v4/insider-trading?symbol=
+    ${symbol.toUpperCase()}&limit=${actualLimit}&page=0`;
+  const {data, error} = await fetchFmpApi(endpoint);
+  if (error) {
+    return {error};
+  }
+  if (Array.isArray(data)) {
+    // Simplify the data for the LLM
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return data.map((trade: any) => ({
+      date: trade.transactionDate,
+      insider: trade.reportingName,
+      type: trade.transactionType, // e.g., 'P-Purchase', 'S-Sale'
+      shares: trade.securitiesTransacted,
+      price: trade.price,
+      // Assuming FMP provides this, adjust if needed
+      total: trade.totalTransactionAmount,
+    }));
+  }
+  return [];
+};
+
+// Fetch SEC Filings using FMP API
+// eslint-disable-next-line max-len
+const getSecFilings = async ({symbol, type = "", limit = 5}: {symbol: string, type?: string, limit?: number}) => {
+  logger.info(`AI Tool: Calling getSecFilings for ${symbol},
+   type: ${type}, limit: ${limit}`);
+  const actualLimit = Math.min(limit || 5, 10);
+  let endpoint = `/v3/sec_filings/${symbol.toUpperCase()}?limit=${actualLimit}`;
+  if (type) {
+    // Add type if specified (e.g., 10-K, 8-K)
+    endpoint += `&type=${type.toUpperCase()}`;
+  }
+  const {data, error} = await fetchFmpApi(endpoint);
+  if (error) {
+    return {error};
+  }
+  if (Array.isArray(data)) {
+    // Return key details for the LLM
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return data.map((filing: any) => ({
+      type: filing.type,
+      // Check FMP field name, might be filingDate or fillingDate
+      date: filing.fillingDate,
+      link: filing.finalLink || filing.link, // Prefer final link
+    }));
+  }
+  return [];
+};
+
+// Fetch Market Movers using FMP API
+// eslint-disable-next-line max-len
+const getMarketMovers = async ({type = "actives"}: {type?: "actives" | "gainers" | "losers"}) => {
+  logger.info(`AI Tool: Calling getMarketMovers for type: ${type}`);
+  // Construct endpoint based on type
+  const endpoint = `/v3/stock_market/${type}`;
+  const {data, error} = await fetchFmpApi(endpoint);
+  if (error) {
+    return {error};
+  }
+  if (Array.isArray(data)) {
+    // Return top 5 movers for brevity
+    const MAX_MOVERS = 5;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return data.slice(0, MAX_MOVERS).map((mover: any) => ({
+      symbol: mover.symbol,
+      name: mover.name,
+      change: mover.change,
+      price: mover.price,
+      percentChange: mover.changesPercentage,
+    }));
+  }
+  return [];
+};
+
+// --- Add to the 'availableTools: {[key: string]: ToolFunction}' map ---
 const availableTools: {[key: string]: ToolFunction} = {
   "get_options_chain": getOptionsChain,
   "get_fmp_data": getFmpData,
   "get_fmp_quote": getFmpQuote,
   "get_fmp_news": getFmpNews,
   "get_fmp_analyst_ratings": getFmpAnalystRatings,
+  // --- START: Add mappings for new tools ---
+  "find_competitors": findFmpCompetitors,
+  "get_historical_dividends": getHistoricalDividends,
+  "get_insider_transactions": getInsiderTransactions,
+  "get_sec_filings": getSecFilings,
+  "get_market_movers": getMarketMovers,
+  // --- END: Add mappings for new tools ---
 };
 
 // --- END: AI TOOLS ---
@@ -630,32 +865,62 @@ export const geminiProxy = onRequest(
       if (enableTools) {
         logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
 
+        // --- START Grounding Integration ---
+        // Define the Google Search grounding tool
+        const googleSearchTool: Tool = {googleSearch: {}};
+
+        // Determine if grounding should be used based on the prompt
+        // Simple check for explanatory questions
+        // eslint-disable-next-line max-len
+        const groundingKeywords = /^(what|who|when|where|why|explain|define|how\s+(do|does|is|are))\s/i;
+        const requiresGrounding = groundingKeywords.test(prompt);
+
+        // Combine grounding tool with function declarations if needed
+        const currentTools: Tool[] = [{functionDeclarations: tools}];
+        if (requiresGrounding) {
+          currentTools.unshift(googleSearchTool); // Add grounding tool first
+          logger.info(`GEMINI_PROXY: Enabling Google Search
+            grounding for this request.`);
+        }
+
         // First call: Request tool use
         const firstResult = await genAI.models.generateContent({
           model: modelName,
           contents: history,
           config: {
-            tools: [{functionDeclarations: tools}],
+            tools: currentTools,
             // CRITICAL FIX: Relax the synthesis
             // constraint to allow lists for news.
             systemInstruction: `You are an expert financial assistant. 
-            Your primary task is to use the provided tools
-            to gather financial data 
-            and then synthesize that data into a clear,
-            human-readable summary or
-            a structured JSON object as requested.
-  
-           When a user asks for information that requires a tool
-          (e.g., stock price, options chains, news), you MUST immediately
-          respond with the necessary function call. Do not ask for confirmation.
-          Your first response in a tool-use scenario must be a function call.
-          
-          After the tool provides its output, your second and final response 
-          MUST be a concise, human-readable summary of the data.
-          If the user asks for a specific format like a JSON object for
-          an options strategy, you must provide the data in that exact format.
-          In your final turn, DO NOT output additional function calls,
-          code blocks, or conversational filler.`,
+              Your primary task is to use the provided tools
+              to gather financial data OR search
+              the web for explanations/definitions,
+              and then synthesize that data into a clear,
+              human-readable summary or
+              a structured JSON object as requested.
+
+              When a user asks for information that requires a tool
+              (e.g., stock price, options chains, news, competitors,
+              dividends, filings, market movers, definitions),
+              you MUST immediately
+              respond with the necessary function call.
+              Use the 'search_web' tool
+              specifically for explaining financial concepts, defining terms,
+              or finding information not available
+              through other specialized tools.
+              Do not ask for confirmation.
+              Your first response in a tool-use
+              scenario must be a function call.
+
+              After the tool provides its output,
+              your second and final response 
+              MUST be a concise, human-readable summary
+              of the data OR the explanation found.
+              If the user asks for a specific format like a JSON object for
+              an options strategy, you must
+              provide the data in that exact format.
+              In your final turn, DO NOT output additional function calls,
+              code blocks, or conversational filler.`,
           },
         });
 
@@ -691,52 +956,99 @@ export const geminiProxy = onRequest(
                       message: `The API returned no recent
                         news articles for this symbol.`,
                     };
-                  } else {
-                    // CRITICAL FIX: The response passed
-                    // back to the Gemini model
-                    // MUST be a JSON object. We wrap
-                    // the array of headlines here.
+                  } else if (call.name === "find_competitors" &&
+                    typeof response ===
+                    "object" && response !== null &&
+                     "peers" in response && "symbol" in response) {
                     summarizedResponse = {
-                      headlines: response,
+                      symbol: response.symbol,
+                      peer_count: Array.isArray(response.peers) ?
+                        response.peers.length : 0,
+                      // Pass the peer list directly to the model
+                      peers: response.peers,
                     };
+                  } else if (call.name === "get_historical_dividends" &&
+                   Array.isArray(response)) {
+                    summarizedResponse = {
+                      count: response.length,
+                      // Pass the simplified dividend list to the model
+                      dividends: response,
+                    };
+                  } else if (call.name === "get_insider_transactions" &&
+                   Array.isArray(response)) {
+                    summarizedResponse = {
+                      count: response.length,
+                      // Pass the simplified transactions list
+                      transactions: response,
+                    };
+                  } else if (call.name === "get_sec_filings" &&
+                   Array.isArray(response)) {
+                    summarizedResponse = {
+                      count: response.length,
+                      // Pass the simplified filings list
+                      filings: response,
+                    };
+                  } else if (call.name === "get_market_movers" &&
+                   Array.isArray(response)) {
+                    summarizedResponse = {
+                      count: response.length,
+                      // Pass the simplified movers list
+                      movers: response,
+                    };
+                  } else if (call.name === "get_fmp_analyst_ratings" &&
+                    Array.isArray(response) && response.length > 0) {
+                    const latestRating = response[0];
+                    summarizedResponse = {
+                      latest_date: latestRating.date,
+                      total_buy: (latestRating.analystRatingsBuy || 0) +
+                        (latestRating.analystRatingsStrongBuy || 0),
+                      hold: (latestRating.analystRatingsHold || 0),
+                      total_sell: (latestRating.analystRatingsSell || 0) +
+                        (latestRating.analystRatingsStrongSell || 0),
+                      num_ratings_sent: response.length,
+                    };
+                  } else if (call.name === "get_fmp_quote" &&
+                   typeof response ===
+                    "object" && response !== null &&
+                     "price" in response && "symbol" in response) {
+                    summarizedResponse = {price: response.price,
+                      symbol: response.symbol};
+                  } else if (call.name === "get_options_chain" &&
+                           typeof response === "object" &&
+                           response !== null &&
+                           "totalContractsReturned" in response &&
+                           "underlyingSymbol" in response &&
+                           "underlyingPrice" in response &&
+                           "datesFetched" in response &&
+                           "allContracts" in response
+                  ) {
+                    // FIX: Update summary logic for
+                    // the new options chain structure
+                    summarizedResponse = {
+                      status: typeof response.totalContractsReturned ===
+                       "number" &&
+                        response.totalContractsReturned >
+                          0 ? "Success" : "No contracts found",
+                      underlying_symbol: response.underlyingSymbol,
+                      underlying_price: response.underlyingPrice,
+                      dates_fetched_count:
+                        Array.isArray(response.datesFetched) ?
+                          response.datesFetched.length : 0,
+                      total_contracts_returned: response.totalContractsReturned,
+                      // Pass the list of all contracts
+                      // to the model for analysis
+                      allContracts: response.allContracts,
+                    };
+                  } else {
+                    // Default truncation for generic FMP data
+                    const responseString = JSON.stringify(response);
+                    const MAX_SUMMARY_LENGTH = 1500;
+                    summarizedResponse = responseString.length >
+                      MAX_SUMMARY_LENGTH ?
+                      {truncated_data: responseString
+                        .substring(0, MAX_SUMMARY_LENGTH) + "...[TRUNCATED]"} :
+                      response;
                   }
-                } else if (call.name === "get_fmp_analyst_ratings" &&
-                  Array.isArray(response) && response.length > 0) {
-                  const latestRating = response[0];
-                  summarizedResponse = {
-                    latest_date: latestRating.date,
-                    total_buy: (latestRating.analystRatingsBuy || 0) +
-                      (latestRating.analystRatingsStrongBuy || 0),
-                    hold: (latestRating.analystRatingsHold || 0),
-                    total_sell: (latestRating.analystRatingsSell || 0) +
-                      (latestRating.analystRatingsStrongSell || 0),
-                    num_ratings_sent: response.length,
-                  };
-                } else if (call.name === "get_fmp_quote" && response) {
-                  summarizedResponse = {price: response.price,
-                    symbol: response.symbol};
-                } else if (call.name === "get_options_chain" && response) {
-                  // FIX: Update summary logic for
-                  // the new options chain structure
-                  summarizedResponse = {
-                    status: response.totalContractsReturned >
-                      0 ? "Success" : "No contracts found",
-                    underlying_symbol: response.underlyingSymbol,
-                    underlying_price: response.underlyingPrice,
-                    dates_fetched_count: response.datesFetched.length,
-                    total_contracts_returned: response.totalContractsReturned,
-                    // Pass the list of all contracts to the model for analysis
-                    allContracts: response.allContracts,
-                  };
-                } else {
-                  // Default truncation for generic FMP data
-                  const responseString = JSON.stringify(response);
-                  const MAX_SUMMARY_LENGTH = 1500;
-                  summarizedResponse = responseString.length >
-                    MAX_SUMMARY_LENGTH ?
-                    {truncated_data: responseString
-                      .substring(0, MAX_SUMMARY_LENGTH) + "...[TRUNCATED]"} :
-                    response;
                 }
 
                 return {functionResponse: {name: call.name,
@@ -854,63 +1166,82 @@ export const geminiProxy = onRequest(
 
 const PLAN_QUOTAS = {
   // --- Replace with your ACTUAL Stripe Price IDs ---
-  "price_1SLVdmDWUolxMnmeVUnIH9CQ": { signatexMax: 5, signatexLite: 50 },    // Starter
-  "price_1SLVdjDWUolxMnmeiNtApN7C": { signatexMax: 40, signatexLite: 500 },  // Standard
-  "price_1SLVdfDWUolxMnmeJJOS0rD2": { signatexMax: 200, signatexLite: 1500 }, // Pro
+  "price_1SLVdmDWUolxMnmeVUnIH9CQ": {signatexMax: 5,
+    signatexLite: 50}, // Starter
+  "price_1SLVdjDWUolxMnmeiNtApN7C": {signatexMax: 40,
+    signatexLite: 500}, // Standard
+  "price_1SLVdfDWUolxMnmeJJOS0rD2": {signatexMax: 200,
+    signatexLite: 1500}, // Pro
   // ---
-  "free": { signatexMax: 0, signatexLite: 20 } // Define free tier limits here
+  "free": {signatexMax: 0, signatexLite: 20}, // Define free tier limits here
 };
 
 /**
  * Updates the user's document in the 'users' collection to reset
  * AI usage quotas based on their subscription role/price ID.
  * Also updates the 'stripeRole' field on the user document.
- * @param userId The ID of the user to update.
- * @param newRole The Stripe role determined from the subscription (e.g., 'starter', 'pro', 'free').
- * @param newPriceId The Stripe Price ID of the active subscription, or 'free'.
+ * @param {string} userId The ID of the user to update.
+ * @param {string | null} newRole The Stripe role determined from
+ * the subscription (e.g., 'starter', 'pro', 'free').
+ * @param {string | null} newPriceId The Stripe Price ID
+ * of the active subscription, or 'free'.
  */
-const resetUserUsage = async (userId: string, newRole: string | null, newPriceId: string | null) => {
-    const userDocRef = getFirestore().collection("users").doc(userId);
-    let usageLimits = {};
-    const effectiveRole = newRole || 'free'; // Default to 'free' if role is null/undefined
-    const effectivePriceId = newPriceId || 'free'; // Use 'free' if no price ID
+const resetUserUsage = async (userId: string, newRole:
+  string | null, newPriceId: string | null) => {
+  const userDocRef = getFirestore().collection("users").doc(userId);
+  let usageLimits = {};
+  // Default to 'free' if role is null/undefined
+  const effectiveRole = newRole || "free";
+  const effectivePriceId = newPriceId || "free"; // Use 'free' if no price ID
 
-    // Try finding quotas by Price ID first (more specific)
-    let planQuota = PLAN_QUOTAS[effectivePriceId as keyof typeof PLAN_QUOTAS];
+  // Try finding quotas by Price ID first (more specific)
+  let planQuota = PLAN_QUOTAS[effectivePriceId as keyof typeof PLAN_QUOTAS];
 
-    if (!planQuota) {
-      // If no match by Price ID, try to find by role (less reliable, assumes roles match plan names)
-      // This is a fallback, ideally Price IDs should always match.
-      logger.warn(`No quota found for priceId "${effectivePriceId}". Trying role "${effectiveRole}" as fallback.`);
-      // You might need to adjust this logic if your `stripeRole` metadata doesn't directly map to keys in PLAN_QUOTAS
-      planQuota = PLAN_QUOTAS[effectiveRole as keyof typeof PLAN_QUOTAS];
-    }
+  if (!planQuota) {
+    // If no match by Price ID, try to find by role
+    // (less reliable, assumes roles match plan names)
+    // This is a fallback, ideally Price IDs should always match.
+    logger.warn(`No quota found for priceId "${effectivePriceId}".
+     Trying role "${effectiveRole}" as fallback.`);
+    // You might need to adjust this logic if your
+    // `stripeRole` metadata doesn't directly map to keys in PLAN_QUOTAS
+    planQuota = PLAN_QUOTAS[effectiveRole as keyof typeof PLAN_QUOTAS];
+  }
 
-    if (planQuota) {
-        usageLimits = {
-            liteUsed: 0, // Reset used count
-            maxUsed: 0,  // Reset used count
-            // You could store the *limits* too, but useAuth already defines them. Resetting 'used' is key.
-            lastUsageReset: FieldValue.serverTimestamp(),
-        };
-        logger.info(`Found quotas for user ${userId} based on ${newPriceId ? 'Price ID' : 'role'}: ${effectivePriceId}/${effectiveRole}. Resetting usage.`);
-    } else {
-        logger.error(`Could not determine usage quotas for user ${userId} with role "${effectiveRole}" and priceId "${effectivePriceId}". Usage not reset.`);
-        // Optionally, set to free limits as a safety measure?
-        // usageLimits = { liteUsed: 0, maxUsed: 0, lastUsageReset: FieldValue.serverTimestamp() };
-        // await userDocRef.set({ stripeRole: 'free', ...usageLimits }, { merge: true });
-        return; // Exit if no quotas found
-    }
+  if (planQuota) {
+    usageLimits = {
+      liteUsed: 0, // Reset used count
+      maxUsed: 0, // Reset used count
+      // You could store the *limits* too, but useAuth already
+      // defines them. Resetting 'used' is key.
+      lastUsageReset: FieldValue.serverTimestamp(),
+    };
+    logger.info(`Found quotas for user ${userId} based on ${newPriceId ?
+      "Price ID" : "role"}: ${effectivePriceId}/${effectiveRole}.
+       Resetting usage.`);
+  } else {
+    logger.error(`Could not determine usage quotas for user ${userId}
+      with role "${effectiveRole}" and priceId
+       "${effectivePriceId}". Usage not reset.`);
+    // Optionally, set to free limits as a safety measure?
+    // usageLimits = { liteUsed: 0, maxUsed: 0,
+    // lastUsageReset: FieldValue.serverTimestamp() };
+    // await userDocRef.set({ stripeRole: 'free',
+    // ...usageLimits }, { merge: true });
+    return; // Exit if no quotas found
+  }
 
-    try {
-        await userDocRef.set({
-            stripeRole: effectiveRole, // Sync the role to the user doc
-            ...usageLimits // Apply the reset usage fields
-        }, { merge: true });
-        logger.info(`Successfully reset usage counts and updated role for user ${userId} to ${effectiveRole}.`);
-    } catch (error) {
-        logger.error(`Failed to reset usage or update role for user ${userId}:`, error);
-    }
+  try {
+    await userDocRef.set({
+      stripeRole: effectiveRole, // Sync the role to the user doc
+      ...usageLimits, // Apply the reset usage fields
+    }, {merge: true});
+    logger.info(`Successfully reset usage counts and
+     updated role for user ${userId} to ${effectiveRole}.`);
+  } catch (error) {
+    logger.error(`Failed to reset usage or update
+     role for user ${userId}:`, error);
+  }
 };
 
 /**
@@ -919,7 +1250,8 @@ const resetUserUsage = async (userId: string, newRole: string | null, newPriceId
  */
 export const onSubscriptionUpdate = onDocumentWritten(
   "customers/{userId}/subscriptions/{subscriptionId}",
-  async (event: FirestoreEvent<Change<DocumentSnapshot> | undefined, { userId: string }>) => {
+  async (event: FirestoreEvent<Change<DocumentSnapshot> |
+    undefined, { userId: string }>) => {
     const userId = event.params.userId;
     logger.info(`Subscription change detected for user ${userId}.`);
 
@@ -927,56 +1259,77 @@ export const onSubscriptionUpdate = onDocumentWritten(
     // If 'after' doesn't exist, the subscription was deleted.
     // If 'after' exists but status is not active/trialing, it ended.
     const subDataAfter = event.data?.after.data();
-    const isActiveAfter = subDataAfter?.status === "active" || subDataAfter?.status === "trialing";
+    const isActiveAfter = subDataAfter?.status ===
+      "active" || subDataAfter?.status === "trialing";
 
-    if (!event.data?.after.exists || (event.data?.after.exists && !isActiveAfter)) {
-        // Check if there *was* an active subscription before this change
-        const subDataBefore = event.data?.before?.data();
-        const isActiveBefore = subDataBefore?.status === "active" || subDataBefore?.status === "trialing";
+    if (!event.data?.after.exists ||
+      (event.data?.after.exists && !isActiveAfter)) {
+      // Check if there *was* an active subscription before this change
+      const subDataBefore = event.data?.before?.data();
+      const isActiveBefore = subDataBefore?.status ===
+        "active" || subDataBefore?.status === "trialing";
 
-        // Only revert to free if they were previously active. Avoids unnecessary writes.
-        if (isActiveBefore) {
-            logger.info(`Subscription ended or deleted for user ${userId}. Reverting usage to free tier.`);
-            await resetUserUsage(userId, 'free', 'free'); // Use 'free' as the identifier
-        } else {
-             logger.info(`Subscription document changed but was not active before for user ${userId}. No usage reset needed.`);
-        }
-        return; // Stop processing here if the subscription is not active/trialing anymore
+      // Only revert to free if they were
+      // previously active. Avoids unnecessary writes.
+      if (isActiveBefore) {
+        logger.info(`Subscription ended or deleted for
+         user ${userId}. Reverting usage to free tier.`);
+        await resetUserUsage(userId, "free",
+          "free"); // Use 'free' as the identifier
+      } else {
+        logger.info(`Subscription document changed but was not active
+         before for user ${userId}. No usage reset needed.`);
+      }
+      return;
+      // Stop processing here if the subscription is not active/trialing anymore
     }
 
-    // If we reach here, event.data.after exists and the subscription is 'active' or 'trialing'
+    // If we reach here, event.data.after exists
+    // and the subscription is 'active' or 'trialing'
 
     const subDataBefore = event.data?.before?.data();
-    const isActiveBefore = subDataBefore?.status === "active" || subDataBefore?.status === "trialing";
+    const isActiveBefore = subDataBefore?.status === "active" ||
+      subDataBefore?.status === "trialing";
 
     // --- Determine new role and price ID ---
-    // The Stripe extension might store role in product metadata OR directly on the sub doc
-    // It's safer to primarily rely on the Price ID and map it to your defined quotas.
+    // The Stripe extension might store role in
+    // product metadata OR directly on the sub doc
+    // It's safer to primarily rely on the
+    // Price ID and map it to your defined quotas.
     const newPriceId = subDataAfter?.items?.[0]?.price?.id ?? null;
     // Extract role as a secondary identifier, default to 'free' if missing
-    const newRole = subDataAfter?.role ?? subDataAfter?.items?.[0]?.price?.product?.metadata?.stripeRole ?? 'free';
+    const newRole = subDataAfter?.role ??
+     subDataAfter?.items?.[0]?.price?.product?.metadata?.stripeRole ?? "free";
 
     // --- Case 2: New subscription activated or plan changed ---
     const previousPriceId = subDataBefore?.items?.[0]?.price?.id ?? null;
-    if ((!isActiveBefore && isActiveAfter) || (isActiveAfter && newPriceId !== previousPriceId)) {
-        const reason = !isActiveBefore ? "activated" : "changed";
-        logger.info(`Subscription ${reason} for user ${userId}. Setting quotas for priceId ${newPriceId} / role ${newRole}.`);
-        await resetUserUsage(userId, newRole, newPriceId);
-        // Don't return yet, renewal check might also apply on change
+    if ((!isActiveBefore && isActiveAfter) ||
+      (isActiveAfter && newPriceId !== previousPriceId)) {
+      const reason = !isActiveBefore ? "activated" : "changed";
+      logger.info(`Subscription ${reason} for user ${userId}.
+       Setting quotas for priceId ${newPriceId} / role ${newRole}.`);
+      await resetUserUsage(userId, newRole, newPriceId);
+      // Don't return yet, renewal check might also apply on change
     }
 
     // --- Case 3: Subscription renewed (monthly reset) ---
-    // Check if the current period end timestamp has changed, indicating a renewal cycle.
+    // Check if the current period end timestamp has
+    // changed, indicating a renewal cycle.
     const periodEndBefore = subDataBefore?.current_period_end?.toMillis();
     const periodEndAfter = subDataAfter?.current_period_end?.toMillis();
 
-    // Only reset on renewal if the status is active (don't reset during trial just because period end is set)
-    if (subDataAfter?.status === "active" && periodEndBefore !== periodEndAfter && periodEndAfter != null) {
-         logger.info(`Subscription renewed for user ${userId}. Resetting quotas for priceId ${newPriceId} / role ${newRole}.`);
-         // Call resetUserUsage again - it's safe as it just resets the 'used' counts.
-         await resetUserUsage(userId, newRole, newPriceId);
+    // Only reset on renewal if the status is active
+    // (don't reset during trial just because period end is set)
+    if (subDataAfter?.status === "active" && periodEndBefore !==
+      periodEndAfter && periodEndAfter != null) {
+      logger.info(`Subscription renewed for user ${userId}. 
+        Resetting quotas for priceId ${newPriceId} / role ${newRole}.`);
+      // Call resetUserUsage again -
+      // it's safe as it just resets the 'used' counts.
+      await resetUserUsage(userId, newRole, newPriceId);
     } else if (isActiveAfter && periodEndBefore === periodEndAfter) {
-         logger.info(`Subscription update for user ${userId} did not involve renewal or plan change. No usage reset.`);
+      logger.info(`Subscription update for user 
+        ${userId} did not involve renewal or plan change. No usage reset.`);
     }
   }
 );

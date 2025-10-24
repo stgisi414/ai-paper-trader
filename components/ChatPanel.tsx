@@ -666,12 +666,13 @@ const ChatPanel: React.FC = () => {
                     <p className="text-xs text-night-500">Search for a user by email or name to start a private conversation.</p>
                     <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
                         <input
-                            type="text"
-                            value={searchUserQuery}
-                            onChange={(e) => handleUserSearch(e.target.value)}
-                            placeholder="Search user by email/name..."
-                            className="flex-1 bg-night-700 border border-night-600 rounded-md py-1 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none text-sm"
-                        />
+                             type="text"
+                             value={searchUserQuery}
+                             onChange={(e) => handleUserSearch(e.target.value)}
+                             placeholder="Search user by email/name..."
+                             className="flex-1 bg-night-700 border border-night-600 rounded-md py-1 px-3 focus:ring-2 focus:ring-brand-blue focus:outline-none text-sm"
+                             autoFocus // Add this temporarily for testing
+                         />
                     </form>
                     {middleContent}
                 </div>

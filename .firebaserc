@@ -6,7 +6,7 @@
   "etags": {
     "signatex-trader": {
       "extensionInstances": {
-        "firestore-stripe-payments": "34d8e78a37207f22b17e9254570cabe5e2a1a91d546f7ce15ef161744fc9215a"
+        "firestore-stripe-payments": "f2e15b814a9af8aa1c7c74128c28e51212170e06d6b57a35022548d07ef6ffa2"
       }
     }
   }
