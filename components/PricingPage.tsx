@@ -12,9 +12,9 @@ import {
 import { redirectToStripeCustomerPortal } from '../services/stripeService';
 
 // --- Placeholder Stripe Price IDs (must match SubscriptionModal) ---
-const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SLBfADWUolxMnme3BRCNufS"; //
-const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SLBgjDWUolxMnmedj2fTHfl"; //
-const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SLBngDWUolxMnmeYaCYXLtO"; // 
+const STRIPE_STARTER_PRICE_ID_MONTHLY = "price_1SLVdmDWUolxMnmeVUnIH9CQ"; //
+const STRIPE_STANDARD_PRICE_ID_MONTHLY = "price_1SLVdjDWUolxMnmeiNtApN7C"; //
+const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SLVdfDWUolxMnmeJJOS0rD2"; // 
 // ---
 
 const plans = [

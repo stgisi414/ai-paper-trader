@@ -10,6 +10,8 @@ import {
   Content,
   Type,
 } from "@google/genai";
+import { onDocumentWritten, Change, FirestoreEvent } from "firebase-functions/v2/firestore";
+import { FieldValue, DocumentSnapshot } from "firebase-admin/firestore";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ToolFunction = (args: any) => Promise<any>;
@@ -848,4 +850,133 @@ export const geminiProxy = onRequest(
       res.status(500).json({error: `Gemini Proxy Error: ${errorMessage}`});
     }
   },
+);
+
+const PLAN_QUOTAS = {
+  // --- Replace with your ACTUAL Stripe Price IDs ---
+  "price_1SLVdmDWUolxMnmeVUnIH9CQ": { signatexMax: 5, signatexLite: 50 },    // Starter
+  "price_1SLVdjDWUolxMnmeiNtApN7C": { signatexMax: 40, signatexLite: 500 },  // Standard
+  "price_1SLVdfDWUolxMnmeJJOS0rD2": { signatexMax: 200, signatexLite: 1500 }, // Pro
+  // ---
+  "free": { signatexMax: 0, signatexLite: 20 } // Define free tier limits here
+};
+
+/**
+ * Updates the user's document in the 'users' collection to reset
+ * AI usage quotas based on their subscription role/price ID.
+ * Also updates the 'stripeRole' field on the user document.
+ * @param userId The ID of the user to update.
+ * @param newRole The Stripe role determined from the subscription (e.g., 'starter', 'pro', 'free').
+ * @param newPriceId The Stripe Price ID of the active subscription, or 'free'.
+ */
+const resetUserUsage = async (userId: string, newRole: string | null, newPriceId: string | null) => {
+    const userDocRef = getFirestore().collection("users").doc(userId);
+    let usageLimits = {};
+    const effectiveRole = newRole || 'free'; // Default to 'free' if role is null/undefined
+    const effectivePriceId = newPriceId || 'free'; // Use 'free' if no price ID
+
+    // Try finding quotas by Price ID first (more specific)
+    let planQuota = PLAN_QUOTAS[effectivePriceId as keyof typeof PLAN_QUOTAS];
+
+    if (!planQuota) {
+      // If no match by Price ID, try to find by role (less reliable, assumes roles match plan names)
+      // This is a fallback, ideally Price IDs should always match.
+      logger.warn(`No quota found for priceId "${effectivePriceId}". Trying role "${effectiveRole}" as fallback.`);
+      // You might need to adjust this logic if your `stripeRole` metadata doesn't directly map to keys in PLAN_QUOTAS
+      planQuota = PLAN_QUOTAS[effectiveRole as keyof typeof PLAN_QUOTAS];
+    }
+
+    if (planQuota) {
+        usageLimits = {
+            liteUsed: 0, // Reset used count
+            maxUsed: 0,  // Reset used count
+            // You could store the *limits* too, but useAuth already defines them. Resetting 'used' is key.
+            lastUsageReset: FieldValue.serverTimestamp(),
+        };
+        logger.info(`Found quotas for user ${userId} based on ${newPriceId ? 'Price ID' : 'role'}: ${effectivePriceId}/${effectiveRole}. Resetting usage.`);
+    } else {
+        logger.error(`Could not determine usage quotas for user ${userId} with role "${effectiveRole}" and priceId "${effectivePriceId}". Usage not reset.`);
+        // Optionally, set to free limits as a safety measure?
+        // usageLimits = { liteUsed: 0, maxUsed: 0, lastUsageReset: FieldValue.serverTimestamp() };
+        // await userDocRef.set({ stripeRole: 'free', ...usageLimits }, { merge: true });
+        return; // Exit if no quotas found
+    }
+
+    try {
+        await userDocRef.set({
+            stripeRole: effectiveRole, // Sync the role to the user doc
+            ...usageLimits // Apply the reset usage fields
+        }, { merge: true });
+        logger.info(`Successfully reset usage counts and updated role for user ${userId} to ${effectiveRole}.`);
+    } catch (error) {
+        logger.error(`Failed to reset usage or update role for user ${userId}:`, error);
+    }
+};
+
+/**
+ * Firestore trigger that listens for writes (create, update, delete)
+ * to subscription documents and resets user AI usage accordingly.
+ */
+export const onSubscriptionUpdate = onDocumentWritten(
+  "customers/{userId}/subscriptions/{subscriptionId}",
+  async (event: FirestoreEvent<Change<DocumentSnapshot> | undefined, { userId: string }>) => {
+    const userId = event.params.userId;
+    logger.info(`Subscription change detected for user ${userId}.`);
+
+    // --- Case 1: Subscription is deleted or ends ---
+    // If 'after' doesn't exist, the subscription was deleted.
+    // If 'after' exists but status is not active/trialing, it ended.
+    const subDataAfter = event.data?.after.data();
+    const isActiveAfter = subDataAfter?.status === "active" || subDataAfter?.status === "trialing";
+
+    if (!event.data?.after.exists || (event.data?.after.exists && !isActiveAfter)) {
+        // Check if there *was* an active subscription before this change
+        const subDataBefore = event.data?.before?.data();
+        const isActiveBefore = subDataBefore?.status === "active" || subDataBefore?.status === "trialing";
+
+        // Only revert to free if they were previously active. Avoids unnecessary writes.
+        if (isActiveBefore) {
+            logger.info(`Subscription ended or deleted for user ${userId}. Reverting usage to free tier.`);
+            await resetUserUsage(userId, 'free', 'free'); // Use 'free' as the identifier
+        } else {
+             logger.info(`Subscription document changed but was not active before for user ${userId}. No usage reset needed.`);
+        }
+        return; // Stop processing here if the subscription is not active/trialing anymore
+    }
+
+    // If we reach here, event.data.after exists and the subscription is 'active' or 'trialing'
+
+    const subDataBefore = event.data?.before?.data();
+    const isActiveBefore = subDataBefore?.status === "active" || subDataBefore?.status === "trialing";
+
+    // --- Determine new role and price ID ---
+    // The Stripe extension might store role in product metadata OR directly on the sub doc
+    // It's safer to primarily rely on the Price ID and map it to your defined quotas.
+    const newPriceId = subDataAfter?.items?.[0]?.price?.id ?? null;
+    // Extract role as a secondary identifier, default to 'free' if missing
+    const newRole = subDataAfter?.role ?? subDataAfter?.items?.[0]?.price?.product?.metadata?.stripeRole ?? 'free';
+
+    // --- Case 2: New subscription activated or plan changed ---
+    const previousPriceId = subDataBefore?.items?.[0]?.price?.id ?? null;
+    if ((!isActiveBefore && isActiveAfter) || (isActiveAfter && newPriceId !== previousPriceId)) {
+        const reason = !isActiveBefore ? "activated" : "changed";
+        logger.info(`Subscription ${reason} for user ${userId}. Setting quotas for priceId ${newPriceId} / role ${newRole}.`);
+        await resetUserUsage(userId, newRole, newPriceId);
+        // Don't return yet, renewal check might also apply on change
+    }
+
+    // --- Case 3: Subscription renewed (monthly reset) ---
+    // Check if the current period end timestamp has changed, indicating a renewal cycle.
+    const periodEndBefore = subDataBefore?.current_period_end?.toMillis();
+    const periodEndAfter = subDataAfter?.current_period_end?.toMillis();
+
+    // Only reset on renewal if the status is active (don't reset during trial just because period end is set)
+    if (subDataAfter?.status === "active" && periodEndBefore !== periodEndAfter && periodEndAfter != null) {
+         logger.info(`Subscription renewed for user ${userId}. Resetting quotas for priceId ${newPriceId} / role ${newRole}.`);
+         // Call resetUserUsage again - it's safe as it just resets the 'used' counts.
+         await resetUserUsage(userId, newRole, newPriceId);
+    } else if (isActiveAfter && periodEndBefore === periodEndAfter) {
+         logger.info(`Subscription update for user ${userId} did not involve renewal or plan change. No usage reset.`);
+    }
+  }
 );
