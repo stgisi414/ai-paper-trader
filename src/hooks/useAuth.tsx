@@ -3,6 +3,7 @@ import { getAuth, onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/
 import { doc, setDoc, serverTimestamp, onSnapshot, getDoc, increment, writeBatch, Timestamp, collection, query, where, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { User as UserType } from '../../types';
+import Spinner from '../../components/common/Spinner';
 
 // Define and export usage limits for different tiers
 export const FREE_LITE_LIMIT = 20;
@@ -87,9 +88,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Authentication Listener (no changes needed here)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      setLoading(true);
+      // Don't set loading true here, let the other listener handle it
       if (authUser) {
         setUser(authUser);
+        // User document creation logic remains the same
         const userDocRef = doc(db, 'users', authUser.uid);
         const docSnap = await getDoc(userDocRef);
         if (!docSnap.exists()) {
@@ -105,6 +107,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else {
         setUser(null);
         setUserSettings(DEFAULT_SETTINGS);
+        setLoading(false); // *** ADDED: Ensure loading stops if user logs out or is initially null ***
       }
     });
     return () => unsubscribe();
@@ -114,13 +117,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // User Document/Settings/Subscription Listener
   useEffect(() => {
     if (!user) {
-      isInitialLoadRef.current = true; // Reset for next login
+      isInitialLoadRef.current = true;
       setUserSettings(DEFAULT_SETTINGS);
-      setLoading(false);
+      // If there's no user, the auth listener above should have already set loading to false.
+      // setLoading(false); // Can remove this redundant call
       return;
     }
 
-    setLoading(true);
+    setLoading(true); // Set loading true *when we start fetching user-specific data*
     const userDocRef = doc(db, 'users', user.uid);
 
     const handleUsageReset = async (settings: UserSettings) => {
@@ -135,7 +139,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             });
         }
     };
-
 
     // Listen to user settings (like fontSize, usage counts)
     const unsubUser = onSnapshot(userDocRef, (docSnap) => {
@@ -162,7 +165,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             root.style.fontSize = size;
         }
       }
-    }, (error) => console.error("Error fetching user settings:", error));
+    }, (error) => {
+        console.error("Error fetching user settings:", error);
+        setLoading(false); // *** ADDED: Stop loading on user settings error ***
+    });
 
 
     // Listen to Stripe subscription status
@@ -197,21 +203,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             isPro: isActive,
             activePriceId: activePriceId
         }));
-         setLoading(false);
-         isInitialLoadRef.current = false; // After the first run, it's no longer the initial load
+         setLoading(false); // *** MOVED: Set loading false after *both* user settings and subscription status have been checked ***
+         isInitialLoadRef.current = false;
     }, (error) => {
         console.error("Error fetching subscription status:", error);
         setUserSettings(prev => ({ ...prev, isPro: false, activePriceId: null }));
-        setLoading(false);
+        setLoading(false); // *** ADDED: Stop loading on subscription error ***
+        isInitialLoadRef.current = false; // Also mark initial load done on error
     });
 
 
     return () => {
       unsubUser();
       unsubCustomer();
-      isInitialLoadRef.current = true; // Reset for next user login
+      isInitialLoadRef.current = true;
     };
-  }, [user]);
+  }, [user]); // Only depends on user
 
 
   const updateFontSize = useCallback(async (size: UserSettings['fontSize']) => {
@@ -364,7 +371,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {loading ? (
+        <div className="flex justify-center items-center min-h-screen">
+          <Spinner />
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };
