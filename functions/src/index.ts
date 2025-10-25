@@ -487,18 +487,16 @@ const findFmpCompetitors = async ({symbol}: {symbol: string}) => {
   }
   // FMP returns an array, the first element
   // contains the symbol and its peers list
-  if (Array.isArray(data) && data.length > 0 && data[0].peersList) {
+  if (Array.isArray(data) && data.length > 0 && data[0].peersList &&
+   Array.isArray(data[0].peersList)) {
     // Limit the number of peers returned for context window
     const MAX_PEERS = 10;
     const peers = data[0].peersList;
     logger.info(`Found ${peers.length} peers for ${symbol}.
       Returning top ${Math.min(peers.length, MAX_PEERS)}.`);
-    return {
-      symbol: data[0].symbol,
-      peers: peers.slice(0, MAX_PEERS),
-    };
+    return {symbol: data[0].symbol, peers: peers.slice(0, MAX_PEERS)};
   }
-  return {symbol: symbol, peers: [], message: "No competitor data found."};
+  return {error: `No competitor data found for ${symbol}.`};
 };
 
 // Fetch Historical Dividends using FMP API
@@ -865,62 +863,58 @@ export const geminiProxy = onRequest(
       if (enableTools) {
         logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
 
-        // --- START Grounding Integration ---
-        // Define the Google Search grounding tool
+        // --- Grounding Integration ---
         const googleSearchTool: Tool = {googleSearch: {}};
-
-        // Determine if grounding should be used based on the prompt
-        // Simple check for explanatory questions
         // eslint-disable-next-line max-len
         const groundingKeywords = /^\b(what'?s?|who'?s?|when'?s?|where'?s?|why'?s?|explain|define|how\s+(do|does|is|are))\b/i;
         const requiresGrounding = groundingKeywords.test(prompt);
 
-        // Combine grounding tool with function declarations if needed
         const currentTools: Tool[] = [{functionDeclarations: tools}];
         if (requiresGrounding) {
-          currentTools.unshift(googleSearchTool); // Add grounding tool first
+          currentTools.unshift(googleSearchTool);
           logger.info(`GEMINI_PROXY: Enabling Google Search
-            grounding for this request.`);
+           grounding for this request.`);
         }
+        // --- End Grounding Integration ---
 
-        // First call: Request tool use
+        // --- First Call: Request tool use ---
         const firstResult = await genAI.models.generateContent({
           model: modelName,
           contents: history,
           config: {
             tools: currentTools,
-            // CRITICAL FIX: Relax the synthesis
-            // constraint to allow lists for news.
-            systemInstruction: `You are an expert financial assistant. 
-              Your primary task is to use the provided tools
-              to gather financial data OR search
-              the web for explanations/definitions,
-              and then synthesize that data into a clear,
-              human-readable summary or
-              a structured JSON object as requested.
+            systemInstruction: `You are an expert financial assistant.
+              Your primary task is to use the provided tools to gather
+              financial data OR search the web (using the implicit
+              Google Search tool when necessary) for explanations/definitions,
+              and then synthesize that data into a clear, human-readable summary
+              OR a structured JSON object as requested.
 
               When a user asks for information that requires a tool
               (e.g., stock price, options chains, news, competitors,
-              dividends, filings, market movers, definitions),
-              you MUST immediately
-              respond with the necessary function call.
-              Use the 'search_web' tool
-              specifically for explaining financial concepts, defining terms,
-              or finding information not available
-              through other specialized tools.
-              Do not ask for confirmation.
-              Your first response in a tool-use
-              scenario must be a function call.
+              dividends, filings, market movers, definitions), you MUST
+              immediately respond with the necessary function call.
+              Use the Google Search tool specifically for explaining 
+              financial concepts, defining terms, or finding general 
+              information not available through other specialized tools 
+              (like explaining option strategies).
+              Do not ask for confirmation. Your first response in a tool-use
+              scenario must be a function call (or rely on
+              implicit Google Search if appropriate).
 
-              After the tool provides its output,
-              your second and final response 
-              MUST be a concise, human-readable summary
+              After the tool provides its output (or after the Google Search
+              grounding is complete), your second and final response MUST
+              be a concise, human-readable summary
               of the data OR the explanation found.
-              If the user asks for a specific format like a JSON object for
-              an options strategy, you must
-              provide the data in that exact format.
-              In your final turn, DO NOT output additional function calls,
-              code blocks, or conversational filler.`,
+              **If the Google Search tool was used, clearly present 
+              the information found in your summary.** If the search yields
+              no relevant results, state that you couldn't find
+              the specific information requested.
+              If the user asks for a specific format like a JSON object
+              for an options strategy, you must provide the data
+              in that exact format in your final turn.
+              In your final turn, DO NOT output additional
+              function calls, code blocks, or conversational filler.`,
           },
         });
 
@@ -932,9 +926,10 @@ export const geminiProxy = onRequest(
             .filter(Boolean);
 
           if (functionCalls && functionCalls.length > 0) {
-            logger.info(`GEMINI_PROXY: Received
+            logger.info(`GEMINI_PROXY: Received 
               ${functionCalls.length} tool call(s).`);
 
+            // --- Execute Tool Calls and Summarize Responses ---
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const toolPromises = functionCalls.map(async (call: any) => {
               if (call.name in availableTools) {
@@ -946,144 +941,144 @@ export const geminiProxy = onRequest(
                 if (response && response.error) {
                   summarizedResponse = {error: response.error};
                 } else if (call.name === "get_fmp_news" &&
-                  Array.isArray(response)) {
-                  // Check for empty response and
-                  // provide structured feedback to the model
+                 Array.isArray(response)) {
                   if (response.length === 0) {
                     summarizedResponse = {
                       status: "No news found",
                       symbol: call.args.symbol,
-                      message: `The API returned no recent
-                        news articles for this symbol.`,
-                    };
-                  } else if (call.name === "find_competitors" &&
-                    typeof response ===
-                    "object" && response !== null &&
-                     "peers" in response && "symbol" in response) {
-                    summarizedResponse = {
-                      symbol: response.symbol,
-                      peer_count: Array.isArray(response.peers) ?
-                        response.peers.length : 0,
-                      // Pass the peer list directly to the model
-                      peers: response.peers,
-                    };
-                  } else if (call.name === "get_historical_dividends" &&
-                   Array.isArray(response)) {
-                    summarizedResponse = {
-                      count: response.length,
-                      // Pass the simplified dividend list to the model
-                      dividends: response,
-                    };
-                  } else if (call.name === "get_insider_transactions" &&
-                   Array.isArray(response)) {
-                    summarizedResponse = {
-                      count: response.length,
-                      // Pass the simplified transactions list
-                      transactions: response,
-                    };
-                  } else if (call.name === "get_sec_filings" &&
-                   Array.isArray(response)) {
-                    summarizedResponse = {
-                      count: response.length,
-                      // Pass the simplified filings list
-                      filings: response,
-                    };
-                  } else if (call.name === "get_market_movers" &&
-                   Array.isArray(response)) {
-                    summarizedResponse = {
-                      count: response.length,
-                      // Pass the simplified movers list
-                      movers: response,
-                    };
-                  } else if (call.name === "get_fmp_analyst_ratings" &&
-                    Array.isArray(response) && response.length > 0) {
-                    const latestRating = response[0];
-                    summarizedResponse = {
-                      latest_date: latestRating.date,
-                      total_buy: (latestRating.analystRatingsBuy || 0) +
-                        (latestRating.analystRatingsStrongBuy || 0),
-                      hold: (latestRating.analystRatingsHold || 0),
-                      total_sell: (latestRating.analystRatingsSell || 0) +
-                        (latestRating.analystRatingsStrongSell || 0),
-                      num_ratings_sent: response.length,
-                    };
-                  } else if (call.name === "get_fmp_quote" &&
-                   typeof response ===
-                    "object" && response !== null &&
-                     "price" in response && "symbol" in response) {
-                    summarizedResponse = {price: response.price,
-                      symbol: response.symbol};
-                  } else if (call.name === "get_options_chain" &&
-                           typeof response === "object" &&
-                           response !== null &&
-                           "totalContractsReturned" in response &&
-                           "underlyingSymbol" in response &&
-                           "underlyingPrice" in response &&
-                           "datesFetched" in response &&
-                           "allContracts" in response
-                  ) {
-                    // FIX: Update summary logic for
-                    // the new options chain structure
-                    summarizedResponse = {
-                      status: typeof response.totalContractsReturned ===
-                       "number" &&
-                        response.totalContractsReturned >
-                          0 ? "Success" : "No contracts found",
-                      underlying_symbol: response.underlyingSymbol,
-                      underlying_price: response.underlyingPrice,
-                      dates_fetched_count:
-                        Array.isArray(response.datesFetched) ?
-                          response.datesFetched.length : 0,
-                      total_contracts_returned: response.totalContractsReturned,
-                      // Pass the list of all contracts
-                      // to the model for analysis
-                      allContracts: response.allContracts,
+                      message: `The API returned no recent 
+                      news articles for this symbol.`,
                     };
                   } else {
-                    // Default truncation for generic FMP data
+                    // News found, fall through to default truncation
                     const responseString = JSON.stringify(response);
                     const MAX_SUMMARY_LENGTH = 1500;
                     summarizedResponse = responseString.length >
-                      MAX_SUMMARY_LENGTH ?
-                      {truncated_data: responseString
-                        .substring(0, MAX_SUMMARY_LENGTH) + "...[TRUNCATED]"} :
-                      response;
+                     MAX_SUMMARY_LENGTH ?
+                      {truncated_data: responseString.
+                        substring(0, MAX_SUMMARY_LENGTH) +
+                       "...[TRUNCATED]"} : response;
                   }
+                } else if (call.name === "find_competitors" &&
+                  typeof response === "object" && response !== null &&
+                  "peers" in response && "symbol" in response) {
+                  summarizedResponse = {
+                    symbol: response.symbol,
+                    peer_count: Array.isArray(response.peers) ?
+                      response.peers.length : 0,
+                    peers: response.peers,
+                  };
+                } else if (call.name === "get_historical_dividends" &&
+                 Array.isArray(response)) {
+                  summarizedResponse = {
+                    count: response.length,
+                    dividends: response,
+                  };
+                } else if (call.name === "get_insider_transactions" &&
+                 Array.isArray(response)) {
+                  summarizedResponse = {
+                    count: response.length,
+                    transactions: response,
+                  };
+                } else if (call.name === "get_sec_filings" &&
+                 Array.isArray(response)) {
+                  summarizedResponse = {
+                    count: response.length,
+                    filings: response,
+                  };
+                } else if (call.name === "get_market_movers" &&
+                 Array.isArray(response)) {
+                  summarizedResponse = {
+                    count: response.length,
+                    movers: response,
+                  };
+                } else if (call.name === "get_fmp_analyst_ratings" &&
+                 Array.isArray(response) && response.length > 0) {
+                  const latestRating = response[0];
+                  summarizedResponse = {
+                    latest_date: latestRating.date,
+                    total_buy: (latestRating.analystRatingsBuy || 0) +
+                     (latestRating.analystRatingsStrongBuy || 0),
+                    hold: (latestRating.analystRatingsHold || 0),
+                    total_sell: (latestRating.analystRatingsSell || 0) +
+                     (latestRating.analystRatingsStrongSell || 0),
+                    num_ratings_sent: response.length,
+                  };
+                } else if (call.name === "get_fmp_quote" &&
+                 typeof response === "object" &&
+                 response !== null && "price" in response &&
+                  "symbol" in response) {
+                  summarizedResponse = {price: response.price,
+                    symbol: response.symbol};
+                } else if (call.name === "get_options_chain" &&
+                 typeof response === "object" && response !== null &&
+                  "totalContractsReturned" in response) {
+                  summarizedResponse = {
+                    status: typeof response.totalContractsReturned ===
+                     "number" &&
+                     response.totalContractsReturned > 0 ?
+                      "Success" : "No contracts found",
+                    underlying_symbol: response.underlyingSymbol,
+                    underlying_price: response.underlyingPrice,
+                    dates_fetched_count: Array.isArray(response.datesFetched) ?
+                      response.datesFetched.length : 0,
+                    total_contracts_returned: response.totalContractsReturned,
+                    allContracts: response.allContracts,
+                  };
+                } else {
+                  // Default truncation for all other successful responses
+                  const responseString = JSON.stringify(response);
+                  const MAX_SUMMARY_LENGTH = 1500;
+                  summarizedResponse = responseString.length >
+                   MAX_SUMMARY_LENGTH ?
+                    {truncated_data: responseString.
+                      substring(0, MAX_SUMMARY_LENGTH) +
+                     "...[TRUNCATED]"} : response;
                 }
 
                 return {functionResponse: {name: call.name,
                   response: summarizedResponse}};
               }
+              // Tool not found
               return {functionResponse: {name: call.name, response:
                 {error: `Tool ${call.name} not found.`}}};
-            });
+            }); // End of toolPromises.map
 
             const toolResponses = await Promise.all(toolPromises);
 
+            logger.info(`GEMINI_PROXY: Tool responses
+             prepared for second call:`, {
+              // Log the stringified version
+              toolResponsesString: JSON.stringify(toolResponses),
+            });
+
+            // --- Second Call: Synthesis Step ---
+            // (This logic runs because we removed the skipSynthesis flag)
+
+            const secondCallPrompt = `The previous step involved calling a tool.
+            The exact result from that tool is provided in the preceding
+            function response part. Your ONLY task is to present this 
+            result clearly and concisely to the user. If the tool response
+            indicates an error or no data found, state that. Otherwise,
+            directly state the information from the tool response.
+            Do NOT add any extra analysis, 
+            conversational filler, code, or JSON.`;
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const secondCallConfig: any = {};
-            let secondCallPrompt = `Based on the tool outputs
-             provided in the last turn,
-             generate the single, requested human-readable summary.
-              Do NOT include any code or JSON.`;
-
             if (responseSchema) {
-              // If a responseSchema was provided, we force JSON output.
               logger.info("GEMINI_PROXY: Overriding second call for schema.");
               secondCallConfig.responseMimeType = "application/json";
               secondCallConfig.responseSchema = responseSchema;
-              // Set a specific system instruction for the JSON output flow
               secondCallConfig.systemInstruction =
-              `You are a specialist JSON generator.
-               Your entire output MUST be a single raw JSON object that strictly
-              conforms to the requested schema.
-              DO NOT include any conversational filler,
+              `You are a specialist JSON generator. Your entire output MUST
+              be a single raw JSON object that strictly conforms to the
+              requested schema. DO NOT include any conversational filler,
               markdown fences (\`\`\`json), or non-JSON text.`;
-              secondCallPrompt = `Generate the required JSON object based on
-               the context and tool outputs. Output ONLY the JSON.`;
             }
+            // Correctly disable tools for the synthesis call
+            secondCallConfig.tools = [];
 
-            // Second call: Send tool results and request final text response
             const historyWithToolResults: Content[] = [...history];
             if (firstCandidate.content) {
               historyWithToolResults.push(firstCandidate.content);
@@ -1093,55 +1088,80 @@ export const geminiProxy = onRequest(
               parts: toolResponses.map((r) =>
                 ({functionResponse: r.functionResponse})),
             });
-
-            // FIX 2: Append a definitive final synthesis command
             historyWithToolResults.push({
               role: "user",
               parts: [{text: secondCallPrompt}],
             });
 
+            logger.info(`GEMINI_PROXY: Making SECOND 
+              call to Gemini for synthesis.`, {
+              modelName,
+              config: secondCallConfig,
+              historySummary: historyWithToolResults.map((c) => ({
+                role: c.role,
+                parts: c.parts ? c.parts.map((p) => Object.keys(p)[0]) : [],
+              })),
+            });
 
-            // NO CONFIG/TOOLS HERE to force plain text output
             const secondResult = await genAI.models.generateContent({
               model: modelName,
               contents: historyWithToolResults,
               config: secondCallConfig,
             });
 
-            finalResponseText = secondResult.candidates?.[0]?.content?.
-              parts?.[0]?.text ??
-           `Tool executed successfully, but the AI assistant failed
-            to generate a final, human-readable summary.`;
+            const secondCandidate = secondResult.candidates?.[0];
+            if (secondCandidate) {
+              logger.info("GEMINI_PROXY: Received response from SECOND call.", {
+                finishReason: secondCandidate.finishReason,
+                responseTextPreview: secondCandidate.content?.
+                  parts?.[0]?.text?.substring(0, 100) + "...",
+              });
+              finalResponseText = secondCandidate.content?.parts?.[0]?.text ??
+                `Tool executed successfully, but the 
+                AI assistant failed to generate a final,
+                 human-readable summary (Finish Reason:
+                ${secondCandidate.finishReason || "Unknown"}).`;
+
+              if (secondCandidate.finishReason &&
+               secondCandidate.finishReason !== "STOP") {
+                logger.error(`GEMINI_PROXY: Second call finished unexpectedly!
+                Reason: ${secondCandidate.finishReason}`);
+                finalResponseText = `I couldn't generate the explanation.
+                The request was blocked (Reason:
+                 ${secondCandidate.finishReason}).
+                This might be due to safety filters or other issues.`;
+              }
+            } else {
+              logger.error(`GEMINI_PROXY: NO candidate found in the
+              response from the SECOND call.`);
+              finalResponseText = `Tool executed successfully, but the
+              AI assistant failed to generate a final response
+              (No candidate received).`;
+            }
+            // --- End of Second Call Logic ---
           } else {
-            // The model decided no function call
-            // was needed - return text directly
+            // No function calls were requested by the model
             finalResponseText = firstCandidate?.content?.parts?.[0]?.text ??
              "No function call was needed, but no text response was returned.";
           }
         } else {
+          // No candidate found in the first response
           finalResponseText = "No response candidate found from the model.";
-        }
-      } else {
-        // PLANNER MODE: Generate a JSON output.
+        } // End if (firstCandidate)
+      } else { // --- PLANNER MODE (enableTools is false) ---
         logger.info("GEMINI_PROXY: Running in PLANNER (no-tools) mode.");
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const config: any = {};
-        // Only include the response schema if it was passed
-        // by the client (for Planner Mode)
         if (responseSchema) {
           config.responseMimeType = "application/json";
           config.responseSchema = responseSchema;
         }
-
-        // CRITICAL FIX: The instruction for Planner Mode
-        // MUST be strong and placed in config
         config.systemInstruction = `You are an expert planner. Your response
           MUST be a single, raw JSON object that conforms exactly
           to the requested schema.
           DO NOT wrap the JSON in Markdown fences (\`\`\`json)
           or conversational text. Output ONLY the JSON.`;
-
 
         const result = await genAI.models.generateContent({
           model: modelName,
@@ -1150,7 +1170,7 @@ export const geminiProxy = onRequest(
         });
         finalResponseText = result.candidates?.[0]?.
           content?.parts?.[0]?.text ?? "{}";
-      }
+      } // End if (enableTools)
 
       logger.info("GEMINI_PROXY: Sending final response to client.",
         {text: finalResponseText});
@@ -1161,7 +1181,7 @@ export const geminiProxy = onRequest(
         error.message : "An unknown error occurred.";
       res.status(500).json({error: `Gemini Proxy Error: ${errorMessage}`});
     }
-  },
+  }, // End async (req, res)
 );
 
 const PLAN_QUOTAS = {
