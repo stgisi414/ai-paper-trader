@@ -5,6 +5,7 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../src/firebaseConfig';
 import Card from '../../components/common/Card';
 import { useNavigate } from 'react-router-dom';
+import { GoogleIcon } from '../../components/common/Icons';
 
 const Login: React.FC = () => {
     const auth = getAuth();
@@ -60,7 +61,7 @@ const Login: React.FC = () => {
                     onClick={handleGoogleSignIn}
                     className="bg-brand-blue text-white font-bold py-3 px-8 rounded-md hover:bg-blue-600 transition-colors"
                 >
-                    Sign in with Google
+                    <GoogleIcon className="inline mr-2" /> Sign in with Google
                 </button>
             </Card>
         </div>

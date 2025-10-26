@@ -10,6 +10,7 @@ import { RecommendationIcon, BriefcaseIcon } from './components/common/Icons';
 import StockPicker from './components/StockPicker';
 import HistoryLedger from './components/HistoryLedger';
 import Login from './src/components/Login';
+import LandingPage from './components/LandingPage';
 import { getAuth, signOut } from 'firebase/auth';
 import { NotificationProvider } from './hooks/useNotification';
 import { useUnreadListener } from './hooks/useUnreadListener';
@@ -60,11 +61,10 @@ const MainApp: React.FC = () => {
 
     const logoClassName = 'h-10 w-8 transition-all duration-300';
 
-    const isSpecialPage = [
-      '/terms',
-      '/privacy',
-      '/pricing'
-    ].includes(window.location.hash.substring(1));
+     // Determine if static pages like terms, privacy, pricing are being viewed
+    const isSpecialPage = ['/terms', '/privacy', '/pricing',].includes(location.pathname);
+    // Determine if the header and footer should be hidden (on static pages or landing page when logged out)
+    const hideHeaderFooter = isSpecialPage || (!user && location.pathname === '/');
 
     const isReferralModalOpen = !!user && userSettings.referralSource === null && !isSubscriptionModalOpen; 
 
@@ -174,18 +174,31 @@ const MainApp: React.FC = () => {
               </header>
             )}
 
-            <main className="container mx-auto p-4 md:p-3 lg:p-4 flex-grow">
+            <main className={`container mx-auto p-4 md:p-3 lg:p-4 flex-grow ${hideHeaderFooter ? 'pt-0 px-0 max-w-full' : ''}`}>
                 <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/stock/:ticker" element={<StockView />} />
-                    <Route path="/picker" element={<StockPicker />} />
-                    <Route path="/history" element={<HistoryLedger />} />
+                    {/* Root Route: Shows Dashboard if logged in, LandingPage if not */}
+                    <Route path="/" element={user ? <Dashboard /> : <LandingPage />} />
+
+                    {/* Login Route: Always accessible */}
                     <Route path="/login" element={<Login />} />
+
+                    {/* Protected Routes: Only rendered if 'user' object exists */}
+                     {user && (
+                        <>
+                            <Route path="/stock/:ticker" element={<StockView />} />
+                            <Route path="/picker" element={<StockPicker />} />
+                            <Route path="/history" element={<HistoryLedger />} />
+                            <Route path="/help-menu" element={<HelpMenu />} />
+                        </>
+                    )}
+
+                    {/* Static Pages: Always accessible */}
                     <Route path="/terms" element={<TermsOfService />} />
                     <Route path="/privacy" element={<PrivacyPolicy />} />
                     <Route path="/pricing" element={<PricingPage />} />
-                    <Route path="/help-menu" element={<HelpMenu />} />
-                    <Route path="*" element={user ? <Dashboard /> : <Login />} />
+
+                    {/* Fallback Route: Redirects to Dashboard or LandingPage based on auth state */}
+                    <Route path="*" element={user ? <Dashboard /> : <LandingPage />} />
                 </Routes>
             </main>
 
