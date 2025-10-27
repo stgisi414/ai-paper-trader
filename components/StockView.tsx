@@ -5,6 +5,7 @@ import * as fmpService from '../services/fmpService';
 import * as geminiService from '../services/geminiService';
 import type { FmpQuote, FmpProfile, FmpHistoricalData, FmpNews, AiAnalysis, FmpAnalystRating, FmpIncomeStatement, FmpBalanceSheet, FmpCashFlowStatement, FmpInsiderTrading, FinancialStatementAnalysis, TechnicalAnalysis, CombinedRec, AlpacaOptionContract, OptionHolding, KeyMetricsAnalysis } from '../types';
 import { usePortfolio } from '../hooks/usePortfolio';
+import { OptionHolding } from '../types';
 import { useWatchlist } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
@@ -19,6 +20,7 @@ import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 import { processHelpAction } from '../utils/workflowExecutor';
 import { usePersistentState } from '../utils/localStorageManager';
 import UsageIndicator from './UsageIndicator';
+import { XIcon } from './common/Icons';
 
 type OptionsSortKey = 'strike_price' | 'close_price' | 'impliedVolatility' | 'volume' | 'delta' | 'gamma' | 'theta' | 'vega' | null;
 type SortDirection = 'asc' | 'desc';
@@ -103,7 +105,7 @@ const HelpIconWithTooltip: React.FC<{ tooltip: string }> = ({ tooltip }) => {
 
 const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
-    const { buyStock, sellStock, portfolio, buyOption, sellOption } = usePortfolio();
+    const { buyStock, sellStock, portfolio, buyOption, sellOption, manualSellOption, updateOptionStopLoss } = usePortfolio();
     const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist();
     const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
     const authFunctions = { checkUsage, logUsage, onLimitExceeded };
@@ -130,14 +132,13 @@ const StockView: React.FC = () => {
     const [technicalAnalysis, setTechnicalAnalysis] = usePersistentState<TechnicalAnalysis | null>(`technical-${ticker}`, null);
     const [combinedRec, setCombinedRec] = usePersistentState<CombinedRec | null>(`combinedRec-${ticker}`, null);
     const [keyMetricsAnalysis, setKeyMetricsAnalysis] = usePersistentState<KeyMetricsAnalysis | null>(`keyMetrics-${ticker}`, null);
-    
-    // START NEW OPTIONS STATE & LOGIC
+
     const [options, setOptions] = useState<AlpacaOptionContract[]>([]);
     const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
     const [availableExpirationDates, setAvailableExpirationDates] = useState<string[]>([]);
     const [selectedExpiry, setSelectedExpiry] = useState<string>('');
     const [isOptionsLoading, setIsOptionsLoading] = useState(false);
-    // END NEW OPTIONS STATE & LOGIC
+    const [stopLossInput, setStopLossInput] = useState<number | ''>('');
 
     const [isLoading, setIsLoading] = useState(true);
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -488,48 +489,44 @@ const StockView: React.FC = () => {
         if (amount <= 0 || !quote) return;
 
         if (tradeTab === 'stock' && profile) {
-            // Calculate shares based on input mode
+            // Stock buying logic remains the same
             const sharesToBuy = tradeInputMode === 'shares' ? amount : amount / quote.price;
             if (sharesToBuy <= 0) {
-                alert("Please enter a valid amount.");
-                return;
-            }
-            buyStock(quote.symbol, profile.companyName, sharesToBuy, quote.price);
-            alert(`Successfully bought ${sharesToBuy.toFixed(4)} share(s) of ${quote.symbol}`);
+                 alert("Please enter a valid amount.");
+                 return;
+             }
+             buyStock(quote.symbol, profile.companyName, sharesToBuy, quote.price);
+             alert(`Successfully bought ${sharesToBuy.toFixed(4)} share(s) of ${quote.symbol}`);
+             setTradeAmount(''); // Clear amount after trade
         } else if (selectedOption) {
             const contractsToBuy = amount;
-            // ... (rest of the existing option buying logic)
-            // --- ENHANCED ARBITRAGE PREVENTION CHECK ---
-            const currentStockPrice = quote.price;
-            const strikePrice = parseFloat(selectedOption.strike_price);
-            const marketPremium = selectedOption.close_price || 0;
-            const impliedVolatility = selectedOption.impliedVolatility || 0; 
-            
-            const intrinsicFloor = calculateIntrinsicValueFloor(currentStockPrice, strikePrice, selectedOption.type);
-            
-            const epsilon = 0.0001; 
+            // --- Arbitrage Prevention Check (remains the same) ---
+             const currentStockPrice = quote.price;
+             const strikePrice = parseFloat(selectedOption.strike_price);
+             const marketPremium = selectedOption.close_price || 0;
+             const impliedVolatility = selectedOption.impliedVolatility || 0;
+             const intrinsicFloor = calculateIntrinsicValueFloor(currentStockPrice, strikePrice, selectedOption.type);
+             const epsilon = 0.0001;
 
-            if (marketPremium < intrinsicFloor - epsilon) {
-                 alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is below the intrinsic floor (\$${intrinsicFloor.toFixed(2)}). This is stale data. Please select another option or try again.`);
-                 return;
-            }
-            
-            if (Math.abs(marketPremium - intrinsicFloor) < epsilon && impliedVolatility < epsilon) {
-                 alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is equal to the intrinsic floor and has 0.00% Implied Volatility. This indicates critically flawed (stale or static) data and no real time value. Please select another option.`);
-                 return;
-            }
-            
-            if (portfolio.cash < contractsToBuy * marketPremium * 100) {
-                 alert("Not enough cash to complete option purchase.");
-                 return;
-            }
-            // --- END ARBITRAGE PREVENTION CHECK ---
+             if (marketPremium < intrinsicFloor - epsilon) {
+                  alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is below the intrinsic floor (\$${intrinsicFloor.toFixed(2)}). This is stale data. Please select another option or try again.`);
+                  return;
+             }
+             if (Math.abs(marketPremium - intrinsicFloor) < epsilon && impliedVolatility < epsilon) {
+                  alert(`Arbitrage attempt prevented. The listed premium (\$${marketPremium.toFixed(2)}) is equal to the intrinsic floor and has 0.00% Implied Volatility. This indicates critically flawed (stale or static) data and no real time value. Please select another option.`);
+                  return;
+             }
+             if (portfolio.cash < contractsToBuy * marketPremium * 100) {
+                  alert("Not enough cash to complete option purchase.");
+                  return;
+             }
+             // --- End Arbitrage Check ---
 
             const optionToBuy: OptionHolding = {
                 symbol: selectedOption.symbol,
                 underlyingTicker: selectedOption.underlying_symbol,
                 shares: contractsToBuy,
-                purchasePrice: marketPremium, 
+                purchasePrice: marketPremium,
                 currentPrice: marketPremium,
                 change: selectedOption.change || 0,
                 changesPercentage: selectedOption.changesPercentage || 0,
@@ -542,12 +539,23 @@ const StockView: React.FC = () => {
                 vega: selectedOption.vega,
                 impliedVolatility: selectedOption.impliedVolatility,
                 open_interest: selectedOption.open_interest,
-                volume: selectedOption.volume
+                volume: selectedOption.volume,
+                // stopLossPrice is added in the buyOption call
             };
-            buyOption(optionToBuy);
-            alert(`Successfully bought ${contractsToBuy} contract(s) of ${selectedOption.symbol}`);
+
+            // ADDED: Pass stopLossInput to buyOption (convert empty string to null)
+            const slPrice = stopLossInput === '' ? null : Number(stopLossInput);
+            buyOption(optionToBuy, slPrice);
+
+            alert(`Successfully bought ${contractsToBuy} contract(s) of ${selectedOption.symbol}${slPrice !== null ? ` with stop-loss at ${formatCurrency(slPrice)}` : ''}`);
+            setTradeAmount(''); // Clear amount
+            setStopLossInput(''); // Clear stop loss input
         }
     };
+
+    useEffect(() => {
+        setStopLossInput('');
+    }, [selectedOption, tradeTab]);
     
     const handleSell = () => {
         const amount = Number(tradeAmount);
@@ -1125,6 +1133,28 @@ const StockView: React.FC = () => {
                                         placeholder="0"
                                     />
                                 </div>
+
+                                {/* --- ADDED: Stop Loss Input (only for options buy) --- */}
+                                {(tradeTab === 'calls' || tradeTab === 'puts') && (
+                                    <div>
+                                        <label htmlFor="stop-loss-price" className="block text-sm font-medium text-night-100 mb-1">
+                                            Stop Loss Price (Optional, Premium per Share)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            id="stop-loss-price"
+                                            value={stopLossInput}
+                                            onChange={(e) => setStopLossInput(e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value)))}
+                                            className="w-full bg-night-700 border border-night-600 rounded-md py-2 px-3 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
+                                            min="0"
+                                            step="0.01"
+                                            placeholder="e.g., 1.50"
+                                            // Disable if not buying or no option selected
+                                            disabled={!selectedOption}
+                                        />
+                                    </div>
+                                )}
+
                                 {/* MODIFICATION: Use the new totalTradeValue variable */}
                                 <div className="text-center font-bold">Total: {formatCurrency(totalTradeValue)}</div>
                                 <div className="flex gap-2">
@@ -1184,6 +1214,83 @@ const StockView: React.FC = () => {
                     {renderTabContent()}
                 </div>
             </div>
+            {user && portfolio.optionHoldings.length > 0 && (
+                <Card>
+                    <h2 className="text-xl font-bold mb-4">My Option Holdings ({ticker})</h2>
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="border-b border-night-600">
+                                <tr>
+                                    {/* ... other headers ... */}
+                                     <th className="p-2">Symbol</th>
+                                     <th className="p-2">Contracts</th>
+                                     <th className="p-2">Avg Premium</th>
+                                     <th className="p-2">Current Premium</th>
+                                     <th className="p-2">Total Value</th>
+                                     <th className="p-2">Day's G/L</th>
+                                     <th className="p-2">Open G/L</th>
+                                     <th className="p-2">Stop Loss</th> {/* ADDED Header */}
+                                    <th className="p-2 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {portfolio.optionHoldings
+                                    .filter(o => o.underlyingTicker === ticker) // Filter for current ticker
+                                    .map(o => {
+                                        const totalValue = o.shares * o.currentPrice * 100;
+                                        const openGain = (o.currentPrice - o.purchasePrice) * o.shares * 100;
+                                        const openGainPercent = o.purchasePrice > 0 ? (openGain / (o.purchasePrice * o.shares * 100)) * 100 : 0;
+                                        const dayGain = (o.change || 0) * o.shares * 100;
+                                        const dayGainPercent = o.changesPercentage || 0;
+
+                                        return (
+                                            <tr key={o.symbol} className="border-b border-night-700 hover:bg-night-700">
+                                                {/* ... other data cells ... */}
+                                                 <td className="p-2 font-bold">
+                                                     {o.symbol}
+                                                     <span className={`ml-1 text-xs ${o.optionType === 'call' ? 'text-brand-green' : 'text-brand-red'}`}>({o.optionType.toUpperCase()})</span>
+                                                 </td>
+                                                 <td className="p-2">{o.shares}</td>
+                                                 <td className="p-2">{formatCurrency(o.purchasePrice)}</td>
+                                                 <td className="p-2">{formatCurrency(o.currentPrice)}</td>
+                                                 <td className="p-2">{formatCurrency(totalValue)}</td>
+                                                 <td className={`p-2 font-semibold ${dayGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>{formatCurrency(dayGain)} ({formatPercentage(dayGainPercent)})</td>
+                                                 <td className={`p-2 font-semibold ${openGain >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>{formatCurrency(openGain)} ({formatPercentage(openGainPercent)})</td>
+                                                 {/* ADDED: Display Stop Loss */}
+                                                <td className="p-2">
+                                                    {o.stopLossPrice !== null && o.stopLossPrice !== undefined ? (
+                                                        <span className="flex items-center gap-1 text-yellow-400">
+                                                            {formatCurrency(o.stopLossPrice)}
+                                                            {/* Button to remove SL */}
+                                                            <button
+                                                                onClick={() => updateOptionStopLoss(o.symbol, null)}
+                                                                className="text-red-500 hover:text-red-400"
+                                                                title="Remove Stop Loss"
+                                                            >
+                                                                <XIcon className="h-3 w-3" />
+                                                            </button>
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-night-500 italic">None</span>
+                                                        // Optionally add a button here to ADD a stop loss later
+                                                    )}
+                                                </td>
+                                                <td className="p-2 text-right">
+                                                    <button
+                                                        onClick={() => manualSellOption(o.symbol)}
+                                                        className="text-white bg-brand-red px-2 py-1 rounded text-xs hover:bg-red-600"
+                                                    >
+                                                        Sell All
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            )}
         </div>
     );
 };

@@ -372,6 +372,7 @@ export interface OptionHolding {
   theta: number | null;
   vega: number | null;
   impliedVolatility: number | null;
+  stopLossPrice?: number | null;
 }
 
 export interface AlpacaOptionBar {
@@ -398,7 +399,7 @@ export interface AiScreener {
 
 export interface Transaction {
     id: string;
-    type: 'BUY' | 'SELL' | 'OPTION_BUY' | 'OPTION_SELL' | 'OPTION_EXERCISE' | 'OPTION_EXPIRE';
+    type: 'BUY' | 'SELL' | 'OPTION_BUY' | 'OPTION_SELL' | 'OPTION_EXERCISE' | 'OPTION_EXPIRE' | 'OPTION_STOP_LOSS_SELL';
     ticker: string;
     shares: number;
     price: number;
@@ -409,6 +410,7 @@ export interface Transaction {
     optionSymbol?: string;
     optionType?: 'call' | 'put';
     strikePrice?: number;
+    stopLossTriggerPrice?: number;
 }
 
 export interface YahooOptionContract {

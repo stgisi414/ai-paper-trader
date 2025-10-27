@@ -4,7 +4,7 @@ import type { FmpHistoricalData } from '../types';
 import { createChart, ColorType, UTCTimestamp, TimeRange } from 'lightweight-charts';
 import { RectangleDrawingTool } from './primitives/RectangleDrawingTool';
 import { manageChartDataHistory } from '../utils/localStorageManager';
-import { useAuth } from '../src/hooks/useAuth';
+import { useAuth, STRIPE_PRO_PRICE_ID_MONTHLY } from '../src/hooks/useAuth';
 
 interface CandlestickChartProps {
   data: FmpHistoricalData[];
@@ -12,14 +12,14 @@ interface CandlestickChartProps {
 }
 
 const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => {
-  const { user, loading: isAuthLoading } = useAuth();
+  const { user, isPro, activePriceId, userSettings, loading: isAuthLoading } = useAuth();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const toolbarContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current || !toolbarContainerRef.current || data.length === 0) return;
-    if (isAuthLoading) return;
-    
+    if (isAuthLoading) return; // Wait for auth state to load
+
     manageChartDataHistory(ticker);
 
     const chart = createChart(chartContainerRef.current, {
@@ -36,10 +36,8 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         timeScale: {
             borderColor: '#3c3c3c',
             timeVisible: true,
-            // Add a large offset to the right for drawing space
-            rightOffset: 200, 
-            // This MUST be false to allow scrolling past the last bar
-            rightBarStaysOnScroll: false, 
+            rightOffset: 200,
+            rightBarStaysOnScroll: false,
         },
         rightPriceScale: {
             borderColor: '#3c3c3c',
@@ -64,9 +62,8 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
         close: parseFloat(item.close as any),
     }));
     candlestickSeries.setData(candlestickData);
-    
-    const chartStateKey = `chartState_${ticker}`;
 
+    const chartStateKey = `chartState_${ticker}`;
     const savedChartState = localStorage.getItem(chartStateKey);
     if (savedChartState) {
         try {
@@ -89,11 +86,25 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
     chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleTimeRangeChange);
 
     let drawingTool: RectangleDrawingTool | null = null;
-    if (user) { // <--- ADDITION: Initialize drawing tool only if user is logged in
-        drawingTool = new RectangleDrawingTool(chart, candlestickSeries, toolbarContainerRef.current, ticker, user, {}); // <--- MODIFICATION: Pass 'user'
+    // --- ADDITION: Check if user is eligible for drawing tools ---
+    const canUseDrawingTools = user && (
+        (isPro && activePriceId === STRIPE_PRO_PRICE_ID_MONTHLY) ||
+        userSettings.usageTier === 'unlimited' ||
+        userSettings.usageTier === 'custom_tier_1' // Assuming custom_tier_1 also gets tools
+    );
+    // --- END ADDITION ---
+
+    // --- MODIFICATION: Conditionally initialize and show toolbar ---
+    if (canUseDrawingTools) {
+        drawingTool = new RectangleDrawingTool(chart, candlestickSeries, toolbarContainerRef.current, ticker, user, {});
+        // Make sure toolbar is visible if tools are enabled
+        toolbarContainerRef.current.style.display = 'flex'; // Or 'block', depending on layout needs
     } else {
-        toolbarContainerRef.current.innerHTML = ''; // Clear toolbar if logged out
+        // If user is not eligible, clear the toolbar and hide it
+        toolbarContainerRef.current.innerHTML = '';
+        toolbarContainerRef.current.style.display = 'none';
     }
+    // --- END MODIFICATION ---
 
     const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
     window.addEventListener('resize', handleResize);
@@ -105,15 +116,19 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, ticker }) => 
       chart.remove();
       if (toolbarContainerRef.current) {
           toolbarContainerRef.current.innerHTML = '';
+          toolbarContainerRef.current.style.display = 'flex'; // Reset display on cleanup
       }
     };
-  }, [data, ticker, user, isAuthLoading]);
+    // Update dependencies to include user eligibility factors
+  }, [data, ticker, user, isPro, activePriceId, userSettings.usageTier, isAuthLoading]);
 
   return (
     <div className="relative">
-      <div 
-        ref={toolbarContainerRef} 
-        className={`absolute top-4 left-4 z-20 flex items-center gap-2 bg-night-800 p-2 rounded-md shadow-lg ${user ? '' : 'hidden'}`} 
+      {/* Remove the conditional class from here */}
+      <div
+        ref={toolbarContainerRef}
+        className={`absolute top-4 left-4 z-20 flex items-center gap-2 bg-night-800 p-2 rounded-md shadow-lg`}
+        // Visibility is now controlled by style in useEffect
       />
       <div ref={chartContainerRef} />
     </div>

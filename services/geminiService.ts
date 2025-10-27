@@ -449,17 +449,60 @@ export const getWatchlistPicks = async (holdings: { ticker: string, shares: numb
     });
 };
 
+const technicalAnalysisPrinciples = `
+**ADAM'S TECHNICAL ANALYSIS BIBLE - KEY PRINCIPLES:**
+
+* **RULE 1: SUPPORT & RESISTANCE:** Buy Calls near strong Support, Buy Puts near strong Resistance. Avoid trading in the middle of a range.
+* **RULE 2: LEVEL STRENGTH:** Levels weaken with more tests. 3rd-6th tests have a higher break chance.
+* **RULE 3: TIMEFRAMES:** Higher timeframes (1hr+) are more reliable, especially in chop/high VIX. Adapt strategy timeframe to market conditions.
+* **RULE 4: RELATIVE STRENGTH/WEAKNESS:** Strong market emotion (panic, euphoria) overrides technicals. Neutral markets are best for technical plays.
+* **RULE 5A: REVERSALS:** Look for Calls on red candles near support; Puts on green candles near resistance.
+* **RULE 5B/6: TREND:** Trade *with* the trend. Momentum confirms strength (support > resistance in uptrend, vice-versa). Only counter-trend at major levels with confirmation.
+* **RULE 7 [RISK MANAGEMENT] IF BOTH SIDES HAVE A CASE, WAIT FOR CONFIRMATION:** Unclear setups = uncertainty. Sit out and protect your capital.
+* **RULE 8 [RISK MANAGEMENT] NEVER TRADE AN OPEN CANDLE LIKE IT'S CLOSED:** i.e. Trading before candle close is chasing, Candle closes confirm breakouts/breakdowns.
+* **RULE 9 [RISK MANAGEMENT] LONG RANGES = EXPLOSIVE BREAKOUTS:** The longer we range, the harder the move out of the range.
+* **RULE 10A [RISK MANAGEMENT] GAPS CREATE INVISIBLE SUPPORT/RESISTANCE:** i.e. Bottom of fresh gap = possible resistance, Top of fresh gap = possible support.
+* **RULE 10B [RISK MANAGEMENT] GAPS USUALLY REVERSE ONCE FILLED:** i.e. 80%+ of gaps that fill reverse shortly after. Always monitor volume and RSI when approaching gap edges.
+* **RULE 10C [RISK MANAGEMENT] DIRECTION OF GAP = MARKET SENTIMENT:** i.e. Gap up = bullish open bias, Gap down = bearish open bias.
+* **RULE 11: OPTIONS STRIKES/EXPIRY:**
+    * Strike should be between entry and target. ITM or slightly OTM is safer.
+    * Shorter expiry = higher risk.
+    * Suggested Expiry by Chart Timeframe: 15m=This Week, 1h=1-2 Weeks, 4h=1-3 Weeks, 1D=2-4 Weeks.
+* **RULE 12: FIRST TOUCH:** The first test of a major S/R level often has the strongest reaction (bounce/rejection).
+* **RULE 13: WIGGLE ROOM:** Use wider stops on higher timeframes.
+* **RULE 14: STOPLOSS:** ALWAYS use a stoploss.
+
+* **RULE 15: VOLUME CONFIRMS PRICE:** Volume is your "truth serum." A breakout (above resistance) or breakdown (below support) on high volume is far more significant than one on low volume. Low volume on a pullback suggests a weak move, while high volume on a reversal signals strong conviction.
+* **RULE 16: INDICATORS CONFIRM MOMENTUM:**
+    * **RSI (Relative Strength Index):** Use it to identify Overbought (>70) or Oversold (<30) conditions. These are not sell/buy signals alone, but warnings that a trend may be exhausted.
+    * **Moving Averages (MAs):** Use MAs to identify trend direction (e.g., price above 50-day MA = uptrend) and as dynamic support (in an uptrend) or resistance (in a downtrend).
+    * **MACD (Moving Average Convergence Divergence):** Look for bullish (Signal line crosses above MACD) or bearish (Signal line crosses below MACD) crossovers as momentum signals that can confirm your S/R or trend analysis.
+* **RULE 17: DIVERGENCE PRECEDES REVERSALS:** Look for divergence between price and an indicator.
+    * **Bearish Divergence:** Price makes a new High, but RSI/MACD makes a lower High. (Warning: Uptrend may be weakening).
+    * **Bullish Divergence:** Price makes a new Low, but RSI/MACD makes a higher Low. (Warning: Downtrend may be weakening).
+* **RULE 18: CHART PATTERNS PREDICT MOVES:**
+    * **Reversal Patterns:** Head & Shoulders (bearish), Inverse H&S (bullish), Double/Triple Tops (bearish), Double/Triple Bottoms (bullish). These signal a trend is likely ending.
+    * **Continuation Patterns:** Flags, Pennants, and Triangles (symmetrical, ascending, descending). These signal a pause in the trend before it resumes in the *same* direction.
+* **RULE 19: CANDLES SIGNAL IMMEDIATE ACTION:** Individual candle patterns provide entry/exit clues at your key levels.
+    * **Reversal Candles:** Doji (indecision), Hammer/Hanging Man (potential bottom/top), Engulfing Patterns (strong reversal signal).
+    * **Confirmation:** A strong bullish candle (e.g., Hammer, Bullish Engulfing) *at* support adds confidence to a Call entry. A strong bearish candle (e.g., Shooting Star, Bearish Engulfing) *at* resistance adds confidence to a Put entry.
+`;
+
 export const getOptionsStrategy = async (userPrompt: string, stockTicker: string, auth: AuthFunctions): Promise<OptionsStrategyRec> => {
     return withUsageCheck('max', auth, () => {
         const prompt = `
-            As an expert options strategist, analyze the current market data for ${stockTicker} and devise a concrete options strategy based on the user's request: "${userPrompt}". 
-            
-            Use the 'get_fmp_quote' and 'get_options_chain' tools to retrieve necessary data. When retrieving options data, fetch contracts expiring closest to 30-60 days out. 
-            
-            CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. The 'suggestedContracts' array MUST contain the specific legs of the proposed strategy.
+            You are an expert options strategist. Analyze the current market data for ${stockTicker} and devise a concrete options strategy based on the user's request: "${userPrompt}".
+
+            **Incorporate these core technical analysis and risk management principles:**
+            ${technicalAnalysisPrinciples}
+
+            Use the 'get_fmp_quote' and 'get_options_chain' tools to retrieve necessary data. When retrieving options data, fetch contracts expiring closest to 30-60 days out unless the user or principles suggest otherwise (e.g., shorter expiry for lower timeframe analysis). Consider factors like implied volatility (IV), open interest (OI), volume, and the Greeks (Delta, Theta) when selecting specific contracts. Ensure the selected strike prices align with Rule 11[cite: 85, 86]. Always prioritize Rule 14 (Stoploss) in risk assessment.
+
+            CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. The 'suggestedContracts' array MUST contain the specific legs of the proposed strategy, including rationale based on the principles and fetched data. The 'commentary' should explicitly mention risk management according to the principles.
         `;
         // We use gemini-2.5-pro for its better reasoning and tool-use
-        return callGeminiProxy(prompt, "gemini-2.5-pro", true, optionsStrategySchema); 
+        // Pass the schema here for the FINAL response generation after tool calls
+        return callGeminiProxy(prompt, "gemini-2.5-pro", true, optionsStrategySchema);
     });
 };
 
