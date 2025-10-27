@@ -22,9 +22,12 @@ export const STRIPE_PRO_PRICE_ID_MONTHLY = "price_1SLVdfDWUolxMnmeJJOS0rD2"; //
 
 type CustomUsageTier = 'unlimited' | 'custom_tier_1';
 
+export type AiLevel = 'beginner' | 'intermediate' | 'advanced';
+
 // Define the shape of the user data we get from Firestore
 interface UserSettings {
   fontSize: 'small' | 'medium' | 'large';
+  aiLevel: AiLevel;
   isPro: boolean;
   activePriceId: string | null;
   maxUsed: number;
@@ -43,6 +46,7 @@ interface AuthContextType {
   liteUsed: number;
   maxUsed: number;
   updateFontSize: (size: UserSettings['fontSize']) => Promise<void>;
+  updateAiLevel: (level: AiLevel) => Promise<void>;
   isSubscriptionModalOpen: boolean;
   subscriptionModalReason: string;
   openSubscriptionModal: (reason?: string) => void;
@@ -55,6 +59,7 @@ interface AuthContextType {
 
 const DEFAULT_SETTINGS: UserSettings = {
     fontSize: 'medium',
+    aiLevel: 'intermediate',
     isPro: false,
     activePriceId: null,
     maxUsed: 0,
@@ -146,6 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const data = docSnap.data() as UserType & { usageTier?: CustomUsageTier | null }; // ADDED: Include usageTier in type assertion
         const newSettings = {
             fontSize: data.fontSize || 'medium',
+            aiLevel: data.aiLevel || 'intermediate',
             maxUsed: data.maxUsed ?? 0,
             liteUsed: data.liteUsed ?? 0,
             lastUsageReset: data.lastUsageReset,
@@ -236,6 +242,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       openSubscriptionModal(`You have exceeded your monthly limit for ${modelName} calls. Upgrade your plan for more access.`);
   }, [openSubscriptionModal]);
 
+  const updateAiLevel = useCallback(async (level: AiLevel) => {
+    if (!user) return;
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, { aiLevel: level }, { merge: true });
+      // Local state will update via the onSnapshot listener
+    } catch (error) {
+      console.error("Failed to update AI level:", error);
+    }
+  }, [user]);
 
   const checkUsage = useCallback((model: 'max' | 'lite'): boolean => {
       const { isPro, activePriceId, liteUsed, maxUsed, usageTier } = userSettings;
@@ -345,6 +361,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     liteUsed: userSettings.liteUsed,
     maxUsed: userSettings.maxUsed,
     updateFontSize,
+    updateAiLevel,
     isSubscriptionModalOpen,
     subscriptionModalReason,
     openSubscriptionModal,
@@ -358,6 +375,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       loading,
       userSettings, // Includes usageTier
       updateFontSize,
+      updateAiLevel,
       isSubscriptionModalOpen,
       subscriptionModalReason,
       openSubscriptionModal,

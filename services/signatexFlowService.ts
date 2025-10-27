@@ -77,9 +77,13 @@ const pickCriteriaSchema = {
 export const getWorkflowFromPrompt = async (prompt: string, context: AppContext, auth: AuthFunctions): Promise<SignatexFlowResponse> => {
     const contextPrompt = buildContextPrompt(context);
 
+    const levelInstruction = getAiLevelInstruction(auth.aiLevel);
+
     // Prompt for the "Planner" AI. Its only job is to create a JSON workflow.
     const plannerPrompt = `
         You are an expert financial assistant for Signatex.co. Your ONLY goal is to fulfill the user's request by generating a JSON object that defines a series of actions.
+
+        **Communication Style for 'say' actions:** ${levelInstruction}
 
         ${contextPrompt}
 

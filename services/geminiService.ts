@@ -9,15 +9,20 @@ export interface AuthFunctions {
   checkUsage: (model: 'max' | 'lite') => boolean;
   logUsage: (model: 'max' | 'lite') => Promise<void>;
   onLimitExceeded: (model: 'max' | 'lite') => void;
+  aiLevel: AiLevel;
 }
 
-const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any): Promise<any> => {
+const callGeminiProxy = async (prompt: string, model: string, enableTools: boolean, responseSchema?: any, auth?: AuthFunctions): Promise<any> => { // Add auth param
     try {
         console.log(`[GEMINI_SERVICE] Calling Gemini Proxy. Tools enabled: ${enableTools}`);
+        const body: any = { prompt, model, enableTools, responseSchema };
+        if (auth?.aiLevel) { // --- ADDITION: Include aiLevel if available ---
+            body.aiLevel = auth.aiLevel;
+        }
         const response = await fetch(GEMINI_BASE_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, model, enableTools, responseSchema }),
+            body: JSON.stringify(body), // Use the constructed body
         });
 
         if (!response.ok) {
@@ -294,10 +299,25 @@ const withUsageCheck = async <T,>(model: 'lite' | 'max', auth: AuthFunctions, fn
     return result;
 };
 
+const getAiLevelInstruction = (level: AiLevel): string => {
+    switch (level) {
+        case 'beginner':
+            return "Explain concepts simply, avoid jargon, use analogies if helpful.";
+        case 'intermediate':
+            return "Provide clear explanations with moderate detail. Assume some financial knowledge.";
+        case 'advanced':
+            return "Be concise and technical. Use precise financial terminology. Assume expert familiarity.";
+        default:
+            return "Provide clear explanations with moderate detail."; // Default to intermediate
+    }
+};
+
 export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[], auth: AuthFunctions): Promise<AiAnalysis> => {
     return withUsageCheck('lite', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             Analyze the sentiment for ${companyName} based on these headlines: ${news.map(n => n.title).join('\n')}.
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY the three top-level fields: "sentiment", "confidenceScore", and "summary".
             YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -307,8 +327,10 @@ export const analyzeNewsSentiment = async (companyName: string, news: FmpNews[],
 
 export const getStockPicks = async (answers: QuestionnaireAnswers, auth: AuthFunctions): Promise<{stocks: StockPick[]}> => {
      return withUsageCheck('lite', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             Recommend stocks based on these preferences: ${JSON.stringify(answers)}.
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY the single top-level field: "stocks" (containing the array).
             YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -318,8 +340,10 @@ export const getStockPicks = async (answers: QuestionnaireAnswers, auth: AuthFun
 
 export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeStatement, balanceSheet: FmpBalanceSheet, cashFlow: FmpCashFlowStatement, auth: AuthFunctions): Promise<FinancialStatementAnalysis> => {
     return withUsageCheck('max', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
         Analyze these financial statements: Income=${JSON.stringify(incomeStatement)}, BalanceSheet=${JSON.stringify(balanceSheet)}, CashFlow=${JSON.stringify(cashFlow)}.
+        **Communication Style:** ${levelInstruction}
         CRITICAL TASK: Output ONLY the three top-level fields: "strengths", "weaknesses", and "summary".
         YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -329,8 +353,10 @@ export const analyzeFinancialStatements = async (incomeStatement: FmpIncomeState
 
 export const getTechnicalAnalysis = async (historicalData: FmpHistoricalData[], auth: AuthFunctions): Promise<TechnicalAnalysis> => {
     return withUsageCheck('lite', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             Provide a technical analysis on this historical data: ${JSON.stringify(historicalData.slice(-90))}.
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY the four top-level fields: "trend", "support", "resistance", and "summary".
             YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -361,11 +387,13 @@ export const analyzePortfolioRisk = async (portfolio: Portfolio, auth: AuthFunct
                 console.error("Failed to fetch sector data for risk analysis:", e);
             }
         }
+        
 
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             You are an expert financial risk analyst.
             Analyze the portfolio data provided below. 
-            
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Generate a JSON object that STRICTLY conforms to the following requirements:
             1. The entire JSON must ONLY contain the three top-level keys: "riskLevel", "concentration", and "suggestions".
             2. The "concentration" field MUST be a nested JSON object.
@@ -386,7 +414,7 @@ export const getCombinedRecommendations = async (profile: FmpProfile, ratings: F
     return withUsageCheck('max', auth, () => {
         // FIX: Make the prompt resilient to missing analyst ratings for ETFs/composites.
         const ratingsData = ratings.length > 0 ? JSON.stringify(ratings[0]) : "No analyst ratings available for this asset.";
-        
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             As an expert financial analyst, generate a trading recommendation for ${profile.companyName} (${profile.symbol}).
             Synthesize the following information:
@@ -396,7 +424,7 @@ export const getCombinedRecommendations = async (profile: FmpProfile, ratings: F
 
             If Analyst Ratings are not available, you MUST rely more heavily on the technical analysis and the asset's description/sector.
             For ETFs, commodities, or funds, focus on the technical trend and the description of the underlying assets instead of traditional stock metrics.
-
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY the four top-level fields: "sentiment", "confidence", "strategy", and "justification".
             YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -406,8 +434,10 @@ export const getCombinedRecommendations = async (profile: FmpProfile, ratings: F
 
 export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile, auth: AuthFunctions): Promise<KeyMetricsAnalysis> => {
     return withUsageCheck('lite', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             Provide a friendly, multi-faceted summary for ${profile.companyName} based on these key metrics: ${JSON.stringify(quote)}.
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY the single top-level field: "summary".
             YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -417,10 +447,12 @@ export const analyzeKeyMetrics = async (quote: FmpQuote, profile: FmpProfile, au
 
 export const getMarketScreenerPicks = async (userPrompt: string, auth: AuthFunctions): Promise<AiScreener> => {
     return withUsageCheck('max', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             Find 5 stocks that match this request: "${userPrompt}". 
             CRITICAL: The objects in the "picks" array MUST use the exact property names: "symbol" (the ticker), "name" (the company name), "reason" (the rationale), and "score" (a number from 1 to 10). 
             DO NOT use "ticker", "company_name", or "rationale" in the final JSON.
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY the three top-level fields: "title", "description", and "picks".
             YOU MUST RESPOND ONLY with a valid JSON object that conforms strictly to the provided schema.
         `;
@@ -444,7 +476,8 @@ export const runToolCallingTest = async (testName: string, prompt: string): Prom
 
 export const getWatchlistPicks = async (holdings: { ticker: string, shares: number }[], watchlist: string[], news: string, auth: AuthFunctions): Promise<AiWatchlistRecs> => {
     return withUsageCheck('max', auth, () => {
-        const prompt = `Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}. Output ONLY JSON.`;
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
+        const prompt = `Recommend 3 new stocks for a watchlist. Current assets: ${[...holdings.map(h=>h.ticker), ...watchlist].join(', ')}. News summary: ${news}. **Communication Style:** ${levelInstruction} Output ONLY JSON.`;
         return callGeminiProxyWithSchema(prompt, "gemini-2.5-pro", watchlistRecsSchema);
     });
 };
@@ -490,6 +523,7 @@ const technicalAnalysisPrinciples = `
 
 export const getOptionsStrategy = async (userPrompt: string, stockTicker: string, auth: AuthFunctions): Promise<OptionsStrategyRec> => {
     return withUsageCheck('max', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             You are an expert options strategist. Analyze the current market data for ${stockTicker} and devise a concrete options strategy based on the user's request: "${userPrompt}".
 
@@ -498,6 +532,7 @@ export const getOptionsStrategy = async (userPrompt: string, stockTicker: string
 
             Use the 'get_fmp_quote' and 'get_options_chain' tools to retrieve necessary data. When retrieving options data, fetch contracts expiring closest to 30-60 days out unless the user or principles suggest otherwise (e.g., shorter expiry for lower timeframe analysis). Consider factors like implied volatility (IV), open interest (OI), volume, and the Greeks (Delta, Theta) when selecting specific contracts. Ensure the selected strike prices align with Rule 11[cite: 85, 86]. Always prioritize Rule 14 (Stoploss) in risk assessment.
 
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. The 'suggestedContracts' array MUST contain the specific legs of the proposed strategy, including rationale based on the principles and fetched data. The 'commentary' should explicitly mention risk management according to the principles.
         `;
         // We use gemini-2.5-pro for its better reasoning and tool-use
@@ -518,7 +553,8 @@ export const getPortfolioRecommendation = async (userPrompt: string, portfolio: 
                 console.error(`Failed to fetch profile for ${currentTicker}:`, e);
             }
         }
-        
+
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             You are an expert portfolio manager. Your task is to provide a single, actionable investment recommendation based on the user's explicit request and their current portfolio risk context.
 
@@ -532,7 +568,7 @@ export const getPortfolioRecommendation = async (userPrompt: string, portfolio: 
             })}
             
             ${currentTickerProfile ? `**Current Stock Context (${currentTicker}):** ${JSON.stringify({ sector: currentTickerProfile.sector, industry: currentTickerProfile.industry, description: currentTickerProfile.description.substring(0, 100) + '...' })}` : ''}
-
+            **Communication Style:** ${levelInstruction}
             CRITICAL TASK: Output ONLY a raw JSON object that strictly conforms to the provided schema. Analyze the portfolio for over/under-exposure and suggest a definitive action (Buy, Sell, Hold, Rebalance, or New Idea).
         `;
         // Use gemini-2.5-pro for complex reasoning. Set enableTools to false as the data is provided in the prompt.
@@ -542,6 +578,7 @@ export const getPortfolioRecommendation = async (userPrompt: string, portfolio: 
 
 export const getTradeAllocation = async (newsAnalysis: AiAnalysis, riskTolerance: string, investmentGoal: string, quotes: FmpQuote[], amountToAllocate: number, auth: AuthFunctions): Promise<TradeAllocationRecommendation> => {
     return withUsageCheck('max', auth, () => {
+        const levelInstruction = getAiLevelInstruction(auth.aiLevel);
         const prompt = `
             As an expert portfolio manager, create a trade allocation recommendation based on the following data.
 
@@ -555,6 +592,7 @@ export const getTradeAllocation = async (newsAnalysis: AiAnalysis, riskTolerance
             - **Current Stock Data for Watchlist:**
               ${quotes.map(q => `- ${q.symbol}: Price=${formatCurrency(q.price)}, Change=${q.change.toFixed(2)} (${q.changesPercentage.toFixed(2)}%)`).join('\n')}
 
+            **Communication Style:** ${levelInstruction}
             **CRITICAL TASK:**
             Generate a JSON object that provides a clear investment allocation plan. The 'reasoning' must explain how the allocation aligns with the user's goals, risk tolerance, and the provided market data. The 'allocations' should break down how to distribute the specified "Available Cash for Investment". Do not recommend allocating more than this amount.
             

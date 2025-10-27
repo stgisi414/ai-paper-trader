@@ -22,8 +22,8 @@ const screenerOptions: ScreenerOption[] = [
 ];
 
 const MarketScreener: React.FC = () => {
-    const { checkUsage, logUsage, onLimitExceeded } = useAuth(); // Get auth functions
-    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { checkUsage, logUsage, onLimitExceeded, userSettings } = useAuth(); // Get auth functions
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded, aiLevel: userSettings.aiLevel };
 
     const [activeScreen, setActiveScreen] = useState<string | null>(null);
     const [screenerResult, setScreenerResult] = useState<AiScreener | null>(null);

@@ -34,6 +34,8 @@ interface OptionGroup {
   // not strictly needed for this loop's typing
 }
 
+export type AiLevel = "beginner" | "intermediate" | "advanced";
+
 initializeApp();
 
 // Ensure your environment variables are set correctly for these keys
@@ -829,6 +831,22 @@ export const alpacaProxy = onRequest(
   },
 );
 
+const getAiLevelInstruction = (level: AiLevel | undefined): string => {
+  switch (level) {
+  case "beginner":
+    return "Explain concepts simply, avoid jargon, use analogies if helpful.";
+  case "intermediate":
+    return `Provide clear explanations with moderate detail.
+     Assume some financial knowledge.`;
+  case "advanced":
+    return `Be concise and technical. Use precise financial terminology.
+     Assume expert familiarity.`;
+  default:
+    // Default to intermediate
+    return "Provide clear explanations with moderate detail.";
+  }
+};
+
 export const geminiProxy = onRequest(
   {
     invoker: "public",
@@ -849,6 +867,7 @@ export const geminiProxy = onRequest(
         model: modelName = "gemini-2.5-flash",
         enableTools = false,
         responseSchema,
+        aiLevel,
       } = req.body;
 
       if (!prompt) {
@@ -859,6 +878,8 @@ export const geminiProxy = onRequest(
       const genAI = new GoogleGenAI({apiKey: geminiApiKey.value()});
       const history: Content[] = [{role: "user", parts: [{text: prompt}]}];
       let finalResponseText = "";
+      const levelInstruction =
+      getAiLevelInstruction(aiLevel as AiLevel | undefined);
 
       if (enableTools) {
         logger.info("GEMINI_PROXY: Running in ACTOR (tool-enabled) mode.");
@@ -884,6 +905,7 @@ export const geminiProxy = onRequest(
           config: {
             tools: currentTools,
             systemInstruction: `You are an expert financial assistant.
+              ${levelInstruction}
               Your primary task is to use the provided tools to gather
               financial data OR search the web (using the implicit
               Google Search tool when necessary) for explanations/definitions,
@@ -1058,7 +1080,8 @@ export const geminiProxy = onRequest(
             const secondCallPrompt = `The previous step involved calling a tool.
             The exact result from that tool is provided in the preceding
             function response part. Your ONLY task is to present this 
-            result clearly and concisely to the user. If the tool response
+            result clearly and concisely to the user. 
+            **Communication Style:** ${levelInstruction} If the tool response
             indicates an error or no data found, state that. Otherwise,
             directly state the information from the tool response.
             Do NOT add any extra analysis, 
@@ -1074,7 +1097,8 @@ export const geminiProxy = onRequest(
               `You are a specialist JSON generator. Your entire output MUST
               be a single raw JSON object that strictly conforms to the
               requested schema. DO NOT include any conversational filler,
-              markdown fences (\`\`\`json), or non-JSON text.`;
+              markdown fences (\`\`\`json), or non-JSON text. 
+              ${levelInstruction}`;
             }
             // Correctly disable tools for the synthesis call
             secondCallConfig.tools = [];

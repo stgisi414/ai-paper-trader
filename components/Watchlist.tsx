@@ -113,8 +113,8 @@ const Watchlist: React.FC = () => {
     } = useWatchlist();
     
     const { portfolio } = usePortfolio();
-    const { checkUsage, logUsage, onLimitExceeded } = useAuth(); // Metering functions
-    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { checkUsage, logUsage, onLimitExceeded, userSettings } = useAuth(); // Metering functions
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded, aiLevel: userSettings.aiLevel };
 
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');

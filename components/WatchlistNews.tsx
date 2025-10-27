@@ -16,8 +16,8 @@ interface WatchlistNewsProps {
 }
 
 const WatchlistNews: React.FC<WatchlistNewsProps> = ({ tickers, onClose, cashOnHand }) => {
-    const { checkUsage, logUsage, onLimitExceeded } = useAuth(); // Metering functions
-    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { checkUsage, logUsage, onLimitExceeded, userSettings } = useAuth(); // Metering functions
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded, aiLevel: userSettings.aiLevel };
 
     const [news, setNews] = useState<FmpNews[]>([]);
     const [quotes, setQuotes] = useState<FmpQuote[]>([]);

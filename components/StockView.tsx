@@ -10,12 +10,12 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { StarIcon, HelpCircleIcon, RegenerateIcon, RecommendationIcon, AnalysisIcon, StrategyIcon, NewspaperIcon, ClipboardCheckIcon, UserStarIcon, KeyIcon } from './common/Icons';
+import { StarIcon, HelpCircleIcon, RegenerateIcon, RecommendationIcon, AnalysisIcon, StrategyIcon, NewspaperIcon, ClipboardCheckIcon, UserStarIcon, KeyIcon, SettingsIcon } from './common/Icons';
 import CandlestickChart from './CandlestickChart';
 import * as optionsProxyService from '../services/optionsProxyService';
 import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
-import { useAuth } from '../src/hooks/useAuth.tsx';
+import { useAuth, AiLevel } from '../src/hooks/useAuth.tsx';
 import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 import { processHelpAction } from '../utils/workflowExecutor';
 import { usePersistentState } from '../utils/localStorageManager';
@@ -107,8 +107,9 @@ const StockView: React.FC = () => {
     const { ticker } = useParams<{ ticker: string }>();
     const { buyStock, sellStock, portfolio, buyOption, sellOption, manualSellOption, updateOptionStopLoss } = usePortfolio();
     const { addToWatchlist, removeFromWatchlist, isOnWatchlist } = useWatchlist();
-    const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
-    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { user, checkUsage, logUsage, onLimitExceeded, userSettings, updateAiLevel } = useAuth();
+    const { aiLevel } = userSettings;
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded, aiLevel: userSettings.aiLevel };
 
     const formatGreek = useCallback((value: number | null): string => {
         if (value === null) return 'N/A';
@@ -132,6 +133,10 @@ const StockView: React.FC = () => {
     const [technicalAnalysis, setTechnicalAnalysis] = usePersistentState<TechnicalAnalysis | null>(`technical-${ticker}`, null);
     const [combinedRec, setCombinedRec] = usePersistentState<CombinedRec | null>(`combinedRec-${ticker}`, null);
     const [keyMetricsAnalysis, setKeyMetricsAnalysis] = usePersistentState<KeyMetricsAnalysis | null>(`keyMetrics-${ticker}`, null);
+
+    const handleAiLevelChange = (level: AiLevel) => {
+        updateAiLevel(level);
+    };
 
     const [options, setOptions] = useState<AlpacaOptionContract[]>([]);
     const [selectedOption, setSelectedOption] = useState<AlpacaOptionContract | null>(null);
@@ -361,11 +366,11 @@ const StockView: React.FC = () => {
         setIsKeyMetricsLoading(true);
         setKeyMetricsAnalysis(null);
         try {
+            // Pass updated authFunctions
             const analysis = await geminiService.analyzeKeyMetrics(quote, profile, authFunctions);
             setKeyMetricsAnalysis(analysis);
         } catch (error) {
             console.error("AI Key Metrics Analysis failed:", error);
-            // Error is handled by onLimitExceeded, no user alert needed
         } finally {
             setIsKeyMetricsLoading(false);
         }
@@ -376,11 +381,11 @@ const StockView: React.FC = () => {
         setIsAiLoading(true);
         setAiAnalysis(null);
         try {
+             // Pass updated authFunctions
             const analysis = await geminiService.analyzeNewsSentiment(profile.companyName, news, authFunctions);
             setAiAnalysis(analysis);
         } catch (error) {
             console.error("AI Analysis failed:", error);
-            // Error is handled by onLimitExceeded
         } finally {
             setIsAiLoading(false);
         }
@@ -392,11 +397,11 @@ const StockView: React.FC = () => {
         setHasRunFinancialAnalysis(true);
         setFinancialStatementAnalysis(null);
         try {
+            // Pass updated authFunctions
             const analysis = await geminiService.analyzeFinancialStatements(incomeStatement, balanceSheet, cashFlowStatement, authFunctions);
             setFinancialStatementAnalysis(analysis);
         } catch (error) {
             console.error("AI Financial Analysis failed:", error);
-            // Error is handled by onLimitExceeded
         } finally {
             setIsAiLoading(false);
         }
@@ -408,11 +413,11 @@ const StockView: React.FC = () => {
         setHasRunTechnicalAnalysis(true);
         setTechnicalAnalysis(null);
         try {
+            // Pass updated authFunctions
             const analysis = await geminiService.getTechnicalAnalysis(historicalData, authFunctions);
             setTechnicalAnalysis(analysis);
         } catch (error) {
             console.error("AI Technical Analysis failed:", error);
-            // Error is handled by onLimitExceeded
         } finally {
             setIsAiLoading(false);
         }
@@ -420,14 +425,14 @@ const StockView: React.FC = () => {
 
     const handleAdvancedRecommendations = useCallback(async () => {
         if (!profile || historicalData.length === 0) {
-            alert("Not enough data to generate a recommendation. Please ensure the profile and price chart have loaded.");
+            alert("Not enough data to generate a recommendation...");
             return;
         }
         setIsAiLoading(true);
         setHasRunAdvancedRecs(true);
         setCombinedRec(null);
         try {
-            // Note: This action makes two separate AI calls which will count as two usage events.
+            // Pass updated authFunctions to both calls
             const technicals = await geminiService.getTechnicalAnalysis(historicalData, authFunctions);
             setTechnicalAnalysis(technicals);
             const recommendation = await geminiService.getCombinedRecommendations(profile, analystRatings, technicals, authFunctions);
@@ -939,6 +944,28 @@ const StockView: React.FC = () => {
                 {/* LEFT COLUMN (lg:col-span-2) - Only contains Watchlist now */}
                 <div className="lg:col-span-2 space-y-6"> 
                     {user && <UsageIndicator />}
+                    {user && (
+                        <Card className="p-3 w-full">
+                             <label className="block text-sm font-bold mb-2 text-center text-purple-400 flex items-center justify-center gap-1">
+                                 <SettingsIcon className="h-4 w-4"/> AI Level
+                            </label>
+                             <div className="flex justify-center gap-2">
+                                {(['beginner', 'intermediate', 'advanced'] as AiLevel[]).map(level => (
+                                    <button
+                                        key={level}
+                                        onClick={() => handleAiLevelChange(level)}
+                                        className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                                            aiLevel === level
+                                                ? 'bg-purple-600 text-white'
+                                                : 'bg-night-600 text-night-100 hover:bg-night-500'
+                                        }`}
+                                    >
+                                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                        </Card>
+                     )}
                     {user && <Watchlist />}
                 </div>
 

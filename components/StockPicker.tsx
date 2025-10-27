@@ -12,8 +12,8 @@ import { SignatexMaxIcon, SignatexLiteIcon } from './common/Icons';
 const sectors = ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical", "Industrials", "Energy", "Real Estate", "Utilities"];
 
 const StockPicker: React.FC = () => {
-    const { checkUsage, logUsage, onLimitExceeded } = useAuth();
-    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { checkUsage, logUsage, onLimitExceeded, userSettings } = useAuth();
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded, aiLevel: userSettings.aiLevel };
 
     const [answers, setAnswers] = useState<QuestionnaireAnswers>({
         risk: 'medium',

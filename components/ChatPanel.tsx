@@ -30,8 +30,8 @@ const MIN_HEIGHT = 200;
 const HANDLE_SIZE = 16;
 
 const ChatPanel: React.FC = () => {
-    const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
-    const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { user, checkUsage, logUsage, onLimitExceeded, userSettings } = useAuth();
+    const authFunctions = { checkUsage, logUsage, onLimitExceeded, aiLevel: userSettings.aiLevel };
 
     const navigate = useNavigate();
     const location = useLocation();

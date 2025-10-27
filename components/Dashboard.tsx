@@ -7,20 +7,21 @@ import type { FmpSearchResult, PortfolioRiskAnalysis } from '../types';
 import Card from './common/Card';
 import Spinner from './common/Spinner';
 import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
-import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, AnalysisIcon } from './common/Icons';
+import { SearchIcon, TrendingUpIcon, TrendingDownIcon, DollarSignIcon, BriefcaseIcon, AnalysisIcon, SettingsIcon } from './common/Icons';
 import ChatPanel from './ChatPanel';
 import Watchlist from './Watchlist';
 import MarketScreener from './MarketScreener';
 import ActiveUsers from './ActiveUsers';
 import { SignatexMaxIcon } from './common/Icons';
 import UsageIndicator from './UsageIndicator';
-import { useAuth, LITE_LIMIT, MAX_LIMIT } from '/src/hooks/useAuth.tsx';
+import { useAuth, LITE_LIMIT, MAX_LIMIT, AiLevel } from '/src/hooks/useAuth.tsx';
 import { processHelpAction } from '../utils/workflowExecutor';
 import { usePersistentState } from '../utils/localStorageManager';
 
 const Dashboard: React.FC = () => {
-    const { user, checkUsage, logUsage, onLimitExceeded } = useAuth();
+    const { user, checkUsage, logUsage, onLimitExceeded, userSettings, updateAiLevel } = useAuth();
     const authFunctions = { checkUsage, logUsage, onLimitExceeded };
+    const { aiLevel } = userSettings;
 
     const { portfolio, totalValue, isLoading: isPortfolioLoading, manualSellOption, sellAllStock } = usePortfolio();
     const [searchQuery, setSearchQuery] = useState('');
@@ -32,6 +33,9 @@ const Dashboard: React.FC = () => {
     const [testResult, setTestResult] = useState<{ name: string, result: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [testTicker, setTestTicker] = useState('AAPL');
+    const handleAiLevelChange = (level: AiLevel) => {
+        updateAiLevel(level);
+    };
 
     useEffect(() => {
         processHelpAction();
@@ -113,6 +117,26 @@ const Dashboard: React.FC = () => {
                 {user && (
                     <div className="mt-4 max-w-xs mx-auto">
                         <UsageIndicator />
+                        <Card className="p-3 w-full sm:w-auto">
+                             <label className="block text-sm font-bold mb-2 text-center text-purple-400 flex items-center justify-center gap-1">
+                                 <SettingsIcon className="h-4 w-4"/> AI Level
+                            </label>
+                             <div className="flex justify-center gap-2">
+                                {(['beginner', 'intermediate', 'advanced'] as AiLevel[]).map(level => (
+                                    <button
+                                        key={level}
+                                        onClick={() => handleAiLevelChange(level)}
+                                        className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                                            aiLevel === level
+                                                ? 'bg-purple-600 text-white'
+                                                : 'bg-night-600 text-night-100 hover:bg-night-500'
+                                        }`}
+                                    >
+                                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                        </Card>
                     </div>
                 )}
             </div>
