@@ -3,6 +3,7 @@ import { NavigateFunction } from 'react-router-dom';
 import * as fmpService from './fmpService';
 import { formatCurrency } from '../utils/formatters';
 import { callGeminiProxyWithSchema, getStockPicks, getOptionsStrategy, getPortfolioRecommendation, AuthFunctions } from './geminiService';
+import type { AiLevel } from '../src/hooks/useAuth';
 
 // Defines the structure of a single step in the workflow
 // Note: These are also exported from types.ts now for consistency
@@ -13,6 +14,19 @@ import { callGeminiProxyWithSchema, getStockPicks, getOptionsStrategy, getPortfo
 interface SignatexFlowResponse {
     steps: WorkflowStep[];
 }
+
+const getAiLevelInstruction = (level: AiLevel): string => {
+    switch (level) {
+        case 'beginner':
+            return "Explain concepts simply, avoid jargon, use analogies if helpful.";
+        case 'intermediate':
+            return "Provide clear explanations with moderate detail. Assume some financial knowledge.";
+        case 'advanced':
+            return "Be concise and technical. Use precise financial terminology. Assume expert familiarity.";
+        default:
+            return "Provide clear explanations with moderate detail."; // Default to intermediate
+    }
+};
 
 const buildContextPrompt = (context: AppContext): string => {
     let contextString = "**CURRENT APP CONTEXT:**\n";
